@@ -17,7 +17,8 @@ Note that child resources can be set by including a sub document
 with their primary key.
 
 Request:
-.. sourcecode:: http
+
+.. code:: javascript
 
     POST /api/tracks HTTP1/1
     {
@@ -35,6 +36,7 @@ Request:
     }
 
 Response:
+
 .. sourcecode:: http
 
     HTTP/1.1 201 Created

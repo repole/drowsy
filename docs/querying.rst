@@ -57,15 +57,48 @@ using Flask might look like:
         # query params are used to parse fields to include, embeds,
         # sorts, and filters.
         query_params = request.values.to_dict()
-        router = ModelResourceRouter(session=db_session)
-        return simplejson.dumps(
-            router.dispatcher(
+        errors = None
+        status = 200
+        try:
+            if request.method.lower() == "POST":
+                status = 201
+            result = router.dispatcher(
                 request.method,
                 path,
                 query_params=query_params,
-                data=request.json),
-            indent=4,
-            sort_keys=True)
+                data=request.json)
+            if result is None:
+                status = 209
+            else:
+                result = simplejson.dumps(
+                    result,
+                    indent=4,
+                    sort_keys=True)
+            return Response(
+                result,
+                mimetype="application/json",
+                status=status)
+        except UnprocessableEntityError as e:
+            status = 433
+            errors = e.errors
+        except MethodNotAllowedError as e:
+            status = 405
+        except BadRequestError as e:
+            status = 400
+        except ResourceNotFoundError as e:
+            status = 404
+        if e:
+            result = {"message": e.message, "code": e.kwargs["code"]}
+            if errors:
+                result["errors"] = errors
+            return Response(
+                simplejson.dumps(
+                    result,
+                    indent=4,
+                    sort_keys=True
+                ),
+                mimetype="application/json",
+                status=status)
 
 Note the use of the ``ModelResourceRouter`` is very much optional and is used
 purely for brevity here. Separate end points for each resource type could, and
