@@ -18,7 +18,7 @@ with their primary key.
 
 Request:
 
-.. code:: javascript
+.. sourcecode:: http
 
     POST /api/tracks HTTP1/1
     {

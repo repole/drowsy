@@ -112,9 +112,13 @@ Filtering by Unique Identifier
 Access individual resources using their primary key value (or setting a custom
 field to use as an ID on the ModelResource object):
 
-``/api/albums/2``
+.. sourcecode:: http
 
-.. code:: javascript
+    GET /api/albums/2 HTTP/1.1
+
+.. sourcecode:: http
+
+    HTTP/1.1 200 OK
 
     {
         "album_id": 2,
@@ -133,9 +137,13 @@ queried. This can be turned on or off on a field by field basis if desired.
 Query for things that are >, >=, =<, <, != by appending -gt, -gte,
 -lt, -lte, -ne respectively to the parameter name.
 
-``/api/albums?album_id-lte=10&album_id-gt>8``
+.. sourcecode:: http
 
-.. code:: javascript
+    GET /api/albums?album_id-lte=10&album_id-gt>8 HTTP/1.1
+
+.. sourcecode:: http
+
+    HTTP/1.1 200 OK
 
     [
         {
@@ -157,9 +165,13 @@ Query for things that are >, >=, =<, <, != by appending -gt, -gte,
 
 Query text fields for partial matches using -like.
 
-``/api/albums?albums?title-like=salute``
+.. sourcecode:: http
 
-.. code:: javascript
+    GET /api/albums?albums?title-like=salute HTTP/1.1
+
+.. sourcecode:: http
+
+    HTTP/1.1 200 OK
 
     [
         {
@@ -178,9 +190,13 @@ Advanced Filtering
 ------------------
 Query using complex MQLAlchemy style filters:
 
-``/api/tracks?query={"$and":[{"unit_price":{"$lte":1}},{"album.album_id":2}]}``
+.. sourcecode:: http
 
-.. code:: javascript
+    GET /api/tracks?query={"$and":[{"unit_price":{"$lte":1}},{"album.album_id":2}]} HTTP/1.1
+
+.. sourcecode:: http
+
+    HTTP/1.1 200 OK
 
     [
         {
@@ -209,9 +225,13 @@ Embedding Relationships and Fields
 ----------------------------------
 Embed full relationships or fields of relationships:
 
-``/api/albums/2?embeds=artist,tracks.name&limit=1``
+.. sourcecode:: http
 
-.. code:: javascript
+    GET /api/albums/2?embeds=artist,tracks.name&limit=1 HTTP/1.1
+
+.. sourcecode:: http
+
+    HTTP/1.1 200 OK
 
     {
         "album_id": 2,
@@ -232,9 +252,13 @@ Embed full relationships or fields of relationships:
 
 Choose fields you want returned explicitly:
 
-``/api/albums/2?fields=title,album_id``
+.. sourcecode:: http
 
-.. code:: javascript
+    GET /api/albums/2?fields=title,album_id HTTP/1.1
+
+.. sourcecode:: http
+
+    HTTP/1.1 200 OK
 
     {
         "album_id": 2,
@@ -246,9 +270,13 @@ Offset, Limit, and Pagination
 -----------------------------
 Use limit for any end point:
 
-``/api/albums&limit=2``
+.. sourcecode:: http
 
-.. code:: javascript
+    GET /api/albums&limit=2 HTTP/1.1
+
+.. sourcecode:: http
+
+    HTTP/1.1 200 OK
 
     [
         {
@@ -270,9 +298,13 @@ Use limit for any end point:
 
 Use offset for any end point:
 
-``/api/albums&limit=1&offset=1``
+.. sourcecode:: http
 
-.. code:: javascript
+    GET /api/albums&limit=1&offset=1 HTTP/1.1
+
+.. sourcecode:: http
+
+    HTTP/1.1 200 OK
 
     [
         {
@@ -287,9 +319,13 @@ Use offset for any end point:
 
 Paginate any end point (limit can be used to set page size):
 
-``/api/albums&page=2limit=5``
+.. sourcecode:: http
 
-.. code:: javascript
+    GET /api/albums&page=2limit=5 HTTP/1.1
+
+.. sourcecode:: http
+
+    HTTP/1.1 200 OK
 
     [
          {
@@ -343,9 +379,13 @@ field names to be more JavaScript friendly.
             model = Album
             converter = CamelModelResourceConverter
 
-``/api/albums/2``
+.. sourcecode:: http
 
-.. code:: javascript
+    GET /api/albums/2 HTTP/1.1
+
+.. sourcecode:: http
+
+    HTTP/1.1 200 OK
 
     {
         "albumId": 2,
