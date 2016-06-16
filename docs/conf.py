@@ -242,7 +242,7 @@ man_pages = [
 #  dir menu entry, description, category)
 texinfo_documents = [
   ('index', 'Drowsy', 'Drowsy Documentation',
-   'Nicholas Repole', 'Drowsy', 'One line description of project.',
+   'Nicholas Repole', 'Drowsy', 'Yet another REST framework.',
    'Miscellaneous'),
 ]
 
