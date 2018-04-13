@@ -176,14 +176,6 @@ class ModelResourceSchema(ModelSchema):
         return super(ModelResourceSchema, self).load(
             data, session, instance, *args, **kwargs)
 
-    def handle_error(self, error, data):
-        """Modifies error messages."""
-        messages = error.messages
-        for key in messages:
-            if isinstance(messages[key], list):
-                for i in range(0, len(messages[key])):
-                    messages[key][i] = self.translate_error(messages[key][i])
-
     def process_context(self):
         """Override to modify a schema based on context."""
         pass
