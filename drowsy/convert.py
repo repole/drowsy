@@ -138,7 +138,7 @@ class ModelResourceConverter(ModelConverter):
         return underscore(pluralize(model_name))
 
     def fields_for_model(self, model, include_fk=False, fields=None,
-                         exclude=None):
+                         exclude=None, base_fields=None, dict_cls=dict):
         """Generate fields for the provided model.
 
         :param model: The SQLAlchemy model the generated fields
@@ -149,12 +149,22 @@ class ModelResourceConverter(ModelConverter):
         :type fields: :class:`~collections.Iterable` or None
         :param exclude: A collection of field names not to generate.
         :type exclude: :class:`~collections.Iterable` or None
+        :param base_fields: Optional dict of default fields to include
+            in the result.
+        :type base_fields: dict or None
+        :param dict_cls: Optional specific type of dict to use for
+            the result.
         :return: Generated fields corresponding to each model property.
-        :rtype: list
+        :rtype: dict or the provided dict_cls
 
         """
         result = super(ModelResourceConverter, self).fields_for_model(
-            model, include_fk, fields, exclude)
+            model=model,
+            include_fk=include_fk,
+            fields=fields,
+            exclude=exclude,
+            base_fields=base_fields,
+            dict_cls=dict_cls)
         result["self"] = APIUrl(
             endpoint_name=self._model_name_to_endpoint_name(model.__name__))
         return result
