@@ -15,7 +15,7 @@ from drowsy import resource_class_registry
 from drowsy.fields import EmbeddableMixin, NestedRelated
 from drowsy.query_builder import (
     apply_load_options, apply_sorts, apply_offset_and_limit, SortInfo)
-from drowsy.utils import get_error_message
+from drowsy.utils import get_error_message, get_field_by_dump_name
 from drowsy.exc import (
     BadRequestError, UnprocessableEntityError, MethodNotAllowedError,
     ResourceNotFoundError)
@@ -378,19 +378,13 @@ class BaseModelResource(SchemaResourceABC):
             dot notation for nested fields.
 
         """
+        # TODO - consider making this resource based
+        # calling child resource.convert_key_name
         schema = self.schema_cls(**self._get_schema_kwargs(self.schema_cls))
         split_keys = key.split(".")
         result_keys = []
         for key in split_keys:
-            field = None
-            if hasattr(schema, "fields_by_dump_to"):
-                if key in schema.fields_by_dump_to:
-                    field = schema.fields_by_dump_to[key]
-            else:
-                for field_name in schema.fields:
-                    if schema.fields[field_name].dump_to == key:
-                        field = schema.fields[field_name]
-                        break
+            field = get_field_by_dump_name(schema, key)
             if field is not None:
                 result_keys.append(field.name)
                 if isinstance(field, EmbeddableMixin):
@@ -681,7 +675,10 @@ class BaseModelResource(SchemaResourceABC):
                 **kwargs)
         elif key == "invalid_filters":
             if isinstance(exc, InvalidMQLException):
-                message = str(exc)
+                if "subquery_key" in kwargs:
+                    message = kwargs["subquery_key"] + ": " + str(exc)
+                else:
+                    message = str(exc)
             else:
                 message = self._get_error_message(key, **kwargs)
             raise BadRequestError(
