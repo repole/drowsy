@@ -10,8 +10,9 @@ reference them dynamically and avoid circular dependencies.
     This module is treated as private API.
     Users should not need to use this module directly.
 
-This module was taken directly from Marshmallow. The only difference
-is that it serves as a registry of resources rather than schemas.
+This module was taken directly from Marshmallow. The only core 
+difference is that it serves as a registry of resources rather than 
+schemas.
 Please see below for the appropriate Marshmallow attribution.
 
 Copyright 2015 Steven Loria
@@ -49,7 +50,7 @@ _registry = {}
 def register(classname, cls):
     """Add a class to the registry of resource classes.
 
-    When a class is registered, an entry for both its classname and
+    When a class is registered, an entry for both its class name and
     its full, module-qualified path are added to the registry.
 
     Example: ::
