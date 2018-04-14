@@ -4,7 +4,7 @@
 
     Classes for building REST API friendly, model based schemas.
 
-    :copyright: (c) 2016 by Nicholas Repole and contributors.
+    :copyright: (c) 2018 by Nicholas Repole and contributors.
                 See AUTHORS for more details.
     :license: MIT - See LICENSE for more details.
 """
@@ -13,7 +13,7 @@ from marshmallow_sqlalchemy.fields import get_primary_keys
 from marshmallow_sqlalchemy.schema import ModelSchema, ModelSchemaOpts
 from mqlalchemy.utils import dummy_gettext
 from drowsy.convert import ModelResourceConverter
-from drowsy.fields import EmbeddableMixin
+from drowsy.fields import EmbeddableMixinABC
 
 
 class ModelResourceSchemaOpts(ModelSchemaOpts):
@@ -121,7 +121,7 @@ class ModelResourceSchema(ModelSchema):
             for split_name in split_names:
                 if isinstance(parent, ModelSchema):
                     if isinstance(parent.fields.get(split_name, None),
-                                  EmbeddableMixin):
+                                  EmbeddableMixinABC):
                         field = parent.fields[split_name]
                         field.embedded = True
                         if hasattr(field, "process_context"):
@@ -164,7 +164,7 @@ class ModelResourceSchema(ModelSchema):
         """
         for key in data:
             if (key in self.fields and
-                    isinstance(self.fields[key], (EmbeddableMixin,))):
+                    isinstance(self.fields[key], (EmbeddableMixinABC,))):
                 self.embed([key])
         # make sure self.instance isn't None
         if instance is not None:

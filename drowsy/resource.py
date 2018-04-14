@@ -4,7 +4,7 @@
 
     Base classes for building resources and model resources.
 
-    :copyright: (c) 2016 by Nicholas Repole and contributors.
+    :copyright: (c) 2018 by Nicholas Repole and contributors.
                 See AUTHORS for more details.
     :license: MIT - See LICENSE for more details.
 """
@@ -12,7 +12,7 @@ from marshmallow.compat import with_metaclass
 from marshmallow.fields import MISSING_ERROR_MESSAGE
 from mqlalchemy import apply_mql_filters, InvalidMQLException
 from drowsy import resource_class_registry
-from drowsy.fields import EmbeddableMixin, NestedRelated
+from drowsy.fields import EmbeddableMixinABC, NestedRelated
 from drowsy.query_builder import (
     apply_load_options, apply_sorts, apply_offset_and_limit, SortInfo)
 from drowsy.utils import get_error_message, get_field_by_dump_name
@@ -356,7 +356,7 @@ class BaseModelResource(SchemaResourceABC):
                 field = schema.fields[key]
                 if field.load_only:
                     return False
-                elif isinstance(field, EmbeddableMixin):
+                elif isinstance(field, EmbeddableMixinABC):
                     schema.embed([key])
                     if hasattr(field, "schema"):
                         schema = field.schema
@@ -387,7 +387,7 @@ class BaseModelResource(SchemaResourceABC):
             field = get_field_by_dump_name(schema, key)
             if field is not None:
                 result_keys.append(field.name)
-                if isinstance(field, EmbeddableMixin):
+                if isinstance(field, EmbeddableMixinABC):
                     schema.embed([key])
                     if hasattr(field, "schema"):
                         schema = field.schema

@@ -157,7 +157,7 @@ class DrowsyTests(unittest.TestCase):
             UnprocessableEntityError,
             album_resource.patch,
             (album.album_id, ),
-            {"artist": "TEST"})
+            {"artist": 5})
 
     def test_list_relation_set_fail(self):
         """Ensure we can't set a list relation to a non object value."""
@@ -168,7 +168,7 @@ class DrowsyTests(unittest.TestCase):
             UnprocessableEntityError,
             album_resource.patch,
             (album.album_id, ),
-            {"tracks": "TEST"})
+            {"tracks": 5})
 
     def test_list_relation_non_item_fail(self):
         """Ensure we can't set list relation items to a non object."""
