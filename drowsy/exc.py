@@ -14,14 +14,16 @@ class DrowsyError(Exception):
 
     """Exception that contains a simple message attribute."""
 
-    def __init__(self, message, **kwargs):
+    def __init__(self, code, message, **kwargs):
         """Initializes a new error.
 
+        :param str code: Error code for easier lookup.
         :param str message: Description of the error.
         :param dict kwargs: Any additional arguments may be stored along
             with the message as well.
 
         """
+        self.code = code
         self.message = message
         self.kwargs = kwargs
 
@@ -30,9 +32,10 @@ class UnprocessableEntityError(DrowsyError):
 
     """Exception for when provided data is unable to be deserialized."""
 
-    def __init__(self, message, errors, **kwargs):
+    def __init__(self, code, message, errors, **kwargs):
         """Initializes a new unprocessable entity error.
 
+        :param str code: Error code for easier lookup.
         :param str message: Description of the error.
         :param dict errors: A field by field breakdown of errors.
         :param dict kwargs: Any additional arguments may be stored along
@@ -40,7 +43,7 @@ class UnprocessableEntityError(DrowsyError):
 
         """
         self.errors = errors
-        super(UnprocessableEntityError, self).__init__(message, **kwargs)
+        super(UnprocessableEntityError, self).__init__(code, message, **kwargs)
 
 
 class BadRequestError(DrowsyError):
