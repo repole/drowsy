@@ -157,7 +157,7 @@ class DrowsyTests(unittest.TestCase):
             UnprocessableEntityError,
             album_resource.patch,
             (album.album_id, ),
-            {"artist": "TEST"})
+            {"artist": 5})
 
     def test_list_relation_set_fail(self):
         """Ensure we can't set a list relation to a non object value."""
@@ -168,7 +168,7 @@ class DrowsyTests(unittest.TestCase):
             UnprocessableEntityError,
             album_resource.patch,
             (album.album_id, ),
-            {"tracks": "TEST"})
+            {"tracks": 5})
 
     def test_list_relation_non_item_fail(self):
         """Ensure we can't set list relation items to a non object."""
@@ -191,27 +191,6 @@ class DrowsyTests(unittest.TestCase):
             album_resource.patch,
             (album.album_id, ),
             {"tracks": [{"bytes": "TEST"}]})
-
-    def test_error_translation(self):
-        """Ensure error message translation works."""
-        def get_excited(value, **variables):
-            """Append an exclamation point to any string.
-
-            :param str value: String to be translated.
-
-            """
-            return dummy_gettext(value, **variables) + "!"
-        album = self.db_session.query(Album).filter(
-            Album.album_id == 1).all()[0]
-        album_resource = AlbumResource(session=self.db_session,
-                                       context={"gettext": get_excited})
-        try:
-            album_resource.patch(
-                (album.album_id, ), {"tracks": [{"bytes": "TEST"}]})
-            # should raise an exception...
-            self.assertTrue(False)
-        except UnprocessableEntityError as e:
-            self.assertTrue(e.errors['tracks'][0]['name'][0].endswith("!"))
 
     def test_set_single_relation_item(self):
         """Make sure that a non-list relation can be set."""

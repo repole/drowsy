@@ -12,13 +12,12 @@
     :license: MIT - See LICENSE for more details.
 """
 import inflection
-from marshmallow.fields import MISSING_ERROR_MESSAGE, Field
+from marshmallow.fields import MISSING_ERROR_MESSAGE, Field, Nested
 from mqlalchemy import convert_to_alchemy_type
 from drowsy.parser import QueryParamParser
 from drowsy.exc import (
     BadRequestError, OffsetLimitParseError, FilterParseError,
-    DrowsyError, ResourceNotFoundError, UnprocessableEntityError,
-    MethodNotAllowedError)
+    ResourceNotFoundError, UnprocessableEntityError, MethodNotAllowedError)
 import drowsy.resource_class_registry as class_registry
 from drowsy.utils import get_error_message
 from drowsy.resource import BaseModelResource
@@ -26,6 +25,8 @@ from marshmallow_sqlalchemy.schema import ModelSchema
 
 
 class ResourceRouterABC(object):
+
+    """Abstract base class for a resource based automatic router."""
 
     default_error_messages = {
         "validation_failure": "Unable to process entity.",
@@ -139,18 +140,44 @@ class ResourceRouterABC(object):
             raise AssertionError(msg)
 
     def _get_schema_kwargs(self, schema_cls):
+        """Get key word arguemnts for constructing a schema.
+
+        :param schema_cls: The schema class being constructed.
+        :return: A dictionary of arguments.
+        :rtype: dict
+
+        """
         result = {
             "context": self.context
         }
         return result
 
     def _get_resource_kwargs(self, resource_cls):
+        """Get kwargs to be used for creating a new resource instance.
+
+        :param resource_cls: The resource class to be created.
+        :return: Arguments to be used to initialize a resource.
+        :rtype: dict
+
+        """
         result = {
             "context": self.context
         }
         return result
 
     def _get_path_info(self, path):
+        """Break a url path into a series of resources, ids, and fields.
+
+        /album/1/tracks/5/track_id would return a list containing:
+        [AlbumResource, (1,), TrackResource, (5,), fields["track_id]]
+
+        :param str path: The path portion of a requested URL
+        :raise ResourceNotFoundError: If no resource can be found at
+            the provided path.
+        :return: A list containing resources, ids, and fields in the
+            order they're specified in a path.
+
+        """
         resource = None
         split_path = path.split("/")
         result = []
@@ -320,7 +347,7 @@ class ResourceRouterABC(object):
         raise NotImplementedError
 
     def dispatcher(self, method, path, query_params=None, data=None,
-                   content_type="json", strict=True):
+                   strict=True):
         """Route requests based on path and resource.
 
         :param str method: HTTP verb method used to make this request.
@@ -331,6 +358,8 @@ class ResourceRouterABC(object):
         :param bool strict: If `True`, faulty pagination info, fields,
             or embeds will result in an error being raised rather than
             silently ignoring them.
+        :param data: The data supplied as part of the incoming request
+            body. Optional, and the format of this data may vary.
         :raise ResourceNotFoundError: If no resource can be found at
             the provided path.
         :raise BadRequestError: Invalid filters, sorts, fields,
@@ -370,7 +399,12 @@ class ResourceRouterABC(object):
 
 class ModelResourceRouter(ResourceRouterABC):
 
-    """Utility class used to route incoming requests."""
+    """Utility class used to route incoming requests.
+
+    Currently handles nested resources assuming they're of
+    :class:`~drowsy.resource.ModelResource` type.
+
+    """
 
     def __init__(self, resource=None, error_messages=None, context=None,
                  session=None):
@@ -388,7 +422,6 @@ class ModelResourceRouter(ResourceRouterABC):
 
         """
         self._context = context
-        self.resource = resource
         self._session = session
         super(ModelResourceRouter, self).__init__(resource, error_messages)
 
@@ -407,7 +440,7 @@ class ModelResourceRouter(ResourceRouterABC):
 
     @property
     def session(self):
-        """Return the schema context for this resource."""
+        """Return the session for this resource."""
         if self.resource is not None:
             return self.resource.session
         else:
@@ -416,9 +449,11 @@ class ModelResourceRouter(ResourceRouterABC):
             return None
 
     def _get_schema_kwargs(self, schema_cls):
-        """Get kwargs to be used for creating a new schema instance.
+        """Get key word arguemnts for constructing a schema.
 
-        :param schema_cls: The schema class to be created.
+        :param schema_cls: The schema class being constructed.
+        :return: A dictionary of arguments.
+        :rtype: dict
 
         """
         result = super(ModelResourceRouter, self)._get_schema_kwargs(
@@ -431,6 +466,8 @@ class ModelResourceRouter(ResourceRouterABC):
         """Get kwargs to be used for creating a new resource instance.
 
         :param resource_cls: The resource class to be created.
+        :return: Arguments to be used to initialize a resource.
+        :rtype: dict
 
         """
         result = super(ModelResourceRouter, self)._get_resource_kwargs(
@@ -458,6 +495,24 @@ class ModelResourceRouter(ResourceRouterABC):
         return self.resource
 
     def _get_path_objects(self, path):
+        """Extract resource objects and identities from the path.
+
+        This is pretty messy and should get cleaned up eventually.
+
+        :param path: The input resource path.
+        :return: A dict with the following keys defined:
+
+            * parent_resource
+            * resource
+            * instance
+            * path_part
+            * query_session
+            * ident
+            * field
+
+        :rtype: dict
+
+        """
         path_parts = self._get_path_info(path)
         parent_resource = None
         resource = None
@@ -518,8 +573,20 @@ class ModelResourceRouter(ResourceRouterABC):
             "field": field
         }
 
-    def _subfield_update(self, method, path, data, parent_resource,
+    def _subfield_update(self, method, data, parent_resource,
                          resource, path_part, ident, query_session):
+        """TODO
+
+        :param method:
+        :param data:
+        :param parent_resource:
+        :param resource:
+        :param path_part:
+        :param ident:
+        :param query_session:
+        :return:
+
+        """
         if isinstance(path_part, Field) and hasattr(
                     path_part, "resource_cls"):
             relation_name = path_part.load_from or path_part.name
@@ -638,7 +705,6 @@ class ModelResourceRouter(ResourceRouterABC):
             # more as a patch/update to that subresource.
             result = self._subfield_update(
                 method="put",
-                path=path,
                 data=data,
                 parent_resource=parent_resource,
                 resource=resource,
@@ -690,7 +756,6 @@ class ModelResourceRouter(ResourceRouterABC):
             # more as a patch/update to that subresource.
             result = self._subfield_update(
                 method="patch",
-                path=path,
                 data=data,
                 parent_resource=parent_resource,
                 resource=resource,
@@ -740,7 +805,6 @@ class ModelResourceRouter(ResourceRouterABC):
             # more as a patch/update to that subresource.
             result = self._subfield_update(
                 method="post",
-                path=path,
                 data=data,
                 parent_resource=parent_resource,
                 resource=resource,
@@ -803,19 +867,18 @@ class ModelResourceRouter(ResourceRouterABC):
                 path_part, BaseModelResource):
             # resource collection
             # any non subresource field would already have been handled
-            if not (isinstance(path_part, Field) and not path_part.many):
-                filters = parser.parse_filters(
-                    resource.model,
-                    convert_key_names_func=resource.convert_key_name)
+            if not (isinstance(path_part, Nested) and not path_part.many):
                 try:
                     offset, limit = parser.parse_offset_limit(
                         resource.page_max_size)
-                except OffsetLimitParseError as e:
+                    filters = parser.parse_filters(
+                        resource.model,
+                        convert_key_names_func=resource.convert_key_name)
+                except (OffsetLimitParseError, FilterParseError) as e:
                     if strict:
-                        key = e.kwargs.get("code")
-                        e.kwargs.pop("code", None)
+                        key = e.code
                         self.fail(key=key, **e.kwargs)
-                    offset, limit = None, None
+                    offset, limit, filters = None, None, None
                 sorts = parser.parse_sorts()
                 return resource.get_collection(
                     filters=filters,
@@ -895,7 +958,7 @@ class ModelResourceRouter(ResourceRouterABC):
                 path_part, BaseModelResource):
             # resource collection
             # any non subresource field would already have been handled
-            if not (isinstance(path_part, Field) and not path_part.many):
+            if not (isinstance(path_part, Nested) and not path_part.many):
                 filters = parser.parse_filters(
                     resource.model,
                     convert_key_names_func=resource.convert_key_name)

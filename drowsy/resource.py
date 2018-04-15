@@ -4,18 +4,17 @@
 
     Base classes for building resources and model resources.
 
-    :copyright: (c) 2016 by Nicholas Repole and contributors.
+    :copyright: (c) 2018 by Nicholas Repole and contributors.
                 See AUTHORS for more details.
     :license: MIT - See LICENSE for more details.
 """
 from marshmallow.compat import with_metaclass
 from marshmallow.fields import MISSING_ERROR_MESSAGE
-from mqlalchemy import apply_mql_filters, InvalidMQLException
+from mqlalchemy import InvalidMQLException
 from drowsy import resource_class_registry
-from drowsy.fields import EmbeddableMixin, NestedRelated
-from drowsy.query_builder import (
-    apply_load_options, apply_sorts, apply_offset_and_limit, SortInfo)
-from drowsy.utils import get_error_message
+from drowsy.fields import EmbeddableMixinABC, NestedRelated
+from drowsy.query_builder import QueryBuilder, SortInfo
+from drowsy.utils import get_error_message, get_field_by_dump_name
 from drowsy.exc import (
     BadRequestError, UnprocessableEntityError, MethodNotAllowedError,
     ResourceNotFoundError)
@@ -124,23 +123,9 @@ class ResourceABC(object):
         """Delete all members of the collection of resources."""
         raise NotImplementedError
 
-    @property
-    def context(self):
-        """Return the schema context for this resource."""
-        raise NotImplementedError
-
-    @context.setter
-    def context(self, val):
-        """Set context to the provided value.
-
-        :param val: Used to set the current context value.
-        :type val: dict, callable, or None
-
-        """
-        raise NotImplementedError
-
 
 class SchemaResourceABC(ResourceABC):
+
     """Abstract schema based resource class."""
 
     def _get_schema_kwargs(self, schema_cls):
@@ -149,10 +134,44 @@ class SchemaResourceABC(ResourceABC):
         :param schema_cls: The class of the schema being created.
 
         """
-        result = {
-            "context": self.context
-        }
-        return result
+        raise NotImplementedError
+
+    def make_schema(self, fields=None, embeds=None, partial=False, 
+                    instance=None, strict=True):
+        """Used to generate a schema for this request.
+
+        :param fields: Names of fields to be included in the result.
+        :type fields: list or None
+        :param embeds: A list of child resources (and/or their fields)
+            to include in the response.
+        :type embeds: list or None
+        :param bool partial: Whether partial deserialization is allowed.
+        :param instance: Object to associate with the schema.
+        :param bool strict: If `True`, will raise an exception when bad
+            parameters are passed. If `False`, will quietly ignore any
+            bad input and treat it as if none was provided.
+        :raise BadRequestError: Invalid fields or embeds will result
+            in a raised exception if strict is `True`.
+        :return: A schema with the supplied fields and embeds included.
+        :rtype: :class:`~drowsy.schema.SchemaResourceABC`
+
+        """
+        raise NotImplementedError
+
+
+class NestableResourceABC(ResourceABC):
+
+    """Abstract nestable resource class."""
+
+    def make_subresource(self, name):
+        """Given a subresource name, construct a subresource.
+
+        :param str name: Dumped name of field containing a subresource.
+        :raise ValueError: If the name given isn't a valid subresource.
+        :returns: A constructed :class:`~drowsy.resource.Resource`
+
+        """
+        raise ValueError
 
 
 class ModelResourceOpts(object):
@@ -238,7 +257,7 @@ class ModelResourceMeta(type):
         resource_class_registry.register(name, cls)
 
 
-class BaseModelResource(SchemaResourceABC):
+class BaseModelResource(SchemaResourceABC, NestableResourceABC):
 
     """Model API Resources should inherit from this object."""
 
@@ -356,7 +375,7 @@ class BaseModelResource(SchemaResourceABC):
                 field = schema.fields[key]
                 if field.load_only:
                     return False
-                elif isinstance(field, EmbeddableMixin):
+                elif isinstance(field, EmbeddableMixinABC):
                     schema.embed([key])
                     if hasattr(field, "schema"):
                         schema = field.schema
@@ -378,22 +397,16 @@ class BaseModelResource(SchemaResourceABC):
             dot notation for nested fields.
 
         """
+        # TODO - consider making this resource based
+        # calling child resource.convert_key_name
         schema = self.schema_cls(**self._get_schema_kwargs(self.schema_cls))
         split_keys = key.split(".")
         result_keys = []
         for key in split_keys:
-            field = None
-            if hasattr(schema, "fields_by_dump_to"):
-                if key in schema.fields_by_dump_to:
-                    field = schema.fields_by_dump_to[key]
-            else:
-                for field_name in schema.fields:
-                    if schema.fields[field_name].dump_to == key:
-                        field = schema.fields[field_name]
-                        break
+            field = get_field_by_dump_name(schema, key)
             if field is not None:
                 result_keys.append(field.name)
-                if isinstance(field, EmbeddableMixin):
+                if isinstance(field, EmbeddableMixinABC):
                     schema.embed([key])
                     if hasattr(field, "schema"):
                         schema = field.schema
@@ -440,15 +453,36 @@ class BaseModelResource(SchemaResourceABC):
         """
         self._context = val
 
+    @property
+    def query_builder(self):
+        """Returns a QueryBuilder object.
+
+        This exists mainly for inheritance purposes.
+
+        """
+        return QueryBuilder()
+
     def _get_schema_kwargs(self, schema_cls):
         """Get default kwargs for any new schema creation.
 
         :param schema_cls: The class of the schema being created.
 
         """
-        result = super(BaseModelResource, self)._get_schema_kwargs(schema_cls)
-        result["session"] = self.session
-        return result
+        return {
+            "context": self.context,
+            "session": self.session
+        }
+
+    def _get_resource_kwargs(self, resource_cls):
+        """Get default kwargs for any new resource creation.
+
+        :param resource_cls: The class of the resource being created.
+
+        """
+        return {
+            "context": self.context,
+            "session": self.session
+        }
 
     def _get_ident_filters(self, ident):
         """Generate MQLAlchemy filters using a resource identity.
@@ -461,7 +495,7 @@ class BaseModelResource(SchemaResourceABC):
         if not (isinstance(ident, tuple) or
                 isinstance(ident, list)):
             ident = (ident,)
-        schema = self.schema_cls(**self._get_schema_kwargs(self.schema_cls))
+        schema = self.make_schema()
         for i, field_name in enumerate(schema.id_keys):
             field = schema.fields.get(field_name)
             filter_name = field.dump_to or field_name
@@ -477,7 +511,7 @@ class BaseModelResource(SchemaResourceABC):
         """
         filters = self._get_ident_filters(ident)
         query = self.session.query(self.model)
-        query = apply_mql_filters(
+        query = self.query_builder.apply_filters(
             query,
             model_class=self.model,
             filters=filters,
@@ -485,6 +519,7 @@ class BaseModelResource(SchemaResourceABC):
             stack_size_limit=100,
             convert_key_names_func=self.convert_key_name,
             gettext=self.context.get("gettext", None))
+        query = self.apply_required_filters(query)
         return query.first()
 
     def _get_embed_info(self, embeds=None, strict=True):
@@ -515,13 +550,35 @@ class BaseModelResource(SchemaResourceABC):
                     if strict:
                         self.fail("invalid_embed", embed=embed)
                 elif converted_embed:
-                    # used so if a fields param is provied, embeds are
+                    # used so if a fields param is provided, embeds are
                     # still included.
+                    # e.g. albums?fields=album_id,tracks.track_id
+                    #             &embeds=tracks.title
+                    # tracks.title will get added to fields to include.
                     embed_fields.add(converted_embed.split(".")[0])
                 converted_embeds.append(converted_embed)
         elif embeds is not None and strict:
             self.fail("invalid_embeds", embeds=embeds)
         return converted_embeds, embed_name_mapping, embed_fields
+
+    def apply_required_filters(self, query, alias=None):
+        """Apply required filters on this query.
+
+        Does nothing by default, but can be usefully overridden if you
+        want to enforce certain filters on this resource. A simple
+        example would be a notifications resource where a filter
+        matching the currently logged in user is applied.
+
+        :param query: An already partially constructed sqlalchemy query.
+        :type query: :class:`~sqlalchemy.orm.query.Query`
+        :param alias: Can optionally be used if this resource is being
+            used as a subresource and an alias has been applied.
+        :type alias:
+        :return: A potentially modified query object.
+        :rtype: :class:`~sqlalchemy.orm.query.Query`
+
+        """
+        return query
 
     def _get_query(self, session, filters, embeds=None, strict=True):
         """Used to generate a query for this request.
@@ -563,7 +620,7 @@ class BaseModelResource(SchemaResourceABC):
                               embed=embed_name_mapping[converted_embed])
         # apply filters
         try:
-            query = apply_mql_filters(
+            query = self.query_builder.apply_filters(
                 query,
                 self.model,
                 filters=filters,
@@ -571,14 +628,14 @@ class BaseModelResource(SchemaResourceABC):
                 stack_size_limit=100,
                 convert_key_names_func=self.convert_key_name,
                 gettext=self.context.get("gettext", None))
-        except InvalidMQLException as ex:
+        except InvalidMQLException as exc:
             if strict:
-                self.fail("invalid_query", error=ex)
+                self.fail("invalid_filters", exc=exc)
         return query
 
-    def _get_schema(self, fields=None, embeds=None, partial=False,
+    def make_schema(self, fields=None, embeds=None, partial=False,
                     instance=None, strict=True):
-        """Used to generate a schema and query for this request.
+        """Used to generate a schema for this request.
 
         :param fields: Names of fields to be included in the result.
         :type fields: list or None
@@ -593,8 +650,7 @@ class BaseModelResource(SchemaResourceABC):
         :raise BadRequestError: Invalid fields or embeds will result
             in a raised exception if strict is `True`.
         :return: A schema with the supplied fields and embeds included.
-        :rtype: :class:`~drowsy.schema.ModelResourceSchema`,
-            :class:`~sqlalchemy.orm.query.Query`
+        :rtype: :class:`~drowsy.schema.ModelResourceSchema`
 
         """
         # parse embed information
@@ -640,6 +696,22 @@ class BaseModelResource(SchemaResourceABC):
                               embed=embed_name_mapping[converted_embed])
         return schema
 
+    def make_subresource(self, name):
+        """Given a subresource name, construct a subresource.
+
+        :param str name: Dumped name of field containing a subresource.
+        :raise ValueError: If the name given isn't a valid subresource.
+        :returns: A constructed :class:`~drowsy.resource.Resource`
+
+        """
+        field = get_field_by_dump_name(self.make_schema(), dump_name=name)
+        if isinstance(field, NestedRelated):
+            return field.resource_cls(
+                context=self.context,
+                session=self.session
+            )
+        raise ValueError
+
     def fail(self, key, errors=None, exc=None, **kwargs):
         """Raises an exception based on the ``key`` provided.
 
@@ -681,7 +753,10 @@ class BaseModelResource(SchemaResourceABC):
                 **kwargs)
         elif key == "invalid_filters":
             if isinstance(exc, InvalidMQLException):
-                message = str(exc)
+                if "subquery_key" in kwargs:
+                    message = kwargs["subquery_key"] + ": " + str(exc)
+                else:
+                    message = str(exc)
             else:
                 message = self._get_error_message(key, **kwargs)
             raise BadRequestError(
@@ -759,7 +834,7 @@ class BaseModelResource(SchemaResourceABC):
             ident = (ident,)
         if session is None:
             session = self.session
-        schema = self._get_schema(
+        schema = self.make_schema(
             fields=fields,
             embeds=embeds,
             strict=strict)
@@ -787,7 +862,7 @@ class BaseModelResource(SchemaResourceABC):
         :rtype: dict
 
         """
-        schema = self._get_schema(partial=False)
+        schema = self.make_schema(partial=False)
         instance, errors = schema.load(data, session=self.session)
         if errors:
             self.session.rollback()
@@ -816,7 +891,7 @@ class BaseModelResource(SchemaResourceABC):
         """
         obj = data
         instance = self._get_instance(ident)
-        schema = self._get_schema(
+        schema = self.make_schema(
             partial=False,
             instance=instance)
         instance, errors = schema.load(
@@ -847,7 +922,7 @@ class BaseModelResource(SchemaResourceABC):
         """
         obj = data
         instance = self._get_instance(ident)
-        schema = self._get_schema(
+        schema = self.make_schema(
             partial=True,
             instance=instance)
         instance, errors = schema.load(
@@ -919,7 +994,7 @@ class BaseModelResource(SchemaResourceABC):
             filters = {}
         if session is None:
             session = self.session
-        schema = self._get_schema(
+        schema = self.make_schema(
             fields=fields,
             embeds=embeds,
             strict=strict)
@@ -937,7 +1012,7 @@ class BaseModelResource(SchemaResourceABC):
                         else:
                             continue
                     try:
-                        query = apply_sorts(
+                        query = self.query_builder.apply_sorts(
                             query, [sort], self.convert_key_name)
                     except AttributeError:
                         if strict:
@@ -971,7 +1046,8 @@ class BaseModelResource(SchemaResourceABC):
                 else:
                     offset = 0
         try:
-            query = apply_offset_and_limit(query, offset, limit)
+            query = self.query_builder.apply_offset_and_limit(
+                query, offset, limit)
         except ValueError:
             self.fail("invalid_offset_limit",
                       offset=offset,
@@ -993,7 +1069,7 @@ class BaseModelResource(SchemaResourceABC):
         if not isinstance(data, list):
             self.fail("invalid_collection_input", data=data)
         for obj in data:
-            schema = self._get_schema(partial=False)
+            schema = self.make_schema(partial=False)
             instance, errors = schema.load(obj, self.session)
             if not errors:
                 self.session.add(instance)
@@ -1038,7 +1114,7 @@ class BaseModelResource(SchemaResourceABC):
         for obj in data:
             if obj.get("$op") == "add":
                 # basically a post
-                schema = self._get_schema(partial=False)
+                schema = self.make_schema(partial=False)
                 instance, errors = schema.load(obj, self.session)
                 if not errors:
                     self.session.add(instance)
@@ -1047,7 +1123,7 @@ class BaseModelResource(SchemaResourceABC):
                     self.fail("validation_failure", errors=errors)
             elif obj.get("$op") == "remove":
                 # basically a delete
-                schema = self._get_schema(partial=True)
+                schema = self.make_schema(partial=True)
                 instance, errors = schema.load(obj, self.session)
                 if not errors:
                     self.session.remove(instance)
@@ -1055,7 +1131,7 @@ class BaseModelResource(SchemaResourceABC):
                     self.session.rollback()
                     self.fail("validation_failure", errors=errors)
             else:
-                schema = self._get_schema(partial=True)
+                schema = self.make_schema(partial=True)
                 instance, errors = schema.load(obj, self.session)
                 if errors:
                     self.session.rollback()

@@ -41,3 +41,23 @@ def get_error_message(error_messages, key, gettext=None, **kwargs):
         else:
             return msg % kwargs
     return msg
+
+
+def get_field_by_dump_name(schema, dump_name):
+    """Helper method to get a field from schema by dump name.
+
+    :param schema: Instantiated schema.
+    :param dump_name: Name as the field as it was serialized.
+    :return: The schema field if found, None otherwise.
+
+    """
+    field = None
+    if hasattr(schema, "fields_by_dump_to"):
+        if dump_name in schema.fields_by_dump_to:
+            field = schema.fields_by_dump_to[dump_name]
+    else:
+        for field_name in schema.fields:
+            if schema.fields[field_name].dump_to == dump_name:
+                field = schema.fields[field_name]
+                break
+    return field
