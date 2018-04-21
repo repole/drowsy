@@ -18,7 +18,7 @@ from drowsy.exc import (
     UnprocessableEntityError, MethodNotAllowedError, OffsetLimitParseError,
     BadRequestError, ResourceNotFoundError)
 from drowsy.tests.resources import *
-from drowsy.parser import QueryParamParser
+from drowsy.parser import QueryParamParser, ModelQueryParamParser
 from drowsy.router import ModelResourceRouter
 import json
 import tempfile
@@ -277,7 +277,7 @@ class DrowsyTests(unittest.TestCase):
         }
         album_resource = AlbumResource(session=self.db_session)
         result = album_resource.get_collection(
-            filters=QueryParamParser(query_params).parse_filters(
+            filters=ModelQueryParamParser(query_params).parse_filters(
                 album_resource.model)
         )
         self.assertTrue(
@@ -300,7 +300,7 @@ class DrowsyTests(unittest.TestCase):
         }
         album_resource = AlbumResource(session=self.db_session)
         result = album_resource.get_collection(
-            filters=QueryParamParser(query_params).parse_filters(
+            filters=ModelQueryParamParser(query_params).parse_filters(
                 album_resource.model)
         )
         self.assertTrue(
@@ -313,7 +313,7 @@ class DrowsyTests(unittest.TestCase):
         query_params = {}
         album_resource = AlbumResource(session=self.db_session)
         result = album_resource.get_collection(
-            filters=QueryParamParser(query_params).parse_filters(
+            filters=ModelQueryParamParser(query_params).parse_filters(
                 album_resource.model)
         )
         self.assertTrue(len(result) == 347)
@@ -323,7 +323,7 @@ class DrowsyTests(unittest.TestCase):
         query_params = None
         album_resource = AlbumResource(session=self.db_session)
         result = album_resource.get_collection(
-            filters=QueryParamParser(query_params).parse_filters(
+            filters=ModelQueryParamParser(query_params).parse_filters(
                 album_resource.model)
         )
         self.assertTrue(len(result) == 347)
@@ -336,7 +336,7 @@ class DrowsyTests(unittest.TestCase):
         parser = QueryParamParser(query_params)
         album_resource = AlbumResource(session=self.db_session)
         result = album_resource.get_collection(
-            filters=parser.parse_filters(album_resource.model),
+            filters=None,
             sorts=parser.parse_sorts()
         )
         self.assertTrue(
@@ -352,7 +352,7 @@ class DrowsyTests(unittest.TestCase):
         parser = QueryParamParser(query_params)
         offset, limit = parser.parse_offset_limit(page_max_size=30)
         result = album_resource.get_collection(
-            filters=parser.parse_filters(album_resource.model),
+            filters=None,
             sorts=parser.parse_sorts(),
             limit=limit,
             offset=offset
@@ -371,7 +371,7 @@ class DrowsyTests(unittest.TestCase):
         album_resource = AlbumResource(session=self.db_session)
         offset, limit = parser.parse_offset_limit(page_max_size=30)
         result = album_resource.get_collection(
-            filters=parser.parse_filters(album_resource.model),
+            filters=None,
             sorts=parser.parse_sorts(),
             limit=limit,
             offset=offset
@@ -403,7 +403,7 @@ class DrowsyTests(unittest.TestCase):
         album_resource = AlbumResource(session=self.db_session)
         offset, limit = parser.parse_offset_limit(page_max_size=30)
         result = album_resource.get_collection(
-            filters=parser.parse_filters(album_resource.model),
+            filters=None,
             sorts=parser.parse_sorts(),
             limit=limit,
             offset=offset
@@ -426,7 +426,7 @@ class DrowsyTests(unittest.TestCase):
         album_resource = AlbumResource(session=self.db_session)
         offset, limit = parser.parse_offset_limit(page_max_size=30)
         result = album_resource.get_collection(
-            filters=parser.parse_filters(album_resource.model),
+            filters=None,
             sorts=parser.parse_sorts(),
             limit=limit,
             offset=offset

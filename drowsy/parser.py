@@ -4,11 +4,12 @@
 
     Functions for parsing query info from url parameters.
 
-    :copyright: (c) 2016 by Nicholas Repole and contributors.
+    :copyright: (c) 2018 by Nicholas Repole and contributors.
                 See AUTHORS for more details.
     :license: MIT - See LICENSE for more details.
 """
 from collections import namedtuple
+from marshmallow.compat import basestring
 from marshmallow.fields import MISSING_ERROR_MESSAGE
 from drowsy.utils import get_error_message
 from drowsy.exc import (
@@ -17,6 +18,39 @@ import json
 
 SortInfo = namedtuple('SortInfo', 'attr direction')
 OffsetLimitInfo = namedtuple('OffsetLimitInfo', "offset limit")
+
+
+class SubfilterInfo(object):
+
+    """Object used to transport info regarding subqueries around."""
+
+    def __init__(self, filters=None, offset_limit_info=None, sorts=None):
+        """Instantiates a SubfilterInfo object.
+        
+        :param filters: Filters to be applied.
+        :type filters: dict or None
+        :param offset_limit_info: Offset and/or limit to be applied.
+        :type offset_limit_info: OffsetLimitInfo or None
+        :param sorts: Any sorts that are to be applied.
+        :type sorts: list of SortInfo or None
+        
+        """
+        if not isinstance(filters, dict) and filters is not None:
+            raise ValueError("filters must be a dict or None.")
+        if not isinstance(offset_limit_info, OffsetLimitInfo) and (
+                offset_limit_info is not None):
+            raise ValueError(
+                "offset_limit_info must be an OffsetLimitInfo or None.")
+        if not isinstance(sorts, list) and sorts is not None:
+            raise ValueError("sort_info must be a SortInfo or None.")
+        self.filters = filters
+        if offset_limit_info is None:
+            self.offset = None
+            self.limit = None
+        else:
+            self.offset = offset_limit_info.offset
+            self.limit = offset_limit_info.limit
+        self.sorts = sorts
 
 
 class QueryParamParser(object):
@@ -35,14 +69,17 @@ class QueryParamParser(object):
         "invalid_offset_type": ("The offset provided (%(offset)s) can not be "
                                 "converted to an integer."),
         "invalid_complex_filters": ("The complex filters query value must be "
-                                    "set to a valid json dict.")
+                                    "set to a valid json dict."),
+        "invalid_subresource_path": ("The subresource path provided "
+                                     "(%(subresource_path)s) is not valid.")
     }
 
-    def __init__(self, query_params, error_messages=None, context=None):
+    def __init__(self, query_params=None, error_messages=None, context=None):
         """Sets up error messages, translations, and query params.
 
-        :param dict query_params: Query params potentially containing
+        :param query_params: Query params potentially containing
             filters, embeds, fields, and sorts.
+        :type query_params: dict or None
         :param error_messages: Optional dictionary of error messages,
             useful if you want to override the default errors.
         :type error_messages: dict or None
@@ -270,8 +307,192 @@ class QueryParamParser(object):
                 result.append(SortInfo(attr=attr_name, direction=direction))
         return result
 
+
+class ModelQueryParamParser(QueryParamParser):
+
+    """Param parser with added ability to parse MQLAlchemy filters."""
+
+    def parse_subfilters(self, subquery_name="_subquery_",
+                         sublimit_name="_limit_", suboffset_name="_offset_",
+                         suborder_by_name="_order_by_", strict=True):
+        """Parse subfilters for nested resources.
+        
+        Note that subquery parsing does limited checking on the 
+        validity of the subquery itself.
+        
+        Given a query param "album.artist._subquery_.tracks.track_id"
+        with value "5", the resulting subfilters returned would be:
+        
+        {"album.artist": SubfilterInfo(
+            filters={"$and": ["tracks.track_id": {"eq": 5}]})}
+
+        :param str subquery_name: The name of the key used to check
+            for a subquery value in the provided ``query_params``.
+        :param bool strict: If `True`, exceptions will be raised for
+            invalid input. Otherwise, invalid input will be ignored.
+        :raise FilterParseError: Malformed complex queries or
+            invalid ``query_params`` will result in an
+            :exc:`~drowsy.exc.FilterParseError` being raised if
+            ``strict`` is `True`.
+        :return: A dictionary containing subqueries that can be passed
+            to mqlalchemy for query filtering.
+        :rtype: dict of SubfilterInfo
+
+        """
+        # TODO - include logic for offset and order by
+        subqueries = {}
+        for key in self.query_params.keys():
+            value = self.query_params[key]
+            key_parts = key.split(".")
+            subquery_path_parts = []
+            sub_attr_path_parts = []
+            subitem_found = False
+            subitem_path = None
+            if key.find(subquery_name) > -1:
+                # walk down the subquery to see how it ends
+                while key_parts:
+                    key_part = key_parts.pop(0)
+                    if not key_part == subquery_name:
+                        if subitem_found:
+                            # Given key album.artist.subquery.tracks,
+                            # This portion of the code will eventually
+                            # produce ["tracks"]
+                            sub_attr_path_parts.append(key_part)
+                        else:
+                            # Given key album.artist.subquery.tracks,
+                            # This portion of the code will eventually
+                            # produce ["album", "artist"]
+                            subquery_path_parts.append(key_part)
+                    else:
+                        # This is officially a subquery
+                        # Create a subquery with a key equal
+                        # to the path leading up to this point.
+                        # Given key album.artist.subquery.tracks,
+                        # the resulting subquery key will be
+                        # "album.artist"
+                        subitem_path = ".".join(subquery_path_parts)
+                        if subqueries.get(subitem_path) is None:
+                            subqueries[subitem_path] = SubfilterInfo(
+                                filters={"$and": []}
+                            )
+                            subitem_found = True
+                # get an individual filter type object for the
+                # subquery child key. Given query param
+                # album.artist.$subquery.tracks.track_id = 5,
+                # the result will be {"tracks.track_id": {"eq": 5}}
+                item_filters = self._get_item_filter(
+                    attr_name=".".join(sub_attr_path_parts),
+                    value=value,
+                    strict=strict
+                )
+                # returns in list form to enable multiple filters
+                # for a single key
+                if subitem_path:
+                    for item in item_filters:
+                        subqueries[subitem_path].filters["$and"].append(item)
+            elif key.find(sublimit_name) > -1:
+                # This elif section, and the next few, follow the
+                # flow of the above. If anything is confusing, it's
+                # probably explained above.
+                try:
+                    limit = int(value)
+                except ValueError:
+                    if strict:
+                        self.fail("invalid_limit_type", limit=limit)
+                    break
+                while key_parts:
+                    key_part = key_parts.pop(0)
+                    if not key_part == sublimit_name:
+                        if subitem_found:
+                            sub_attr_path_parts.append(key_part)
+                        else:
+                            subquery_path_parts.append(key_part)
+                    else:
+                        if key_parts:
+                            if strict:
+                                self.fail(
+                                    "invalid_subresource_path",
+                                    subresource_path=key)
+                        else:
+                            subitem_path = ".".join(subquery_path_parts)
+                            if subqueries.get(subitem_path) is None:
+                                subqueries[subitem_path] = SubfilterInfo(
+                                    offset_limit_info=OffsetLimitInfo(
+                                        limit=limit
+                                    )
+                                )
+                                subitem_found = True
+                item_filters = self._get_item_filter(
+                    attr_name=".".join(sub_attr_path_parts),
+                    value=value,
+                    strict=strict
+                )
+                if subitem_path:
+                    for item in item_filters:
+                        subqueries[subitem_path].filters["$and"].append(item)
+        return subqueries
+
+    def _get_item_filter(self, attr_name, value, strict=True):
+        # how much to remove from end of key to get the attr_name.
+        # default values:
+        chop_len = 0
+        key = attr_name
+        comparator = "$eq"
+        if key.endswith("-gt"):
+            chop_len = 3
+            comparator = "$gt"
+        elif key.endswith("-gte"):
+            chop_len = 4
+            comparator = "$gte"
+        elif key.endswith("-eq"):
+            chop_len = 3
+            comparator = "$eq"
+        elif key.endswith("-lte"):
+            chop_len = 4
+            comparator = "$lte"
+        elif key.endswith("-lt"):
+            chop_len = 3
+            comparator = "$lt"
+        elif key.endswith("-ne"):
+            chop_len = 3
+            comparator = "$ne"
+        elif key.endswith("-like"):
+            chop_len = 5
+            comparator = "$like"
+        if chop_len != 0:
+            attr_name = key[:(-1 * chop_len)]
+        if not isinstance(value, list):
+            value = [value]
+        result = []
+        for item in value:
+            # TODO - When it's a root complex query, there's no attrname
+            # Need to figure out how to handle that
+            # TODO - Figure out what i'm talking about above...
+            if isinstance(item, basestring) and item.startswith("{"):
+                try:
+                    query = json.loads(item)
+                    if not isinstance(query, dict):
+                        raise ValueError()
+                    if attr_name:
+                        result.append(
+                            {attr_name: query})
+                    else:
+                        result.append(query)
+                except (TypeError, ValueError):
+                    if strict:
+                        self.fail("invalid_complex_filters")
+            else:
+                if attr_name:
+                    result.append(
+                        {attr_name: {comparator: item}})
+                else:
+                    self.fail("invalid_complex_filters")
+        return result
+
     def parse_filters(self, model_class, complex_query_name="query",
                       only_parse_complex=False, convert_key_names_func=str,
+                      subquery_name="_subquery_", sublimit_name="_limit_",
+                      suboffset_name="_offset_", suborder_by_name="_order_by_",
                       strict=True):
         """Convert request params into MQLAlchemy friendly search.
 
@@ -291,11 +512,27 @@ class QueryParamParser(object):
             to the naming format used for your model objects (likely
             underscore).
         :type convert_key_names_func: callable or None
+        :param subquery_name: Query param name used to trigger a 
+            subquery. Query params that include this name will be 
+            ignored.
+        :type subquery_name: str or None
+        :param sublimit_name: Query param name used to trigger a 
+            subquery resource limit. Query params that include this 
+            name will be ignored.
+        :type sublimit_name: str or None
+        :param suboffset_name: Query param name used to trigger a 
+            subquery resource offset. Query params that include this 
+            name will be ignored.
+        :type suboffset_name: str or None
+        :param suborder_by_name: Query param name used to trigger a 
+            subquery sort. Query params that include this name will be 
+            ignored.
+        :type suborder_by_name: str or None
         :param bool strict: If `True`, exceptions will be raised for
             invalid input. Otherwise, invalid input will be ignored.
-        :raise InvalidMQLException: Malformed complex queries or
+        :raise FilterParseError: Malformed complex queries or
             invalid ``query_params`` will result in an
-            :exc:`~mqlalchemy.InvalidMQLException` being raised if
+            :exc:`~drowsy.exc.FilterParseError` being raised if
             ``strict`` is `True`.
         :return: A dictionary containing filters that can be passed
             to mqlalchemy for query filtering.
@@ -306,6 +543,11 @@ class QueryParamParser(object):
         # attribute.
         result = {"$and": []}
         for key in self.query_params.keys():
+            if (subquery_name in key or
+                    sublimit_name in key or
+                    suboffset_name in key or
+                    suborder_by_name in key):
+                continue
             if key == complex_query_name:
                 complex_query_list = []
                 if isinstance(self.query_params[key], list):
@@ -324,32 +566,12 @@ class QueryParamParser(object):
             elif not only_parse_complex:
                 # how much to remove from end of key to get the attr_name.
                 # default values:
-                chop_len = 0
-                attr_name = key
-                comparator = "$eq"
-                if key.endswith("-gt"):
-                    chop_len = 3
-                    comparator = "$gt"
-                elif key.endswith("-gte"):
-                    chop_len = 4
-                    comparator = "$gte"
-                elif key.endswith("-eq"):
-                    chop_len = 3
-                    comparator = "$eq"
-                elif key.endswith("-lte"):
-                    chop_len = 4
-                    comparator = "$lte"
-                elif key.endswith("-lt"):
-                    chop_len = 3
-                    comparator = "$lt"
-                elif key.endswith("-ne"):
-                    chop_len = 3
-                    comparator = "$ne"
-                elif key.endswith("-like"):
-                    chop_len = 5
-                    comparator = "$like"
-                if chop_len != 0:
-                    attr_name = key[:(-1 * chop_len)]
+                value = self.query_params[key]
+                item_filters = self._get_item_filter(attr_name=key, value=value)
+                try:
+                    attr_name = list(item_filters[0].keys())[0]  # TODO - verify this
+                except IndexError:
+                    self.fail("invalid_complex_filters")  # TODO - better fail
                 attr_check = None
                 try:
                     c_attr_name = convert_key_names_func(attr_name)
@@ -363,14 +585,8 @@ class QueryParamParser(object):
                     attr_check = None
                 if attr_check is not None and hasattr(model_class, attr_check):
                     # ignore any top level invalid params
-                    value = self.query_params[key]
-                    if isinstance(value, list):
-                        for item in value:
-                            result["$and"].append(
-                                {attr_name: {comparator: item}})
-                    else:
-                        result["$and"].append(
-                            {attr_name: {comparator: value}})
+                    for item in item_filters:
+                        result["$and"].append(item)
         if len(result["$and"]) == 0:
             return {}
         return result

@@ -7,14 +7,14 @@
     Work in progress, should not be used as anything other than
     a proof of concept at this point.
 
-    :copyright: (c) 2016 by Nicholas Repole and contributors.
+    :copyright: (c) 2018 by Nicholas Repole and contributors.
                 See AUTHORS for more details.
     :license: MIT - See LICENSE for more details.
 """
 import inflection
 from marshmallow.fields import MISSING_ERROR_MESSAGE, Field, Nested
 from mqlalchemy import convert_to_alchemy_type
-from drowsy.parser import QueryParamParser
+from drowsy.parser import ModelQueryParamParser
 from drowsy.exc import (
     BadRequestError, OffsetLimitParseError, FilterParseError,
     ResourceNotFoundError, UnprocessableEntityError, MethodNotAllowedError)
@@ -846,7 +846,7 @@ class ModelResourceRouter(ResourceRouterABC):
         ident = path_objs.get("ident", None)
         if resource is None:
             self.fail("resource_not_found", path=path)
-        parser = QueryParamParser(query_params, context=self.context)
+        parser = ModelQueryParamParser(query_params, context=self.context)
         fields = parser.parse_fields()
         embeds = parser.parse_embeds()
         # last path_part determines what type of request this is
@@ -937,7 +937,7 @@ class ModelResourceRouter(ResourceRouterABC):
         ident = path_objs.get("ident", None)
         if resource is None:
             self.fail("resource_not_found", path=path)
-        parser = QueryParamParser(query_params, context=self.context)
+        parser = ModelQueryParamParser(query_params, context=self.context)
         # last path_part determines what type of request this is
         if isinstance(path_part, Field) and not hasattr(
                 path_part, "resource_cls"):
