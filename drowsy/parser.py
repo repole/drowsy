@@ -4,20 +4,54 @@
 
     Functions for parsing query info from url parameters.
 
-    :copyright: (c) 2018 by Nicholas Repole and contributors.
+    :copyright: (c) 2016-2018 by Nicholas Repole and contributors.
                 See AUTHORS for more details.
     :license: MIT - See LICENSE for more details.
 """
-from collections import namedtuple
 from marshmallow.compat import basestring
 from marshmallow.fields import MISSING_ERROR_MESSAGE
 from drowsy.utils import get_error_message
 from drowsy.exc import (
-    DrowsyError, FilterParseError, OffsetLimitParseError)
+    ParseError, FilterParseError, OffsetLimitParseError)
 import json
 
-SortInfo = namedtuple('SortInfo', 'attr direction')
-OffsetLimitInfo = namedtuple('OffsetLimitInfo', "offset limit")
+
+class SortInfo(object):
+    """Used to transport info regarding sorts around."""
+
+    def __init__(self, attr=None, direction=None):
+        """Instantiates a SortInfo object.
+
+        :param str attr: Name of the attr to be sorted on.
+        :param str direction: Must be ASC or DESC.
+
+        """
+        if not isinstance(attr, basestring):
+            raise ValueError("attr must be a string.")
+        if direction != "DESC" and direction != "ASC":
+            raise ValueError("direction must be ASC or DESC.")
+        self.attr = attr
+        self.direction = direction
+
+
+class OffsetLimitInfo(object):
+    """Used to transport info regarding offsets and limits around."""
+
+    def __init__(self, offset=None, limit=None):
+        """Instantiates a OffsetLimitInfo object.
+
+        :param offset: Offset to be applied.
+        :type offset: int or None
+        :param limit: Limit to be applied.
+        :type limit: int or None
+
+        """
+        if not isinstance(offset, int) and offset is not None:
+            raise ValueError("offset must be an int or None.")
+        if not isinstance(limit, int) and limit is not None:
+            raise ValueError("limit must be an int or None.")
+        self.offset = offset
+        self.limit = limit
 
 
 class SubfilterInfo(object):
@@ -60,6 +94,9 @@ class QueryParamParser(object):
     default_error_messages = {
         "invalid_limit_type": ("The limit provided (%(limit)s) can not be "
                                "converted to an integer."),
+        "invalid_sublimit_type": ("The limit (%(limit)s) provided for the "
+                                  "subresource (%(subresource)s) can not be "
+                                  "converted to an integer."),
         "limit_too_high": ("The limit provided (%(limit)d) is greater than "
                            "the max page size allowed (%(max_page_size)d)."),
         "invalid_page_type": ("The page value provided (%(page)s) can not be "
@@ -68,8 +105,15 @@ class QueryParamParser(object):
         "page_negative": "Page number can not be less than 1.",
         "invalid_offset_type": ("The offset provided (%(offset)s) can not be "
                                 "converted to an integer."),
-        "invalid_complex_filters": ("The complex filters query value must be "
-                                    "set to a valid json dict."),
+        "invalid_suboffset_type": ("The offset (%(offset)s) provided for the "
+                                   "subresource (%(subresource)s) can not be "
+                                   "converted to an integer."),
+        "invalid_subsorts_type": ("The sorts provided (%(sort)s) for the "
+                                  "subresource (%(subresource)s) are not "
+                                  "valid."),
+        "invalid_complex_filters": ("The complex filters query value for "
+                                    "%(qparam)s must be set to a valid json "
+                                    "dict."),
         "invalid_subresource_path": ("The subresource path provided "
                                      "(%(subresource_path)s) is not valid.")
     }
@@ -103,7 +147,11 @@ class QueryParamParser(object):
 
     @property
     def context(self):
-        """Return the context for this request."""
+        """Return the context for this request.
+
+        :rtype: dict, callable, or None
+
+        """
         if callable(self._context):
             return self._context()
         else:
@@ -125,14 +173,17 @@ class QueryParamParser(object):
         :param str key: Failure type, used to choose an error message.
         :param kwargs: Any additional arguments that may be used for
             generating an error message.
+        :raise FilterParseError: Raised in cases where there was an
+            issue parsing a filter.
         :raise OffsetLimitParseError: Raised in cases where there was
             an issue parsing the offset, limit, or page value.
-        :raise DrowsyError: Raised in all other cases.
+        :raise ParseError: Raised in all other cases.
 
         """
         offset_limit_parse_keys = {
             "invalid_limit_type", "limit_too_high", "invalid_offset_type",
-            "invalid_page_type", "page_no_max", "page_negative"}
+            "invalid_page_type", "page_no_max", "page_negative",
+            "invalid_sublimit_type", "invalid_suboffset_type"}
         if key in offset_limit_parse_keys:
             raise OffsetLimitParseError(
                 code=key,
@@ -144,10 +195,33 @@ class QueryParamParser(object):
                 message=self._get_error_message(key, **kwargs),
                 **kwargs)
         else:
-            raise DrowsyError(
+            raise ParseError(
                 code=key,
                 message=self._get_error_message(key, **kwargs),
                 **kwargs)
+
+    def _parse_sorts_helper(self, sorts):
+        """Reusable code for parsing sorts from a string.
+
+        :param sorts: A comma split string with attrnames and
+            sort directions as + or -. If neither + or - is
+            provided, ASC is assumed.
+            As an example, sorts might look like:
+            "artist.name+,album.name-".
+        :return: A list of sorts to be applied to a result.
+        :rtype: list of :class:`SortInfo`
+
+        """
+        result = []
+        split_sorts = sorts.split(",")
+        for sort in split_sorts:
+            direction = "ASC"
+            attr_name = sort
+            if sort.startswith("-"):
+                attr_name = sort[1:]
+                direction = "DESC"
+            result.append(SortInfo(attr=attr_name, direction=direction))
+        return result
 
     def _get_error_message(self, key, **kwargs):
         """Get an error message based on a key name.
@@ -164,6 +238,10 @@ class QueryParamParser(object):
         :param dict kwargs: Any additional arguments that may be passed
             to a callable error message, or used to translate and/or
             format an error message string.
+        :raise AssertionError: When the ``self.error_message`` dict
+            does not contain the provided ``key``.
+        :return: An error message
+        :rtype: str
 
         """
         try:
@@ -254,15 +332,13 @@ class QueryParamParser(object):
             except ValueError:
                 self.fail("invalid_page_type", page=page)
             if page > 1 and page_max_size is None and limit is None:
+                page = None
                 if strict:
                     self.fail("page_no_max")
-                else:
-                    page = None
             if page < 1:
+                page = None
                 if strict:
                     self.fail("page_negative")
-                else:
-                    page = None
         # defaults
         offset = 0
         if offset_query_name is not None:
@@ -274,11 +350,11 @@ class QueryParamParser(object):
                         self.fail("invalid_offset_type", offset=offset)
         if page_max_size and limit > page_max_size:
             # make sure an excessively high limit can't be set
+            limit = page_max_size
             if strict:
                 self.fail("limit_too_high",
                           limit=limit,
                           max_page_size=page_max_size)
-            limit = page_max_size
         if page is not None and page > 1:
             if limit is not None and page_max_size is None:
                 page_max_size = limit
@@ -294,28 +370,85 @@ class QueryParamParser(object):
         :rtype: list of :class:`SortInfo`
 
         """
-        result = []
         if sort_query_name in self.query_params:
-            sort_string = self.query_params[sort_query_name]
-            split_sorts = sort_string.split(",")
-            for sort in split_sorts:
-                direction = "ASC"
-                attr_name = sort
-                if sort.startswith("-"):
-                    attr_name = sort[1:]
-                    direction = "DESC"
-                result.append(SortInfo(attr=attr_name, direction=direction))
-        return result
+            return self._parse_sorts_helper(self.query_params[sort_query_name])
+        return []
 
 
 class ModelQueryParamParser(QueryParamParser):
 
     """Param parser with added ability to parse MQLAlchemy filters."""
 
+    def _parser_helper(self, parse_type, subqueries, key, key_parts, key_value,
+                       subkey_name, strict=True):
+        """Used to help parse offset, limit, and sorts.
+
+        The logic is overwhelmingly similar, so rather than repeat
+        code, it's broken out into this helper function.
+
+        :param str parse_type: Can be one of three values:
+            ``"limit"``, ``"offset"``, or ``"sorts"``.
+        :param dict subqueries: Holds :class:`SubfilterInfo` in a dict
+            where each key is a resource path.
+        :param str key: The name of this query parameter, for example:
+            ``tracks.playlists._limit_``
+        :param list key_parts: The above key split into a list by ``.``.
+        :param key_value: The value of the query parameter for the
+            provided key.
+        :param str subkey_name: The name of the portion of the key
+            that we're searching for. By default, this can be
+            ``"_limit_"``, ``"_offset_"``, or ``"_sorts_"``.
+        :param bool strict: If `True`, exceptions will be raised for
+            invalid input. Otherwise, invalid input will be ignored.
+        :raise OffsetLimitParseError: Raised in cases where there was
+            an issue parsing an offset or limit if ``strict`` is `True`.
+        :raise DrowsyError: An invalid ``key_value`` or ``key``
+            will result in an :exc:`~drowsy.exc.FilterParseError` being
+            raised if ``strict`` is `True`.
+        :return: None, but the subqueries parameter may be modified.
+        :rtype: None
+
+        """
+        subquery_path_parts = []
+        value = key_value
+        try:
+            if parse_type == "limit" or parse_type == "offset":
+                value = int(key_value)
+            elif parse_type == "sorts":
+                value = self._parse_sorts_helper(key_value)
+        except ValueError:
+            if strict:
+                code = "invalid_sub" + parse_type + "_type"
+                kwargs = {
+                    parse_type: key_value,
+                    "subresource": key
+                }
+                self.fail(code, **kwargs)
+            return
+        while key_parts:
+            key_part = key_parts.pop(0)
+            if not key_part == subkey_name:
+                subquery_path_parts.append(key_part)
+            else:
+                if key_parts:
+                    if strict:
+                        self.fail(
+                            "invalid_subresource_path",
+                            subresource_path=key)
+                    else:
+                        break
+                else:
+                    subitem_path = ".".join(subquery_path_parts)
+                    if not isinstance(
+                            subqueries.get(subitem_path),
+                            SubfilterInfo):
+                        subqueries[subitem_path] = SubfilterInfo()
+                    setattr(subqueries[subitem_path], parse_type, value)
+
     def parse_subfilters(self, subquery_name="_subquery_",
                          sublimit_name="_limit_", suboffset_name="_offset_",
-                         suborder_by_name="_order_by_", strict=True):
-        """Parse subfilters for nested resources.
+                         subsorts_name="_sorts_", strict=True):
+        """Parse nested resource subfilters, limits, offsets, and sorts.
         
         Note that subquery parsing does limited checking on the 
         validity of the subquery itself.
@@ -328,6 +461,12 @@ class ModelQueryParamParser(QueryParamParser):
 
         :param str subquery_name: The name of the key used to check
             for a subquery value in the provided ``query_params``.
+        :param str sublimit_name: The name of the key used to check
+            for a sublimit value in the provided ``query_params``.
+        :param str suboffset_name: The name of the key used to check
+            for a suboffset value in the provided ``query_params``.
+        :param str subsorts_name: The name of the key used to check
+            for a subsorts value in the provided ``query_params``.
         :param bool strict: If `True`, exceptions will be raised for
             invalid input. Otherwise, invalid input will be ignored.
         :raise FilterParseError: Malformed complex queries or
@@ -336,10 +475,9 @@ class ModelQueryParamParser(QueryParamParser):
             ``strict`` is `True`.
         :return: A dictionary containing subqueries that can be passed
             to mqlalchemy for query filtering.
-        :rtype: dict of SubfilterInfo
+        :rtype: dict of str, SubfilterInfo
 
         """
-        # TODO - include logic for offset and order by
         subqueries = {}
         for key in self.query_params.keys():
             value = self.query_params[key]
@@ -390,49 +528,54 @@ class ModelQueryParamParser(QueryParamParser):
                 if subitem_path:
                     for item in item_filters:
                         subqueries[subitem_path].filters["$and"].append(item)
-            elif key.find(sublimit_name) > -1:
-                # This elif section, and the next few, follow the
-                # flow of the above. If anything is confusing, it's
-                # probably explained above.
-                try:
-                    limit = int(value)
-                except ValueError:
-                    if strict:
-                        self.fail("invalid_limit_type", limit=limit)
-                    break
-                while key_parts:
-                    key_part = key_parts.pop(0)
-                    if not key_part == sublimit_name:
-                        if subitem_found:
-                            sub_attr_path_parts.append(key_part)
-                        else:
-                            subquery_path_parts.append(key_part)
-                    else:
-                        if key_parts:
-                            if strict:
-                                self.fail(
-                                    "invalid_subresource_path",
-                                    subresource_path=key)
-                        else:
-                            subitem_path = ".".join(subquery_path_parts)
-                            if subqueries.get(subitem_path) is None:
-                                subqueries[subitem_path] = SubfilterInfo(
-                                    offset_limit_info=OffsetLimitInfo(
-                                        limit=limit
-                                    )
-                                )
-                                subitem_found = True
-                item_filters = self._get_item_filter(
-                    attr_name=".".join(sub_attr_path_parts),
-                    value=value,
+            elif key.find(suboffset_name) > -1:
+                self._parser_helper(
+                    parse_type="offset",
+                    subqueries=subqueries,
+                    key=key,
+                    key_parts=key_parts,
+                    key_value=value,
+                    subkey_name=suboffset_name,
                     strict=strict
                 )
-                if subitem_path:
-                    for item in item_filters:
-                        subqueries[subitem_path].filters["$and"].append(item)
+            elif key.find(sublimit_name) > -1:
+                self._parser_helper(
+                    parse_type="limit",
+                    subqueries=subqueries,
+                    key=key,
+                    key_parts=key_parts,
+                    key_value=value,
+                    subkey_name=sublimit_name,
+                    strict=strict
+                )
+            elif key.find(subsorts_name) > -1:
+                self._parser_helper(
+                    parse_type="sorts",
+                    subqueries=subqueries,
+                    key=key,
+                    key_parts=key_parts,
+                    key_value=value,
+                    subkey_name=subsorts_name,
+                    strict=strict
+                )
         return subqueries
 
     def _get_item_filter(self, attr_name, value, strict=True):
+        """Parse query param into a set of filters as dictionaries.
+
+        :param str attr_name: The name of the query param to parse.
+        :param value: The value of that query param.
+        :type value: str or list of str
+        :param bool strict: If `True`, exceptions will be raised for
+            invalid input. Otherwise, invalid input will be ignored.
+        :raise FilterParseError: Malformed complex queries or
+            invalid ``query_params`` will result in an
+            :exc:`~drowsy.exc.FilterParseError` being raised if
+            ``strict`` is `True`.
+        :return: List of filters as dictionaries.
+        :rtype: list of dict
+
+        """
         # how much to remove from end of key to get the attr_name.
         # default values:
         chop_len = 0
@@ -465,14 +608,9 @@ class ModelQueryParamParser(QueryParamParser):
             value = [value]
         result = []
         for item in value:
-            # TODO - When it's a root complex query, there's no attrname
-            # Need to figure out how to handle that
-            # TODO - Figure out what i'm talking about above...
             if isinstance(item, basestring) and item.startswith("{"):
                 try:
                     query = json.loads(item)
-                    if not isinstance(query, dict):
-                        raise ValueError()
                     if attr_name:
                         result.append(
                             {attr_name: query})
@@ -480,19 +618,19 @@ class ModelQueryParamParser(QueryParamParser):
                         result.append(query)
                 except (TypeError, ValueError):
                     if strict:
-                        self.fail("invalid_complex_filters")
+                        self.fail("invalid_complex_filters", qparam=attr_name)
             else:
                 if attr_name:
                     result.append(
                         {attr_name: {comparator: item}})
                 else:
-                    self.fail("invalid_complex_filters")
+                    self.fail("invalid_complex_filters", qparam=attr_name)
         return result
 
     def parse_filters(self, model_class, complex_query_name="query",
                       only_parse_complex=False, convert_key_names_func=str,
                       subquery_name="_subquery_", sublimit_name="_limit_",
-                      suboffset_name="_offset_", suborder_by_name="_order_by_",
+                      suboffset_name="_offset_", subsorts_name="_sorts_",
                       strict=True):
         """Convert request params into MQLAlchemy friendly search.
 
@@ -524,10 +662,10 @@ class ModelQueryParamParser(QueryParamParser):
             subquery resource offset. Query params that include this 
             name will be ignored.
         :type suboffset_name: str or None
-        :param suborder_by_name: Query param name used to trigger a 
+        :param subsorts_name: Query param name used to trigger a
             subquery sort. Query params that include this name will be 
             ignored.
-        :type suborder_by_name: str or None
+        :type subsorts_name: str or None
         :param bool strict: If `True`, exceptions will be raised for
             invalid input. Otherwise, invalid input will be ignored.
         :raise FilterParseError: Malformed complex queries or
@@ -546,7 +684,7 @@ class ModelQueryParamParser(QueryParamParser):
             if (subquery_name in key or
                     sublimit_name in key or
                     suboffset_name in key or
-                    suborder_by_name in key):
+                    subsorts_name in key):
                 continue
             if key == complex_query_name:
                 complex_query_list = []
@@ -562,16 +700,14 @@ class ModelQueryParamParser(QueryParamParser):
                         result["$and"].append(query)
                     except (TypeError, ValueError):
                         if strict:
-                            self.fail("invalid_complex_filters")
+                            self.fail("invalid_complex_filters", qparam=key)
             elif not only_parse_complex:
                 # how much to remove from end of key to get the attr_name.
                 # default values:
                 value = self.query_params[key]
-                item_filters = self._get_item_filter(attr_name=key, value=value)
-                try:
-                    attr_name = list(item_filters[0].keys())[0]  # TODO - verify this
-                except IndexError:
-                    self.fail("invalid_complex_filters")  # TODO - better fail
+                item_filters = self._get_item_filter(attr_name=key,
+                                                     value=value)
+                attr_name = list(item_filters[0].keys())[0]
                 attr_check = None
                 try:
                     c_attr_name = convert_key_names_func(attr_name)
@@ -579,11 +715,9 @@ class ModelQueryParamParser(QueryParamParser):
                         attr_check = c_attr_name.split(".")
                         if attr_check:
                             attr_check = attr_check[0]
-                        else:
-                            attr_check = None
                 except AttributeError:
                     attr_check = None
-                if attr_check is not None and hasattr(model_class, attr_check):
+                if attr_check and hasattr(model_class, attr_check):
                     # ignore any top level invalid params
                     for item in item_filters:
                         result["$and"].append(item)

@@ -4,11 +4,11 @@
 
     Schemas used for test purposes.
 
-    :copyright: (c) 2016 by Nicholas Repole and contributors.
+    :copyright: (c) 2016-2018 by Nicholas Repole and contributors.
                 See AUTHORS for more details.
     :license: MIT - See LICENSE for more details.
 """
-from mqlalchemy.tests.models import *
+from drowsy.tests.models import *
 from drowsy.schema import ModelResourceSchema
 
 

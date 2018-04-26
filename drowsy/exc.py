@@ -4,7 +4,7 @@
 
     Exceptions for Drowsy.
 
-    :copyright: (c) 2016 by Nicholas Repole and contributors.
+    :copyright: (c) 2016-2018 by Nicholas Repole and contributors.
                 See AUTHORS for more details.
     :license: MIT - See LICENSE for more details.
 """
@@ -67,15 +67,23 @@ class ResourceNotFoundError(DrowsyError):
     pass
 
 
-class OffsetLimitParseError(DrowsyError):
+class ParseError(DrowsyError):
+
+    """Generic exception class for parsing errors."""
+
+    pass
+
+
+class OffsetLimitParseError(ParseError):
 
     """Generic exception class for offset or limit parsing errors."""
 
     pass
 
 
-class FilterParseError(DrowsyError):
+class FilterParseError(ParseError):
 
     """Generic exception class for filter parsing errors."""
 
     pass
+

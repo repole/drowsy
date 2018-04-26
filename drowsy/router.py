@@ -7,7 +7,7 @@
     Work in progress, should not be used as anything other than
     a proof of concept at this point.
 
-    :copyright: (c) 2018 by Nicholas Repole and contributors.
+    :copyright: (c) 2016-2018 by Nicholas Repole and contributors.
                 See AUTHORS for more details.
     :license: MIT - See LICENSE for more details.
 """
@@ -869,8 +869,10 @@ class ModelResourceRouter(ResourceRouterABC):
             # any non subresource field would already have been handled
             if not (isinstance(path_part, Nested) and not path_part.many):
                 try:
-                    offset, limit = parser.parse_offset_limit(
+                    offset_limit_info = parser.parse_offset_limit(
                         resource.page_max_size)
+                    offset = offset_limit_info.offset
+                    limit = offset_limit_info.limit
                     filters = parser.parse_filters(
                         resource.model,
                         convert_key_names_func=resource.convert_key_name)

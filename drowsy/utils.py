@@ -4,7 +4,7 @@
 
     Utility functions for Drowsy.
 
-    :copyright: (c) 2016 by Nicholas Repole and contributors.
+    :copyright: (c) 2016-2018 by Nicholas Repole and contributors.
                 See AUTHORS for more details.
     :license: MIT - See LICENSE for more details.
 """
@@ -31,6 +31,8 @@ def get_error_message(error_messages, key, gettext=None, **kwargs):
     :param dict kwargs: Any additional arguments that may be passed
         to a callable error message, or used to translate and/or
         format an error message string.
+    :return: An error message with the supplied kwargs injected.
+    :rtype: str
 
     """
     error = error_messages[key]
