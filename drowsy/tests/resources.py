@@ -60,3 +60,13 @@ class TrackResource(ModelResource):
 class ArtistResource(ModelResource):
     class Meta:
         schema_cls = ArtistSchema
+
+
+class Node(ModelResource):
+    class Meta:
+        schema_cls = NodeSchema
+
+
+class CompositeNode(ModelResource):
+    class Meta:
+        schema_cls = CompositeNodeSchema

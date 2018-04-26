@@ -60,3 +60,13 @@ class AlbumSchema(ModelResourceSchema):
 class ArtistSchema(ModelResourceSchema):
     class Meta:
         model = Artist
+
+
+class NodeSchema(ModelResourceSchema):
+    class Meta:
+        model = Node
+
+
+class CompositeNodeSchema(ModelResourceSchema):
+    class Meta:
+        model = CompositeNode
