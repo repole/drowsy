@@ -10,10 +10,10 @@
     :license: MIT - See LICENSE for more details.
 """
 from sqlalchemy import Column, DateTime, ForeignKey, Integer, Numeric, \
-    Table, Unicode
-from sqlalchemy import orm
-from sqlalchemy.sql.sqltypes import NullType
+    Table, Unicode, orm, and_
 from sqlalchemy.ext.declarative import declarative_base
+from sqlalchemy.schema import ForeignKeyConstraint
+from sqlalchemy.sql.sqltypes import NullType
 
 
 Base = declarative_base()
@@ -205,6 +205,85 @@ class Track(Base):
     album = orm.relationship('Album', backref="tracks")
     genre = orm.relationship('Genre')
     media_type = orm.relationship('MediaType')
+
+
+t_CompositeNodeToCompositeNode = Table(
+    'CompositeNodeToCompositeNode', metadata,
+    Column(
+        'NodeId',
+        primary_key=True,
+        nullable=False),
+    Column(
+        'CompositeId',
+        primary_key=True,
+        nullable=False),
+    Column(
+        'ChildNodeId',
+        primary_key=True,
+        nullable=False),
+    Column(
+        'ChildCompositeId',
+        primary_key=True,
+        nullable=False),
+    ForeignKeyConstraint(
+        ['NodeId', 'CompositeId'],
+        ['CompositeNode.NodeId', 'CompositeNode.CompositeId']),
+    ForeignKeyConstraint(
+        ['ChildNodeId', 'ChildCompositeId'],
+        ['CompositeNode.NodeId', 'CompositeNode.CompositeId'])
+)
+
+
+t_NodeToNode = Table(
+    'NodeToNode', metadata,
+    Column(
+        'NodeId',
+        ForeignKey('Node.NodeId'),
+        primary_key=True,
+        nullable=False),
+    Column(
+        'ChildNodeId',
+        ForeignKey('Node.NodeId'),
+        primary_key=True,
+        nullable=False)
+)
+
+
+class Node(Base):
+
+    """SQLAlchemy model for the Node table in our database."""
+
+    __tablename__ = 'Node'
+
+    node_id = Column("NodeId", Integer, primary_key=True)
+
+    children = orm.relationship(
+        'Node',
+        secondary=t_NodeToNode,
+        primaryjoin=node_id == t_NodeToNode.c.ChildNodeId,
+        secondaryjoin=node_id == t_NodeToNode.c.NodeId,
+        backref="parents")
+
+
+class CompositeNode(Base):
+
+    """SQLAlchemy model for the CompositeNode table in our database."""
+
+    __tablename__ = 'CompositeNode'
+
+    node_id = Column("NodeId", Integer, primary_key=True)
+    composite_id = Column("CompositeId", Integer, primary_key=True)
+
+    children = orm.relationship(
+        'CompositeNode',
+        secondary=t_CompositeNodeToCompositeNode,
+        primaryjoin=and_(
+            t_CompositeNodeToCompositeNode.c.ChildNodeId == node_id,
+            t_CompositeNodeToCompositeNode.c.ChildCompositeId == composite_id),
+        secondaryjoin=and_(
+            t_CompositeNodeToCompositeNode.c.NodeId == node_id,
+            t_CompositeNodeToCompositeNode.c.CompositeId == composite_id),
+        backref="parents")
 
 
 t_sqlite_sequence = Table(
