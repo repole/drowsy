@@ -122,7 +122,7 @@ class Invoice(Base):
     billing_postal_code = Column("BillingPostalCode", Unicode(10))
     total = Column("Total", Numeric(10, 2), nullable=False)
 
-    customer = orm.relationship('Customer')
+    customer = orm.relationship('Customer', backref="invoices")
 
 
 class InvoiceLine(Base):

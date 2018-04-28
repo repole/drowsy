@@ -136,8 +136,8 @@ class SchemaResourceABC(ResourceABC):
         """
         raise NotImplementedError
 
-    def make_schema(self, fields=None, embeds=None, partial=False, 
-                    instance=None, strict=True):
+    def make_schema(self, fields=None, subfilters=None, embeds=None,
+                    partial=False, instance=None, strict=True):
         """Used to generate a schema for this request.
 
         :param fields: Names of fields to be included in the result.
@@ -184,6 +184,10 @@ class ModelResourceOpts(object):
     to override some or all of the default error messages for a
     resource.
 
+    A ``page_max_size`` option may be provided as an `int`, `callable`,
+    or `None` to specify default page size for this resource. If given
+    a `callable`, it should the resource itself as an argument.
+
     Example usage:
 
     .. code-block:: python
@@ -194,6 +198,7 @@ class ModelResourceOpts(object):
                 error_messages = {
                     "validation_failure": "Fix your data."
                 }
+                page_max_size = 100
 
     """
 
@@ -206,6 +211,7 @@ class ModelResourceOpts(object):
         """
         self.schema_cls = getattr(meta, "schema_cls", None)
         self.error_messages = getattr(meta, "error_messages", None)
+        self.page_max_size = getattr(meta, "page_max_size", None)
 
 
 class ModelResourceMeta(type):
@@ -287,8 +293,21 @@ class BaseModelResource(SchemaResourceABC, NestableResourceABC):
         "invalid_offset_limit": ("The provided offset (%(offset)s) and limit "
                                  "(%(limit)s) are invalid."),
         "method_not_allowed": ("The method (%(method)s) used to make this "
-                               "request is not allowed for this resource.")
-
+                               "request is not allowed for this resource."),
+        "invalid_subresource_options": ("Limit and offset for this "
+                                        "subresource are not supported: "
+                                        "%(subresource_key)s"),
+        "invalid_subresource_filters": ("The supplied filters for this "
+                                        "subresource are invalid: "
+                                        "%(subresource_key)s"),
+        "invalid_subresource": "%(subresource_key)s is not a subresource.",
+        "invalid_subresource_limit": ("The limit (%(supplied_limit)s) given "
+                                      "for %(subresource_key)s subresource is "
+                                      "too high. The max limit is "
+                                      "%(max_limit)s."),
+        "invalid_subresource_sorts": ("The subresource %(subresource_key)s "
+                                      "can not have sorts applied without "
+                                      "a limit or offset being supplied.")
     }
 
     class Meta(object):
@@ -327,7 +346,11 @@ class BaseModelResource(SchemaResourceABC, NestableResourceABC):
             keyword args.
         :type context: dict or None
         :param page_max_size: Used to determine the maximum number of
-            results to return by :meth:`get_collection`.
+            results to return by :meth:`get_collection`. Defaults to
+            the `page_max_size` from the resource's `opts` if
+            `None` is passed in. To explicitly allow no limit,
+            pass in `0`. If given a `callable`, it should accept
+            the resource itself as its first and only arguement.
         :type page_max_size: int, callable, or None
         :param error_messages: May optionally be provided to override
             the default error messages for this resource.
@@ -335,6 +358,8 @@ class BaseModelResource(SchemaResourceABC, NestableResourceABC):
 
         """
         self._page_max_size = page_max_size
+        if self._page_max_size is None and hasattr(self.opts, "page_max_size"):
+            self._page_max_size = self.opts.page_max_size
         self._context = context
         self._session = session
         # Set up error messages
@@ -429,9 +454,12 @@ class BaseModelResource(SchemaResourceABC, NestableResourceABC):
     def page_max_size(self):
         """Get the max number of resources to return."""
         if callable(self._page_max_size):
-            return self._page_max_size()
-        else:
-            return self._page_max_size
+            return self._page_max_size(self)
+        elif self._page_max_size is not None:
+            if self._page_max_size == 0:
+                return None
+            else:
+                return self._page_max_size
 
     @property
     def context(self):
@@ -580,7 +608,10 @@ class BaseModelResource(SchemaResourceABC, NestableResourceABC):
         """
         return query
 
-    def _get_query(self, session, filters, embeds=None, strict=True):
+    # def _get_required_filters(self):
+    # def _apply_joins(self, session, embeds, ):
+    def _get_query(self, session, filters, subfilters=None, embeds=None,
+                   strict=True):
         """Used to generate a query for this request.
 
         :param session: See :meth:`get` for more info.
@@ -588,6 +619,10 @@ class BaseModelResource(SchemaResourceABC, NestableResourceABC):
             :class:`~sqlalchemy.orm.query.Query`
         :param filters: MQLAlchemy filters to be applied on this query.
         :type filters: dict or None
+        :param subfilters: MQLAlchemy filters to be applied to child
+            objects of this query. Each key in the dictionary should
+            be a dot notation key corresponding to a subfilter.
+        :type subfilters: dict or None
         :param embeds: A list of relationship and relationship field
             names to be included in the result.
         :type embeds: list or None
@@ -607,17 +642,6 @@ class BaseModelResource(SchemaResourceABC, NestableResourceABC):
             query = session.query(self.model)
         else:
             query = session
-        converted_embeds, embed_name_mapping, embed_fields = (
-            self._get_embed_info(embeds=embeds, strict=strict))
-        # one by one apply load options to the query based on the embeds
-        for converted_embed in converted_embeds:
-            try:
-                query = apply_load_options(
-                    query, self.model, [converted_embed])
-            except AttributeError:
-                if strict:
-                    self.fail("invalid_embed",
-                              embed=embed_name_mapping[converted_embed])
         # apply filters
         try:
             query = self.query_builder.apply_filters(
@@ -631,10 +655,20 @@ class BaseModelResource(SchemaResourceABC, NestableResourceABC):
         except InvalidMQLException as exc:
             if strict:
                 self.fail("invalid_filters", exc=exc)
+        # apply subfilters and embeds
+        # errors handled with resource.fail in query_builder
+        if subfilters:
+            query = self.query_builder.apply_subquery_loads(
+                query=query,
+                resource=self,
+                subfilters=subfilters,
+                embeds=embeds
+            )
+        query = self.apply_required_filters(query)
         return query
 
-    def make_schema(self, fields=None, embeds=None, partial=False,
-                    instance=None, strict=True):
+    def make_schema(self, fields=None, subfilters=None, embeds=None,
+                    partial=False, instance=None, strict=True):
         """Used to generate a schema for this request.
 
         :param fields: Names of fields to be included in the result.
@@ -654,8 +688,22 @@ class BaseModelResource(SchemaResourceABC, NestableResourceABC):
 
         """
         # parse embed information
+        # combine subfilters with embeds to take care of implied embeds
+        if isinstance(embeds, list):
+            embeds_subfilters = [key for key in embeds]
+            if isinstance(subfilters, dict):
+                for key in subfilters:
+                    for embed in embeds:
+                        if key in embed:
+                            break
+                    else:
+                        embeds_subfilters.append(key)
+        elif isinstance(subfilters, dict):
+            embeds_subfilters = [key for key in subfilters]
+        else:
+            embeds_subfilters = None
         converted_embeds, embed_name_mapping, embed_fields = (
-            self._get_embed_info(embeds=embeds, strict=strict))
+            self._get_embed_info(embeds=embeds_subfilters, strict=strict))
         # fields
         converted_fields = []
         if isinstance(fields, list):
@@ -801,7 +849,8 @@ class BaseModelResource(SchemaResourceABC, NestableResourceABC):
             msg = MISSING_ERROR_MESSAGE.format(class_name=class_name, key=key)
             raise AssertionError(msg)
 
-    def get(self, ident, fields=None, embeds=None, session=None, strict=True):
+    def get(self, ident, subfilters=None, fields=None, embeds=None,
+            session=None, strict=True):
         """Get the identified resource.
 
         :param ident: A value used to identify this resource. If the
@@ -836,6 +885,7 @@ class BaseModelResource(SchemaResourceABC, NestableResourceABC):
             session = self.session
         schema = self.make_schema(
             fields=fields,
+            subfilters=subfilters,
             embeds=embeds,
             strict=strict)
         for i, field_name in enumerate(schema.id_keys):
@@ -958,13 +1008,17 @@ class BaseModelResource(SchemaResourceABC, NestableResourceABC):
         else:
             self.fail("resource_not_found", ident=ident)
 
-    def get_collection(self, filters=None, fields=None, embeds=None,
-                       sorts=None, offset=None, limit=None, session=None,
-                       strict=True):
+    def get_collection(self, filters=None, subfilters=None, fields=None,
+                       embeds=None, sorts=None, offset=None, limit=None,
+                       session=None, strict=True):
         """Get a collection of resources.
 
         :param filters: MQLAlchemy filters to be applied on this query.
         :type filters: dict or None
+        :param subfilters: A dict of MQLAlchemy filters, with each key
+            being the dot notation of the relationship they are to be
+            applied to.
+        :type subfilters: dict or None
         :param fields: Names of fields to be included in the result.
         :type fields: list or None
         :param embeds: A list of relationship and relationship field
@@ -996,11 +1050,13 @@ class BaseModelResource(SchemaResourceABC, NestableResourceABC):
             session = self.session
         schema = self.make_schema(
             fields=fields,
+            subfilters=subfilters,
             embeds=embeds,
             strict=strict)
         query = self._get_query(
             session=session,
             filters=filters,
+            subfilters=subfilters,
             embeds=embeds)
         # sort
         if sorts:
@@ -1108,7 +1164,6 @@ class BaseModelResource(SchemaResourceABC, NestableResourceABC):
         :return: `None`
 
         """
-        # TODO - Test this better...
         if not isinstance(data, list):
             self.fail("invalid_collection_input")
         for obj in data:
