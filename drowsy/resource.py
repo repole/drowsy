@@ -4,7 +4,7 @@
 
     Base classes for building resources and model resources.
 
-    :copyright: (c) 2018 by Nicholas Repole and contributors.
+    :copyright: (c) 2016-2018 by Nicholas Repole and contributors.
                 See AUTHORS for more details.
     :license: MIT - See LICENSE for more details.
 """
@@ -799,7 +799,7 @@ class BaseModelResource(SchemaResourceABC, NestableResourceABC):
                 message=self._get_error_message(key, **kwargs),
                 errors={},
                 **kwargs)
-        elif key == "invalid_filters":
+        elif key == "invalid_filters" or key == "invalid_subresource_filters":
             if isinstance(exc, InvalidMQLException):
                 if "subquery_key" in kwargs:
                     message = kwargs["subquery_key"] + ": " + str(exc)

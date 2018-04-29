@@ -29,35 +29,21 @@ class ResourceRouterABC(object):
     """Abstract base class for a resource based automatic router."""
 
     default_error_messages = {
-        "validation_failure": "Unable to process entity.",
-        "invalid_embed": "Invalid embed supplied: %(embed)s",
-        "invalid_embeds": "Invalid embed supplied: %(embeds)s",
-        "invalid_field": "Invalid field supplied: %(field)s",
-        "invalid_fields": "Invalid fields supplied: %(fields)s",
-        # InvalidMQLException overrides this:
-        "invalid_filters": "Invalid filters supplied.",
-        "commit_failure": "Unable to save the provided data.",
-        "invalid_collection_input": "The provided input must be a list.",
         "resource_not_found": ("No resource matching the provided "
                                "identity could be found."),
-        "invalid_sorts_type": "The sorts provided must be a list.",
-        "invalid_sort_type": "The sort provided is invalid.",
-        "invalid_sort_field": ("The sort provided for field %(field)s "
-                               "is invalid."),
+        "method_not_allowed": ("The method (%(method)s) used to make this "
+                               "request is not allowed for this path."),
+        # errors from offset/limit parser
         "invalid_limit_type": ("The limit provided (%(limit)s) can not be "
                                "converted to an integer."),
         "limit_too_high": ("The limit provided (%(limit)d) is greater than "
                            "the max page size allowed (%(max_page_size)d)."),
-        "invalid_offset_type": ("The offset provided (%(offset)s) can not be "
-                                "converted to an integer."),
-        "invalid_offset_limit": ("The provided offset (%(offset)s) and limit "
-                                 "(%(limit)s) are invalid."),
-        "method_not_allowed": ("The method (%(method)s) used to make this "
-                               "request is not allowed for this path."),
         "invalid_page_type": ("The page value provided (%(page)s) can not be "
                               "converted to an integer."),
         "page_no_max": "Page greater than 1 provided without a page max size.",
         "page_negative": "Page number can not be less than 1.",
+        "invalid_offset_type": ("The offset provided (%(offset)s) can not be "
+                                "converted to an integer."),
         "invalid_complex_filters": ("The complex filters query value must be "
                                     "set to a valid json dict.")
     }

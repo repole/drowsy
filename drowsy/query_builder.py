@@ -4,7 +4,7 @@
 
     Tools for building SQLAlchemy queries.
 
-    :copyright: (c) 2016 by Nicholas Repole and contributors.
+    :copyright: (c) 2016-2018 by Nicholas Repole and contributors.
                 See AUTHORS for more details.
     :license: MIT - See LICENSE for more details.
 """
@@ -423,6 +423,8 @@ class QueryBuilder(object):
                             alias=new_node["alias"]
                         ).subquery()
                         if default_limit is not None and (
+                                user_supplied_limit is not None
+                                and
                                 user_supplied_limit > default_limit):
                             if strict:
                                 root_resource.fail(
@@ -565,7 +567,7 @@ class QueryBuilder(object):
                                 failed = True
                                 continue
                             root_resource.fail(
-                                "invalid_filters",
+                                "invalid_subresource_filters",
                                 exc=exc,
                                 subresource_key=subfilter_key)
                         # If we made it this far, filters were
@@ -583,9 +585,7 @@ class QueryBuilder(object):
                         next_field = get_field_by_dump_name(
                             schema=schema,
                             dump_name=next_split_key)
-                        if isinstance(next_field, NestedRelated):
-                            continue
-                        else:
+                        if not isinstance(next_field, NestedRelated):
                             leaf_nodes.append(last_node)
                 else:
                     if is_embed:

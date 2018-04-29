@@ -106,3 +106,45 @@ class DrowsyIntegrationTests(DrowsyTests):
             len(result) == 30 and
             result[0]["album_id"] == 31)
 
+    def test_subresource_nested_query(self):
+        """Ensure a simple subresource query works."""
+        query_params = {
+            "tracks._subquery_.track_id-gte": 5,
+            "tracks.playlists._subquery_.playlist_id-lte": 5
+        }
+        parser = ModelQueryParamParser(query_params)
+        album_resource = AlbumResource(session=self.db_session)
+        result = album_resource.get_collection(
+            subfilters=parser.parse_subfilters(),
+            embeds=parser.parse_embeds()
+        )
+        success = False
+        for album in result:
+            if album["album_id"] == 3:
+                self.assertTrue(
+                    len(album["tracks"]) == 1 and
+                    album["tracks"][0]["track_id"] == 5)
+                success = True
+        self.assertTrue(success)
+
+    def test_subresource_simple_query(self):
+        """Ensure a simple subresource query works."""
+        query_params = {
+            "tracks._subquery_.track_id-gte": 5,
+            "tracks.playlists._subquery_.playlist_id-lte": 5
+        }
+        parser = ModelQueryParamParser(query_params)
+        album_resource = AlbumResource(session=self.db_session)
+        result = album_resource.get_collection(
+            subfilters=parser.parse_subfilters(),
+            embeds=parser.parse_embeds()
+        )
+        success = False
+        for album in result:
+            if album["album_id"] == 3:
+                self.assertTrue(
+                    len(album["tracks"]) == 1 and
+                    album["tracks"][0]["track_id"] == 5)
+                success = True
+        self.assertTrue(success)
+
