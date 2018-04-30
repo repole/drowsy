@@ -10,8 +10,11 @@
 """
 from __future__ import unicode_literals
 import json
-from drowsy.exc import UnprocessableEntityError
+from drowsy.exc import (
+    UnprocessableEntityError, BadRequestError, MethodNotAllowedError)
 from drowsy.parser import ModelQueryParamParser
+from drowsy.resource import (
+    ResourceABC, NestableResourceABC, SchemaResourceABC, ResourceCollection)
 from drowsy.tests.base import DrowsyTests
 from drowsy.tests.models import Album, Artist, Playlist, Track
 from drowsy.tests.resources import (
@@ -21,6 +24,122 @@ from drowsy.tests.resources import (
 class DrowsyResourceTests(DrowsyTests):
 
     """Test drowsy resources."""
+
+    # ABSTRACT CLASS TESTS
+
+    def test_resource_abc_get(self):
+        """Make sure ResourceABC raises exception on `get`."""
+        self.assertRaises(
+            NotImplementedError,
+            ResourceABC().get,
+            1
+        )
+
+    def test_resource_abc_post(self):
+        """Make sure ResourceABC raises exception on `post`."""
+        self.assertRaises(
+            NotImplementedError,
+            ResourceABC().post,
+            {}
+        )
+
+    def test_resource_abc_patch(self):
+        """Make sure ResourceABC raises exception on `patch`."""
+        self.assertRaises(
+            NotImplementedError,
+            ResourceABC().patch,
+            1,
+            {}
+        )
+
+    def test_resource_abc_put(self):
+        """Make sure ResourceABC raises exception on `put`."""
+        self.assertRaises(
+            NotImplementedError,
+            ResourceABC().put,
+            1,
+            {}
+        )
+
+    def test_resource_abc_delete(self):
+        """Make sure ResourceABC raises exception on `delete`."""
+        self.assertRaises(
+            NotImplementedError,
+            ResourceABC().delete,
+            1
+        )
+
+    def test_resource_abc_get_collection(self):
+        """Make sure ResourceABC raises exception on `get_collection`."""
+        self.assertRaises(
+            NotImplementedError,
+            ResourceABC().get_collection
+        )
+
+    def test_resource_abc_post_collection(self):
+        """Make sure ResourceABC raises exception on `post_collection`."""
+        self.assertRaises(
+            NotImplementedError,
+            ResourceABC().post_collection,
+            {}
+        )
+
+    def test_resource_abc_patch_collection(self):
+        """Make sure ResourceABC raises exception on `patch_collection`."""
+        self.assertRaises(
+            NotImplementedError,
+            ResourceABC().patch_collection,
+            {}
+        )
+
+    def test_resource_abc_put_collection(self):
+        """Make sure ResourceABC raises exception on `put_collection`."""
+        self.assertRaises(
+            NotImplementedError,
+            ResourceABC().put_collection,
+            {}
+        )
+
+    def test_resource_abc_delete_collection(self):
+        """Make sure ResourceABC raises exception on `delete_collection`."""
+        self.assertRaises(
+            NotImplementedError,
+            ResourceABC().delete_collection
+        )
+
+    def test_nestable_resource_abc_make_resource(self):
+        """NestableResourceABC exception on `make_subresource`."""
+        self.assertRaises(
+            NotImplementedError,
+            NestableResourceABC().make_subresource,
+            "test"
+        )
+
+    def test_schema_resource_abc_make_resource(self):
+        """SchemaResourceABC raises exception on `make_schema`."""
+        self.assertRaises(
+            NotImplementedError,
+            SchemaResourceABC().make_schema
+        )
+
+    def test_schema_resource_abc_schema_kwargs(self):
+        """SchemaResourceABC raises exception on `get_schema_kwargs`."""
+        self.assertRaises(
+            NotImplementedError,
+            getattr(SchemaResourceABC(), "_get_schema_kwargs"),
+            "test"
+        )
+
+    # RESOURCECOLLECTION TESTS
+
+    def test_resource_collection_class(self):
+        """Test the ResourceCollection class."""
+        rc = ResourceCollection([1, 2, 3], 100)
+        self.assertTrue(rc[0] == 1)
+        self.assertTrue(rc.resources_fetched == 3)
+        self.assertTrue(rc.resources_available == 100)
+
+    # PATCH TESTS
 
     def test_simple_patch(self):
         """Make sure that a simple obj update works."""
@@ -41,7 +160,7 @@ class DrowsyResourceTests(DrowsyTests):
         self.assertTrue(
             result["title"] == album.title)
 
-    def test_list_relation_add_item(self):
+    def test_patch_add_existing_subresource(self):
         """Make sure that we can add an item to a list relation."""
         playlist = self.db_session.query(Playlist).filter(
             Playlist.playlist_id == 18).first()
@@ -58,7 +177,7 @@ class DrowsyResourceTests(DrowsyTests):
             len(playlist.tracks) == 2 and
             len(result["tracks"]) == 2)
 
-    def test_list_relation_add_new_item(self):
+    def test_patch_add_new_subresource(self):
         """Ensure we can add a new obj to a list using relationship."""
         playlist = self.db_session.query(Playlist).filter(
             Playlist.playlist_id == 18).all()[0]
@@ -89,7 +208,7 @@ class DrowsyResourceTests(DrowsyTests):
                         playlist.tracks[1].composer == "Nick Repole" and
                         result["tracks"][1]["composer"] == "Nick Repole")
 
-    def test_list_relation_update_item(self):
+    def test_patch_update_existing_list_subresource(self):
         """Ensure we can update a list relationship item."""
         playlist = self.db_session.query(Playlist).filter(
             Playlist.playlist_id == 18).first()
@@ -260,6 +379,8 @@ class DrowsyResourceTests(DrowsyTests):
             result["artist"]["name"] == album.artist.name and
             artist is not None)
 
+    # GET COLLECTION TESTS
+
     def test_get_collection(self):
         """Test simple get_collection functionality."""
         query_params = {
@@ -318,3 +439,163 @@ class DrowsyResourceTests(DrowsyTests):
                 album_resource.model)
         )
         self.assertTrue(len(result) == 347)
+
+    # PATCH COLLECTION TESTS
+
+    def test_patch_collection_add(self):
+        """Test adding to a collection via patch works."""
+        update_data = [
+            {
+                "$op": "add",
+                "playlist_id": 9999,
+                "name": "New Test Playlist",
+                "tracks": [
+                    {
+                        "$op": "add",
+                        "track_id": "4000",
+                        "name": "Test Track Seven",
+                        "album": {
+                            "album_id": "347",
+                        },
+                        "media_type": {
+                            "media_type_id": "2"
+                        },
+                        "genre": {
+                            "genre_id": "10"
+                        },
+                        "composer": "Nick Repole",
+                        "milliseconds": "206009",
+                        "bytes": "3305166",
+                        "unit_price": "0.99",
+                    }
+                ]
+            }
+        ]
+        playlist_resource = PlaylistResource(session=self.db_session)
+        result = playlist_resource.patch_collection(update_data)
+        playlists = self.db_session.query(Playlist).filter(
+            Playlist.playlist_id == 9999).all()
+        self.assertTrue(len(playlists) == 1)
+        self.assertTrue(len(playlists[0].tracks) == 1)
+        self.assertTrue(result is None)
+
+    def test_patch_collection_remove(self):
+        """Test removing from a collection via patch works."""
+        update_data = [
+            {
+                "$op": "remove",
+                "playlist_id": 18
+            }
+        ]
+        playlist_resource = PlaylistResource(session=self.db_session)
+        result = playlist_resource.patch_collection(update_data)
+        playlists = self.db_session.query(Playlist).filter(
+            Playlist.playlist_id == 18).all()
+        self.assertTrue(len(playlists) == 0)
+        self.assertTrue(result is None)
+
+    def test_patch_collection_update(self):
+        """Test updating from a collection via patch works."""
+        update_data = [
+            {
+                "playlist_id": 18,
+                "name": "New name"
+            }
+        ]
+        playlist_resource = PlaylistResource(session=self.db_session)
+        result = playlist_resource.patch_collection(update_data)
+        playlists = self.db_session.query(Playlist).filter(
+            Playlist.playlist_id == 18).all()
+        self.assertTrue(len(playlists) == 1)
+        self.assertTrue(playlists[0].name == "New name")
+        self.assertTrue(result is None)
+
+    def test_patch_collection_bad_data(self):
+        """Test providing a non list to patch collection fails."""
+        update_data = {
+            "playlist_id": 18,
+            "name": "New name"
+        }
+        playlist_resource = PlaylistResource(session=self.db_session)
+        self.assertRaisesCode(
+            BadRequestError,
+            "invalid_collection_input",
+            playlist_resource.patch_collection,
+            update_data
+        )
+
+    def test_patch_collection_update_fail(self):
+        """Test updating a collection via patch fails validation."""
+        update_data = [
+            {
+                "playlist_id": 18,
+                "name": 5
+            }
+        ]
+        playlist_resource = PlaylistResource(session=self.db_session)
+        self.assertRaisesCode(
+            UnprocessableEntityError,
+            "validation_failure",
+            playlist_resource.patch_collection,
+            update_data
+        )
+
+    def test_patch_collection_add_fail(self):
+        """Test adding to a collection via patch fails validation."""
+        update_data = [
+            {
+                "$op": "add",
+                "playlist_id": 9999,
+                "name": 5
+            }
+        ]
+        playlist_resource = PlaylistResource(session=self.db_session)
+        self.assertRaisesCode(
+            UnprocessableEntityError,
+            "validation_failure",
+            playlist_resource.patch_collection,
+            update_data
+        )
+
+    def test_patch_collection_remove_fail(self):
+        """Test removing from collection via patch fails validation."""
+        update_data = [
+            {
+                "$op": "remove",
+                "playlist_id": "test"
+            }
+        ]
+        playlist_resource = PlaylistResource(session=self.db_session)
+        self.assertRaisesCode(
+            UnprocessableEntityError,
+            "validation_failure",
+            playlist_resource.patch_collection,
+            update_data
+        )
+
+    # PUT COLLECTION TESTS
+
+    def test_put_collection_fail(self):
+        """Test that trying to put a collection fails."""
+        update_data = []
+        playlist_resource = PlaylistResource(session=self.db_session)
+        self.assertRaisesCode(
+            MethodNotAllowedError,
+            "method_not_allowed",
+            playlist_resource.put_collection,
+            update_data
+        )
+
+    # DELETE COLLECTION TESTS
+
+    def test_delete_collection(self):
+        """Test deleting from a collection works."""
+        filters = {
+            "playlist_id": 18
+        }
+        playlist_resource = PlaylistResource(session=self.db_session)
+        result = playlist_resource.delete_collection(filters=filters)
+        playlists = self.db_session.query(Playlist).filter(
+            Playlist.playlist_id == 18).all()
+        self.assertTrue(len(playlists) == 0)
+        self.assertTrue(result is None)

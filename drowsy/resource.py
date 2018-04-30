@@ -21,6 +21,33 @@ from drowsy.exc import (
 from sqlalchemy.exc import SQLAlchemyError
 
 
+class ResourceCollection(list):
+
+    """A simple list subclass that contains some extra meta info."""
+
+    def __init__(self, resources, resources_available):
+        """Initializes a resource collection.
+
+        :param iterable resources: The resources that were fetched in
+            a query.
+        :param int resources_available: The total number of matching
+            resources for a query. Used for pagination info.
+
+        """
+        self.resources_available = resources_available
+        list.__init__(self, resources)
+
+    @property
+    def resources_fetched(self):
+        """Simple alias for list length.
+
+        :return: Number of resources that were fetched.
+        :rtype: int
+
+        """
+        return self.__len__()
+
+
 class ResourceABC(object):
 
     """Abstract resource base class."""
@@ -171,7 +198,7 @@ class NestableResourceABC(ResourceABC):
         :returns: A constructed :class:`~drowsy.resource.Resource`
 
         """
-        raise ValueError
+        raise NotImplementedError
 
 
 class ModelResourceOpts(object):
@@ -1041,7 +1068,7 @@ class BaseModelResource(SchemaResourceABC, NestableResourceABC):
             embeds, offset, or limit will result in a raised exception
             if strict is set to `True`.
         :return: Resources meeting the supplied criteria.
-        :rtype: list
+        :rtype: :class:`ResourceCollection`
 
         """
         if filters is None:
@@ -1053,6 +1080,10 @@ class BaseModelResource(SchemaResourceABC, NestableResourceABC):
             subfilters=subfilters,
             embeds=embeds,
             strict=strict)
+        count = self._get_query(
+            session=session,
+            filters=filters
+        ).count()
         query = self._get_query(
             session=session,
             filters=filters,
@@ -1111,7 +1142,7 @@ class BaseModelResource(SchemaResourceABC, NestableResourceABC):
         records = query.all()
         # get result
         dump = schema.dump(records, many=True)
-        return dump.data
+        return ResourceCollection(dump.data, count)
 
     def post_collection(self, data):
         """Create multiple resources in the collection of resources.
@@ -1134,7 +1165,7 @@ class BaseModelResource(SchemaResourceABC, NestableResourceABC):
                 self.fail("validation_failure", errors=errors)
         try:
             self.session.commit()
-        except SQLAlchemyError:
+        except SQLAlchemyError:  # pragma: no cover
             self.session.rollback()
             self.fail("commit_failure")
 
@@ -1181,7 +1212,7 @@ class BaseModelResource(SchemaResourceABC, NestableResourceABC):
                 schema = self.make_schema(partial=True)
                 instance, errors = schema.load(obj, self.session)
                 if not errors:
-                    self.session.remove(instance)
+                    self.session.delete(instance)
                 else:
                     self.session.rollback()
                     self.fail("validation_failure", errors=errors)
@@ -1193,7 +1224,7 @@ class BaseModelResource(SchemaResourceABC, NestableResourceABC):
                     self.fail("validation_failure", errors=errors)
         try:
             self.session.commit()
-        except SQLAlchemyError:
+        except SQLAlchemyError:  # pragma: no cover
             self.session.rollback()
             self.fail("commit_failure")
         return
@@ -1209,8 +1240,7 @@ class BaseModelResource(SchemaResourceABC, NestableResourceABC):
         :return: `None`
 
         """
-        if filters is None:
-            filters = {}
+        filters = filters or {}
         if session is None:
             session = self.session
         query = self._get_query(
@@ -1219,7 +1249,7 @@ class BaseModelResource(SchemaResourceABC, NestableResourceABC):
         query.delete()
         try:
             self.session.commit()
-        except SQLAlchemyError:
+        except SQLAlchemyError:  # pragma: no cover
             self.session.rollback()
             self.fail("commit_failure")
 
