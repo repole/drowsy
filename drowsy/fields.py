@@ -561,7 +561,7 @@ class NestedRelated(NestedPermissibleABC, Related):
         else:
             return super(NestedRelated, self).related_keys
 
-    def _parent_contains_child(self, parent, instance):
+    def _parent_contains_child(self, parent, instance, relationship_name):
         """Checks if the parent relation contains the given instance.
 
         Only the relationship this field is related to is checked.
@@ -569,6 +569,8 @@ class NestedRelated(NestedPermissibleABC, Related):
         :param parent: An object whose relationship for this field may
             contain this instance as a child object.
         :param instance: A potential child object of the parent.
+        :param str relationship_name: The name of the relationship
+            we're checking on `parent`.
         :return: `True` if the parent attr already contains the
             instance, `False` otherwise.
         :rtype: bool
@@ -577,11 +579,14 @@ class NestedRelated(NestedPermissibleABC, Related):
         with_parentable = False
         if self.parent.instance is not None:
             if inspect(self.parent.instance).persistent:
-                with_parentable = True
+                if self.many:
+                    with_parentable = True
+                elif getattr(self.parent.instance, relationship_name):
+                    with_parentable = True
         if with_parentable:
             in_relation_instance = self.session.query(
                 self.related_model).with_parent(
-                self.parent.instance).filter_by(**{
+                self.parent.instance, property=relationship_name).filter_by(**{
                     column.key: getattr(instance, column.key)
                     for column in self.related_keys
                 }).first()
@@ -674,7 +679,7 @@ class NestedRelated(NestedPermissibleABC, Related):
 
         """
         is_instance_in_relation = self._parent_contains_child(
-            parent, instance)
+            parent, instance, self.name)
         # Permissions were good, load caused no problems
         # Now perform the actual operation.
         if operation == "remove":

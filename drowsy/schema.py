@@ -63,16 +63,56 @@ class ModelResourceSchema(ModelSchema):
 
     OPTIONS_CLASS = ModelResourceSchemaOpts
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self,  extra=None, only=(), exclude=(), prefix='',
+                 strict=False, many=False, context=None, load_only=(),
+                 dump_only=(), partial=False, instance=None, session=None):
         """Sets additional member vars on top of `ModelSchema`.
 
         Also runs :meth:`process_context` upon completion.
 
-        :param gettext: Used to translate error messages. Must be
-            a callable.
+        :param extra: Additional attributes to be added to the
+            serialized result.
+        :type extra: dict or None
+        :param only: Fields to be included in the serialized result.
+        :type only: tuple or list
+        :param exclude: Fields to be excluded from the serialized
+            result.
+        :type exclude: tuple or list
+        :param str prefix: Prefix to be prepended to serialized field
+            names.
+        :param bool strict: Raises exceptions on validation if `True`.
+        :param bool many: `True` if loading a collection of items.
+        :param context: Dictionary of values relevant to the current
+            execution context. Should have a `gettext` key and
+            `callable` value for that key if you're intending to
+            translate error messages.
+        :type context: dict or None
+        :param load_only: Fields to be skipped during serialization.
+        :type load_only: tuple or list
+        :param dump_only: Fields to be skipped during deserialization.
+        :type dump_only: tuple or list
+        :param bool partial: Ignores missing fields when deserializing
+            if `True`.
+        :param instance: SQLAlchemy model instance data should be loaded
+            into. If ``None`` is provided, an instance will either be
+            determined using the provided data via :meth:`get_instance`,
+            or if that fails a new instance will be created.
+        :param session: SQLAlchemy database session.
 
         """
-        super(ModelResourceSchema, self).__init__(*args, **kwargs)
+        super(ModelResourceSchema, self).__init__(
+            extra=extra,
+            only=only,
+            exclude=exclude,
+            prefix=prefix,
+            strict=strict,
+            many=many,
+            context=context,
+            load_only=load_only,
+            dump_only=dump_only,
+            partial=partial,
+            instance=instance,
+            session=session)
         self.fields_by_dump_to = {}
         for key in self.fields:
             field = self.fields[key]

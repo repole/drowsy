@@ -19,6 +19,7 @@ from drowsy.exc import (
     BadRequestError, UnprocessableEntityError, MethodNotAllowedError,
     ResourceNotFoundError)
 from sqlalchemy.exc import SQLAlchemyError
+import sys
 
 
 class ResourceCollection(list):
@@ -481,7 +482,11 @@ class BaseModelResource(SchemaResourceABC, NestableResourceABC):
     def page_max_size(self):
         """Get the max number of resources to return."""
         if callable(self._page_max_size):
-            return self._page_max_size(self)
+            if sys.version_info.major == 2:  # pragma: no cover
+                func = self._page_max_size.__func__
+            else:
+                func = self._page_max_size
+            return func(self)
         elif self._page_max_size is not None:
             if self._page_max_size == 0:
                 return None

@@ -333,6 +333,7 @@ class DrowsyResourceTests(DrowsyTests):
         track = self.db_session.query(Track).filter(
             Track.track_id == 1).all()[0]
         track.genre = None
+        self.db_session.commit()
         track_resource = TrackResource(session=self.db_session)
         update_data = {
             "genre": {"genre_id": 1}

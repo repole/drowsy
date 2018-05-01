@@ -12,9 +12,10 @@ from drowsy.resource import ModelResource
 from drowsy.tests.schemas import *
 
 
-def page_max_100(*args):
+def page_max_100(resource):
     """Always returns 100 as the page max size."""
-    return 100
+    if resource is not None:
+        return 100
 
 
 class AlbumResource(ModelResource):

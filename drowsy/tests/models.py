@@ -10,7 +10,7 @@
     :license: MIT - See LICENSE for more details.
 """
 from sqlalchemy import Column, DateTime, ForeignKey, Integer, Numeric, \
-    Table, Unicode, orm, and_
+    Table, Unicode, orm, and_, Float
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.schema import ForeignKeyConstraint
 from sqlalchemy.sql.sqltypes import NullType
@@ -120,7 +120,7 @@ class Invoice(Base):
     billing_state = Column("BillingState", Unicode(40))
     billing_country = Column("BillingCountry", Unicode(40))
     billing_postal_code = Column("BillingPostalCode", Unicode(10))
-    total = Column("Total", Numeric(10, 2), nullable=False)
+    total = Column("Total", Float, nullable=False)
 
     customer = orm.relationship('Customer', backref="invoices")
 
@@ -138,7 +138,7 @@ class InvoiceLine(Base):
     track_id = Column(
         "TrackId", ForeignKey('Track.TrackId'),
         nullable=False, index=True)
-    unit_price = Column("UnitPrice", Numeric(10, 2), nullable=False)
+    unit_price = Column("UnitPrice", Float, nullable=False)
     quantity = Column("Quantity", Integer, nullable=False)
 
     invoice = orm.relationship('Invoice')
@@ -200,7 +200,7 @@ class Track(Base):
     composer = Column("Composer", Unicode(220))
     milliseconds = Column("Milliseconds", Integer, nullable=False)
     bytes = Column("Bytes", Integer)
-    unit_price = Column("UnitPrice", Numeric(10, 2), nullable=False)
+    unit_price = Column("UnitPrice", Float, nullable=False)
 
     album = orm.relationship('Album', backref="tracks")
     genre = orm.relationship('Genre')
