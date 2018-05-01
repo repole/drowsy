@@ -12,6 +12,12 @@ from drowsy.resource import ModelResource
 from drowsy.tests.schemas import *
 
 
+def page_max_100(resource):
+    """Always returns 100 as the page max size."""
+    if resource is not None:
+        return 100
+
+
 class AlbumResource(ModelResource):
     class Meta:
         schema_cls = AlbumSchema
@@ -25,6 +31,7 @@ class InvoiceLineResource(ModelResource):
 class InvoiceResource(ModelResource):
     class Meta:
         schema_cls = InvoiceSchema
+        page_max_size = page_max_100
 
 
 class EmployeeResource(ModelResource):
@@ -60,3 +67,13 @@ class TrackResource(ModelResource):
 class ArtistResource(ModelResource):
     class Meta:
         schema_cls = ArtistSchema
+
+
+class NodeResource(ModelResource):
+    class Meta:
+        schema_cls = NodeSchema
+
+
+class CompositeNodeResource(ModelResource):
+    class Meta:
+        schema_cls = CompositeNodeSchema

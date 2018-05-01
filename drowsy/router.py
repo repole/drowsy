@@ -7,14 +7,14 @@
     Work in progress, should not be used as anything other than
     a proof of concept at this point.
 
-    :copyright: (c) 2016 by Nicholas Repole and contributors.
+    :copyright: (c) 2016-2018 by Nicholas Repole and contributors.
                 See AUTHORS for more details.
     :license: MIT - See LICENSE for more details.
 """
 import inflection
 from marshmallow.fields import MISSING_ERROR_MESSAGE, Field, Nested
 from mqlalchemy import convert_to_alchemy_type
-from drowsy.parser import QueryParamParser
+from drowsy.parser import ModelQueryParamParser
 from drowsy.exc import (
     BadRequestError, OffsetLimitParseError, FilterParseError,
     ResourceNotFoundError, UnprocessableEntityError, MethodNotAllowedError)
@@ -29,35 +29,21 @@ class ResourceRouterABC(object):
     """Abstract base class for a resource based automatic router."""
 
     default_error_messages = {
-        "validation_failure": "Unable to process entity.",
-        "invalid_embed": "Invalid embed supplied: %(embed)s",
-        "invalid_embeds": "Invalid embed supplied: %(embeds)s",
-        "invalid_field": "Invalid field supplied: %(field)s",
-        "invalid_fields": "Invalid fields supplied: %(fields)s",
-        # InvalidMQLException overrides this:
-        "invalid_filters": "Invalid filters supplied.",
-        "commit_failure": "Unable to save the provided data.",
-        "invalid_collection_input": "The provided input must be a list.",
         "resource_not_found": ("No resource matching the provided "
                                "identity could be found."),
-        "invalid_sorts_type": "The sorts provided must be a list.",
-        "invalid_sort_type": "The sort provided is invalid.",
-        "invalid_sort_field": ("The sort provided for field %(field)s "
-                               "is invalid."),
+        "method_not_allowed": ("The method (%(method)s) used to make this "
+                               "request is not allowed for this path."),
+        # errors from offset/limit parser
         "invalid_limit_type": ("The limit provided (%(limit)s) can not be "
                                "converted to an integer."),
         "limit_too_high": ("The limit provided (%(limit)d) is greater than "
                            "the max page size allowed (%(max_page_size)d)."),
-        "invalid_offset_type": ("The offset provided (%(offset)s) can not be "
-                                "converted to an integer."),
-        "invalid_offset_limit": ("The provided offset (%(offset)s) and limit "
-                                 "(%(limit)s) are invalid."),
-        "method_not_allowed": ("The method (%(method)s) used to make this "
-                               "request is not allowed for this path."),
         "invalid_page_type": ("The page value provided (%(page)s) can not be "
                               "converted to an integer."),
         "page_no_max": "Page greater than 1 provided without a page max size.",
         "page_negative": "Page number can not be less than 1.",
+        "invalid_offset_type": ("The offset provided (%(offset)s) can not be "
+                                "converted to an integer."),
         "invalid_complex_filters": ("The complex filters query value must be "
                                     "set to a valid json dict.")
     }
@@ -846,7 +832,7 @@ class ModelResourceRouter(ResourceRouterABC):
         ident = path_objs.get("ident", None)
         if resource is None:
             self.fail("resource_not_found", path=path)
-        parser = QueryParamParser(query_params, context=self.context)
+        parser = ModelQueryParamParser(query_params, context=self.context)
         fields = parser.parse_fields()
         embeds = parser.parse_embeds()
         # last path_part determines what type of request this is
@@ -869,8 +855,10 @@ class ModelResourceRouter(ResourceRouterABC):
             # any non subresource field would already have been handled
             if not (isinstance(path_part, Nested) and not path_part.many):
                 try:
-                    offset, limit = parser.parse_offset_limit(
+                    offset_limit_info = parser.parse_offset_limit(
                         resource.page_max_size)
+                    offset = offset_limit_info.offset
+                    limit = offset_limit_info.limit
                     filters = parser.parse_filters(
                         resource.model,
                         convert_key_names_func=resource.convert_key_name)
@@ -937,7 +925,7 @@ class ModelResourceRouter(ResourceRouterABC):
         ident = path_objs.get("ident", None)
         if resource is None:
             self.fail("resource_not_found", path=path)
-        parser = QueryParamParser(query_params, context=self.context)
+        parser = ModelQueryParamParser(query_params, context=self.context)
         # last path_part determines what type of request this is
         if isinstance(path_part, Field) and not hasattr(
                 path_part, "resource_cls"):
