@@ -60,14 +60,14 @@ class SubfilterInfo(object):
 
     def __init__(self, filters=None, offset_limit_info=None, sorts=None):
         """Instantiates a SubfilterInfo object.
-        
+
         :param filters: Filters to be applied.
         :type filters: dict or None
         :param offset_limit_info: Offset and/or limit to be applied.
         :type offset_limit_info: OffsetLimitInfo or None
         :param sorts: Any sorts that are to be applied.
         :type sorts: list of SortInfo or None
-        
+
         """
         if not isinstance(filters, dict) and filters is not None:
             raise ValueError("filters must be a dict or None.")
@@ -449,13 +449,13 @@ class ModelQueryParamParser(QueryParamParser):
                          sublimit_name="_limit_", suboffset_name="_offset_",
                          subsorts_name="_sorts_", strict=True):
         """Parse nested resource subfilters, limits, offsets, and sorts.
-        
-        Note that subquery parsing does limited checking on the 
+
+        Note that subquery parsing does limited checking on the
         validity of the subquery itself.
-        
+
         Given a query param "album.artist._subquery_.tracks.track_id"
         with value "5", the resulting subfilters returned would be:
-        
+
         {"album.artist": SubfilterInfo(
             filters={"$and": ["tracks.track_id": {"eq": 5}]})}
 
@@ -650,20 +650,20 @@ class ModelQueryParamParser(QueryParamParser):
             to the naming format used for your model objects (likely
             underscore).
         :type convert_key_names_func: callable or None
-        :param subquery_name: Query param name used to trigger a 
-            subquery. Query params that include this name will be 
+        :param subquery_name: Query param name used to trigger a
+            subquery. Query params that include this name will be
             ignored.
         :type subquery_name: str or None
-        :param sublimit_name: Query param name used to trigger a 
-            subquery resource limit. Query params that include this 
+        :param sublimit_name: Query param name used to trigger a
+            subquery resource limit. Query params that include this
             name will be ignored.
         :type sublimit_name: str or None
-        :param suboffset_name: Query param name used to trigger a 
-            subquery resource offset. Query params that include this 
+        :param suboffset_name: Query param name used to trigger a
+            subquery resource offset. Query params that include this
             name will be ignored.
         :type suboffset_name: str or None
         :param subsorts_name: Query param name used to trigger a
-            subquery sort. Query params that include this name will be 
+            subquery sort. Query params that include this name will be
             ignored.
         :type subsorts_name: str or None
         :param bool strict: If `True`, exceptions will be raised for

@@ -365,14 +365,15 @@ class BaseModelResource(SchemaResourceABC, NestableResourceABC):
 
         :param session: Database session to use for any resource
             actions.
-        :type session: :class:`~sqlalchemy.orm.session.Session`
+        :type session: :class:`~sqlalchemy.orm.session.Session` or
+            callable
         :param context: Context used to alter the schema used for this
             resource. For example, may contain the current
             authorization status of the current request. If errors
             should be translated, context should include a ``"gettext"``
             key referencing a callable that takes in a string and any
             keyword args.
-        :type context: dict or None
+        :type context: dict, callable, or None
         :param page_max_size: Used to determine the maximum number of
             results to return by :meth:`get_collection`. Defaults to
             the `page_max_size` from the resource's `opts` if
@@ -473,10 +474,20 @@ class BaseModelResource(SchemaResourceABC, NestableResourceABC):
     @property
     def session(self):
         """Get a db session to use for this request."""
-        if callable(self._context):
-            return self.session()
+        if callable(self._session):
+            return self._session()
         else:
             return self._session
+
+    @session.setter
+    def session(self, val):
+        """Set session to the provided value.
+
+        :param val: Used to set the current session.
+        :type val: dict, callable, or None
+
+        """
+        self._session = val
 
     @property
     def page_max_size(self):
@@ -526,17 +537,6 @@ class BaseModelResource(SchemaResourceABC, NestableResourceABC):
         """Get default kwargs for any new schema creation.
 
         :param schema_cls: The class of the schema being created.
-
-        """
-        return {
-            "context": self.context,
-            "session": self.session
-        }
-
-    def _get_resource_kwargs(self, resource_cls):
-        """Get default kwargs for any new resource creation.
-
-        :param resource_cls: The class of the resource being created.
 
         """
         return {
@@ -931,8 +931,7 @@ class BaseModelResource(SchemaResourceABC, NestableResourceABC):
         instance = query.first()
         if instance is not None:
             return schema.dump(instance).data
-        else:
-            self.fail("resource_not_found", ident=ident)
+        self.fail("resource_not_found", ident=ident)
 
     def post(self, data):
         """Create a new resource and store it in the db.
@@ -1232,7 +1231,6 @@ class BaseModelResource(SchemaResourceABC, NestableResourceABC):
         except SQLAlchemyError:  # pragma: no cover
             self.session.rollback()
             self.fail("commit_failure")
-        return
 
     def delete_collection(self, filters=None, session=None):
         """Delete all filter matching members of the collection.

@@ -18,7 +18,7 @@ from drowsy.resource import (
 from drowsy.tests.base import DrowsyTests
 from drowsy.tests.models import Album, Artist, Playlist, Track
 from drowsy.tests.resources import (
-    AlbumResource, PlaylistResource, TrackResource)
+    AlbumResource, PlaylistResource, TrackResource, EmployeeResource)
 
 
 class DrowsyResourceTests(DrowsyTests):
@@ -139,9 +139,64 @@ class DrowsyResourceTests(DrowsyTests):
         self.assertTrue(rc.resources_fetched == 3)
         self.assertTrue(rc.resources_available == 100)
 
+    # RESOURCE CLASS TESTS
+
+    def test_resource_session_callable(self):
+        """Test that providing a callable session works."""
+        def session_callable():
+            """Dummy session callable."""
+            return self.db_session
+        resource = EmployeeResource(session=session_callable)
+        self.assertTrue(resource.session is self.db_session)
+
+    def test_resource_session_setter(self):
+        """Test setting a session works."""
+        resource = EmployeeResource(session=self.db_session)
+        new_session = self.DBSession()
+        resource.session = new_session
+        self.assertTrue(resource.session is not self.db_session)
+        self.assertTrue(resource.session is new_session)
+
+    def test_resource_context_callable(self):
+        """Test that providing a callable context works."""
+        def context_callable():
+            """Dummy context callable."""
+            return {"test": "test"}
+        resource = EmployeeResource(session=self.db_session,
+                                    context=context_callable)
+        self.assertTrue(resource.context.get("test") == "test")
+
+    def test_resource_context_setter(self):
+        """Test setting a resource context works."""
+        resource = EmployeeResource(session=self.db_session,
+                                    context={})
+        resource.context = {"test": "test"}
+        self.assertTrue(resource.context.get("test") == "test")
+
+    def test_resource_page_max_size(self):
+        """Test that providing a page_max_size works."""
+        resource = EmployeeResource(session=self.db_session,
+                                    page_max_size=100)
+        self.assertTrue(resource.page_max_size == 100)
+
+    def test_resource_page_max_size_0(self):
+        """Test that providing 0 for page_max_size works."""
+        resource = EmployeeResource(session=self.db_session,
+                                    page_max_size=0)
+        self.assertTrue(resource.page_max_size is None)
+
+    def test_resource_error_message_override(self):
+        """Test that error message overrides are handled properly."""
+        resource = EmployeeResource(session=self.db_session)
+        try:
+            resource.fail(key="invalid_field")
+        except BadRequestError as exc:
+            self.assertTrue(exc.code == "invalid_field")
+            self.assertTrue(exc.message == "Test invalid_field message.")
+
     # PATCH TESTS
 
-    def test_simple_patch(self):
+    def test_patch_simple(self):
         """Make sure that a simple obj update works."""
         album = self.db_session.query(Album).filter(
             Album.album_id == 1).all()[0]
@@ -151,7 +206,17 @@ class DrowsyResourceTests(DrowsyTests):
             result["title"] == "TEST" and
             album.title == "TEST")
 
-    def test_empty_patch(self):
+    def test_patch_no_tuple_ident(self):
+        """Test passing a single value identity works."""
+        album = self.db_session.query(Album).filter(
+            Album.album_id == 1).all()[0]
+        album_resource = AlbumResource(session=self.db_session)
+        result = album_resource.patch(album.album_id, {"title": "TEST"})
+        self.assertTrue(
+            result["title"] == "TEST" and
+            album.title == "TEST")
+
+    def test_patch_empty(self):
         """Make sure that a obj update works with no update params."""
         album = self.db_session.query(Album).filter(
             Album.album_id == 1).all()[0]
@@ -177,7 +242,7 @@ class DrowsyResourceTests(DrowsyTests):
             len(playlist.tracks) == 2 and
             len(result["tracks"]) == 2)
 
-    def test_patch_add_new_subresource(self):
+    def test_patch_subresource_list_add_new(self):
         """Ensure we can add a new obj to a list using relationship."""
         playlist = self.db_session.query(Playlist).filter(
             Playlist.playlist_id == 18).all()[0]
@@ -208,7 +273,7 @@ class DrowsyResourceTests(DrowsyTests):
                         playlist.tracks[1].composer == "Nick Repole" and
                         result["tracks"][1]["composer"] == "Nick Repole")
 
-    def test_patch_update_existing_list_subresource(self):
+    def test_patch_subresource_list_update_existing(self):
         """Ensure we can update a list relationship item."""
         playlist = self.db_session.query(Playlist).filter(
             Playlist.playlist_id == 18).first()
@@ -224,7 +289,7 @@ class DrowsyResourceTests(DrowsyTests):
             playlist.tracks[0].name == "Test Track Seven" and
             result["tracks"][0]["name"] == playlist.tracks[0].name)
 
-    def test_single_relation_item(self):
+    def test_patch_subresource_single_update_existing(self):
         """Make sure that a non-list relation can have a field set."""
         album = self.db_session.query(Album).filter(
             Album.album_id == 1).all()[0]
@@ -419,6 +484,21 @@ class DrowsyResourceTests(DrowsyTests):
         self.assertTrue(
             len(result) == 1 and
             result[0]["album_id"] == 5
+        )
+
+    def test_get_collection_filters_invalid(self):
+        """Test simple get_collection filtering failure."""
+        query_params = {
+            "query": json.dumps({"title": {"$bad": "Big Ones"}})
+        }
+        album_resource = AlbumResource(session=self.db_session)
+        self.assertRaisesCode(
+            BadRequestError,
+            "invalid_filters",
+            album_resource.get_collection,
+            filters=ModelQueryParamParser(query_params).parse_filters(
+                album_resource.model
+            )
         )
 
     def test_get_all_objects(self):

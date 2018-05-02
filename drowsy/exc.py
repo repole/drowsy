@@ -26,6 +26,7 @@ class DrowsyError(Exception):
         self.code = code
         self.message = message
         self.kwargs = kwargs
+        super(DrowsyError, self).__init__()
 
 
 class UnprocessableEntityError(DrowsyError):

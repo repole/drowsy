@@ -37,6 +37,9 @@ class InvoiceResource(ModelResource):
 class EmployeeResource(ModelResource):
     class Meta:
         schema_cls = EmployeeSchema
+        error_messages = {
+            "invalid_field": "Test invalid_field message."
+        }
 
 
 class CustomerResource(ModelResource):

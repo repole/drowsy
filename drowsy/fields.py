@@ -13,9 +13,9 @@ from marshmallow.fields import Field, Nested, missing_
 from marshmallow.utils import is_collection, get_value
 from marshmallow.validate import ValidationError
 from marshmallow_sqlalchemy.fields import Related, ensure_list
+from sqlalchemy.inspection import inspect
 from drowsy import resource_class_registry
 from drowsy.permissions import AllowAllOpPermissions
-from sqlalchemy.inspection import inspect
 
 
 class EmbeddableMixinABC(Field):
@@ -92,10 +92,9 @@ class EmbeddableMixinABC(Field):
         """
         if not self.embedded:
             return self._deserialize_unembedded(value, *args, **kwargs)
-        else:
-            return super(EmbeddableMixinABC, self).deserialize(
-                value, *args, **kwargs
-            )
+        return super(EmbeddableMixinABC, self).deserialize(
+            value, *args, **kwargs
+        )
 
     def serialize(self, attr, obj, *args, **kwargs):
         """Return the field's serialized value if embedded.
@@ -114,8 +113,7 @@ class EmbeddableMixinABC(Field):
         if self.embedded:
             return super(EmbeddableMixinABC, self).serialize(
                 attr, obj, *args, **kwargs)
-        else:
-            return self._serialize_unembedded(attr, obj, *args, **kwargs)
+        return self._serialize_unembedded(attr, obj, *args, **kwargs)
 
 
 class NestedPermissibleABC(Nested):
@@ -178,8 +176,7 @@ class NestedPermissibleABC(Nested):
         """Get the nested resource class."""
         if isinstance(self._resource_cls, basestring):
             return resource_class_registry.get_class(self._resource_cls)
-        else:
-            return self._resource_cls
+        return self._resource_cls
 
     @property
     def schema(self):
@@ -358,11 +355,11 @@ class NestedPermissibleABC(Nested):
         """
         try:
             self.fail(key, **kwargs)
-        except ValidationError as e:
+        except ValidationError as exc:
             if index is not None:
-                errors[index] = {"$op": e.messages}
+                errors[index] = {"$op": exc.messages}
             else:
-                errors["$op"] = e.messages
+                errors["$op"] = exc.messages
             if strict:
                 raise ValidationError(errors)
 
@@ -558,8 +555,7 @@ class NestedRelated(NestedPermissibleABC, Related):
                 self.related_model.__mapper__.get_property_by_column(column)
                 for column in columns
             ]
-        else:
-            return super(NestedRelated, self).related_keys
+        return super(NestedRelated, self).related_keys
 
     def _parent_contains_child(self, parent, instance, relationship_name):
         """Checks if the parent relation contains the given instance.
@@ -586,14 +582,14 @@ class NestedRelated(NestedPermissibleABC, Related):
         if with_parentable:
             in_relation_instance = self.session.query(
                 self.related_model).with_parent(
-                self.parent.instance, property=relationship_name).filter_by(**{
-                    column.key: getattr(instance, column.key)
-                    for column in self.related_keys
-                }).first()
+                    self.parent.instance,
+                    property=relationship_name).filter_by(**{
+                        column.key: getattr(instance, column.key)
+                        for column in self.related_keys
+                    }).first()
             if in_relation_instance == instance:
                 return True
-            else:
-                return False
+            return False
         else:
             if isinstance(getattr(parent, self.name), list):
                 if instance in getattr(parent, self.name):
@@ -602,8 +598,7 @@ class NestedRelated(NestedPermissibleABC, Related):
                     return False
             elif getattr(parent, self.name) == instance:
                 return True
-            else:
-                return False
+            return False
 
     def _has_identifier(self, obj_data):
         """Determine if the provided data has a unique identifier.
