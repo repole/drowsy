@@ -27,9 +27,9 @@ class QueryBuilder(object):
 
     def _get_order_bys(self, record_class, sorts, convert_key_names_func):
         """Helper method for applying sorts.
-        
+
         :param record_class: The type of model being sorted.
-        :type record_class: :class:`~sqlalchemy.orm.util.AliasedClass` 
+        :type record_class: :class:`~sqlalchemy.orm.util.AliasedClass`
             or SQLAlchemy model class.
         :param sorts: A list of sorts.
         :type sorts: list of :class:`~drowsy.parser.SortInfo`
@@ -42,7 +42,7 @@ class QueryBuilder(object):
             :class:`~drowsy.parser.SortInfo` is provided.
         :return: A list of order_by parameters to be applied to a query.
         :rtype: list
-        
+
         """
         result = list()
         for sort in sorts:
@@ -297,7 +297,7 @@ class QueryBuilder(object):
             gettext=gettext
         )
 
-    def apply_subquery_loads(self, query, resource, subfilters, embeds,
+    def apply_subquery_loads(self, query, resource, subfilters, embeds=None,
                              strict=True, stack_size_limit=100,
                              dialect_override=False):
         """Apply joins, load options, and subfilters to a query.
@@ -329,10 +329,12 @@ class QueryBuilder(object):
             an error when subfilters or embeds are unable to be
             successfully applied.
         :raise ValueError: Due to programmer error. Generally
-            Only raised if one of the above parameters is 
+            Only raised if one of the above parameters is
             of the wrong type.
-        
+
         """
+        if embeds is None:
+            embeds = []
         dialect = resource.session.bind.name
         supported_dialects = ["mssql", "postgresql",
                               "oracle"]  # , "sqlite" TESTING

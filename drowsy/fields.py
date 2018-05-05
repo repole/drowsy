@@ -99,7 +99,7 @@ class EmbeddableMixinABC(Field):
     def serialize(self, attr, obj, *args, **kwargs):
         """Return the field's serialized value if embedded.
 
-        :param str attr: The attibute or key to get from the object.
+        :param str attr: The attribute or key to get from the object.
         :param str obj: The object to pull the key from.
         :param args: Any positional arguments to potentially be passed
             to the field's serialization method.
@@ -800,7 +800,9 @@ class EmbeddableRelationshipMixin(EmbeddableMixinABC):
         # POST/PATCH/PUT with a string that isn't a valid url,
         # and it would simply be ignored rather than raising
         # an error.
-        if isinstance(value, basestring):
+        if self.required and not self.parent.partial:
+            self.embedded = True
+        elif isinstance(value, basestring):
             self.embedded = False
         return super(EmbeddableRelationshipMixin, self).deserialize(
             value, *args, **kwargs

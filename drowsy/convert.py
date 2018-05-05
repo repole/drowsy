@@ -67,15 +67,23 @@ class ModelResourceConverter(ModelConverter):
 
         """
         nullable = True
+        required = False
         for pair in prop.local_remote_pairs:
             if not pair[0].nullable:
                 if prop.uselist is True:
                     nullable = False
+                    required = False
+                else:
+                    for column in prop.local_columns:
+                        if column.nullable is False:
+                            nullable = False
+                            required = True
                 break
         kwargs.update({
             "nested": prop.mapper.class_.__name__ + 'Schema',
             "resource_cls": prop.mapper.class_.__name__ + 'Resource',
             "allow_none": nullable,
+            "required": required,
             "many": prop.uselist
         })
 

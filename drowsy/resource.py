@@ -9,17 +9,16 @@
     :license: MIT - See LICENSE for more details.
 """
 from marshmallow.compat import with_metaclass
-from marshmallow.fields import MISSING_ERROR_MESSAGE
 from mqlalchemy import InvalidMQLException
+from sqlalchemy.exc import SQLAlchemyError
+import sys
 from drowsy import resource_class_registry
 from drowsy.fields import EmbeddableMixinABC, NestedRelated
 from drowsy.query_builder import QueryBuilder, SortInfo
 from drowsy.utils import get_error_message, get_field_by_dump_name
 from drowsy.exc import (
     BadRequestError, UnprocessableEntityError, MethodNotAllowedError,
-    ResourceNotFoundError)
-from sqlalchemy.exc import SQLAlchemyError
-import sys
+    ResourceNotFoundError, MISSING_ERROR_MESSAGE)
 
 
 class ResourceCollection(list):
@@ -813,11 +812,11 @@ class BaseModelResource(SchemaResourceABC, NestableResourceABC):
             other cases.
 
         """
-        if key == "validation_failure":
+        if key == "validation_failure" or key == "commit_failure":
             raise UnprocessableEntityError(
                 code=key,
                 message=self._get_error_message(key, **kwargs),
-                errors=errors,
+                errors=errors or {},
                 **kwargs)
         elif key == "resource_not_found":
             raise ResourceNotFoundError(
@@ -825,12 +824,6 @@ class BaseModelResource(SchemaResourceABC, NestableResourceABC):
                 message=self._get_error_message(key, **kwargs),
                 **kwargs
             )
-        elif key == "commit_failure":
-            raise UnprocessableEntityError(
-                code=key,
-                message=self._get_error_message(key, **kwargs),
-                errors={},
-                **kwargs)
         elif key == "invalid_filters" or key == "invalid_subresource_filters":
             if isinstance(exc, InvalidMQLException):
                 if "subquery_key" in kwargs:
@@ -909,10 +902,7 @@ class BaseModelResource(SchemaResourceABC, NestableResourceABC):
         :rtype: dict
 
         """
-        filters = {}
-        if not (isinstance(ident, tuple) or
-                isinstance(ident, list)):
-            ident = (ident,)
+        filters = self._get_ident_filters(ident)
         if session is None:
             session = self.session
         schema = self.make_schema(
@@ -920,10 +910,6 @@ class BaseModelResource(SchemaResourceABC, NestableResourceABC):
             subfilters=subfilters,
             embeds=embeds,
             strict=strict)
-        for i, field_name in enumerate(schema.id_keys):
-            field = schema.declared_fields.get(field_name)
-            filter_name = field.dump_to or field_name
-            filters[filter_name] = ident[i]
         query = self._get_query(
             session=session,
             filters=filters,
@@ -944,7 +930,9 @@ class BaseModelResource(SchemaResourceABC, NestableResourceABC):
 
         """
         schema = self.make_schema(partial=False)
-        instance, errors = schema.load(data, session=self.session)
+        instance = self.model()
+        instance, errors = schema.load(
+            data, session=self.session, instance=instance)
         if errors:
             self.session.rollback()
             self.fail("validation_failure", errors=errors)
@@ -983,7 +971,7 @@ class BaseModelResource(SchemaResourceABC, NestableResourceABC):
         if instance:
             try:
                 self.session.commit()
-            except SQLAlchemyError:
+            except SQLAlchemyError:  # pragma: no cover
                 self.session.rollback()
                 self.fail("commit_failure")
             return schema.dump(instance).data
@@ -1014,7 +1002,7 @@ class BaseModelResource(SchemaResourceABC, NestableResourceABC):
         if instance:
             try:
                 self.session.commit()
-            except SQLAlchemyError:
+            except SQLAlchemyError:  # pragma: no cover
                 self.session.rollback()
                 self.fail("commit_failure")
             return schema.dump(instance).data
@@ -1030,10 +1018,10 @@ class BaseModelResource(SchemaResourceABC, NestableResourceABC):
         """
         instance = self._get_instance(ident)
         if instance:
-            self.session.remove(instance)
+            self.session.delete(instance)
             try:
                 self.session.commit()
-            except SQLAlchemyError:
+            except SQLAlchemyError:  # pragma: no cover
                 self.session.rollback()
                 self.fail("commit_failure")
         else:
@@ -1100,8 +1088,7 @@ class BaseModelResource(SchemaResourceABC, NestableResourceABC):
                     if not isinstance(sort, SortInfo):
                         if strict:
                             self.fail("invalid_sort_type", sort=sort)
-                        else:
-                            continue
+                        continue
                     try:
                         query = self.query_builder.apply_sorts(
                             query, [sort], self.convert_key_name)

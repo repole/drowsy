@@ -9,6 +9,11 @@
     :license: MIT - See LICENSE for more details.
 """
 
+MISSING_ERROR_MESSAGE = (
+    "An error was raised by `{class_name}` with the key `{key}`, "
+    "but no such key exists in the `error_messages` dictionary."
+)
+
 
 class DrowsyError(Exception):
 

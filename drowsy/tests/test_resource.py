@@ -11,8 +11,9 @@
 from __future__ import unicode_literals
 import json
 from drowsy.exc import (
-    UnprocessableEntityError, BadRequestError, MethodNotAllowedError)
-from drowsy.parser import ModelQueryParamParser
+    UnprocessableEntityError, BadRequestError, MethodNotAllowedError,
+    ResourceNotFoundError)
+from drowsy.parser import ModelQueryParamParser, SubfilterInfo
 from drowsy.resource import (
     ResourceABC, NestableResourceABC, SchemaResourceABC, ResourceCollection)
 from drowsy.tests.base import DrowsyTests
@@ -193,6 +194,24 @@ class DrowsyResourceTests(DrowsyTests):
         except BadRequestError as exc:
             self.assertTrue(exc.code == "invalid_field")
             self.assertTrue(exc.message == "Test invalid_field message.")
+
+    def test_resource_make_subresource_fail(self):
+        """Test that attempting to make an invalid subresource fails."""
+        resource = EmployeeResource(session=self.db_session,
+                                    page_max_size=0)
+        self.assertRaises(
+            ValueError,
+            resource.make_subresource,
+            "test"
+        )
+
+    def test_resource_fail_missing_key(self):
+        resource = EmployeeResource(session=self.db_session)
+        self.assertRaises(
+            AssertionError,
+            resource.fail,
+            key="test"
+        )
 
     # PATCH TESTS
 
@@ -445,6 +464,27 @@ class DrowsyResourceTests(DrowsyTests):
             result["artist"]["name"] == album.artist.name and
             artist is not None)
 
+    # GET TESTS
+
+    def test_get(self):
+        """Test simple get functionality."""
+        resource = AlbumResource(session=self.db_session)
+        result = resource.get(1)
+        self.assertTrue(result["album_id"] == 1)
+
+    def test_get_with_query(self):
+        """Test get with a pre-existing query."""
+        query = self.db_session.query(Album).filter(
+            Album.title == "test")
+        resource = AlbumResource(session=self.db_session)
+        self.assertRaisesCode(
+            ResourceNotFoundError,
+            "resource_not_found",
+            resource.get,
+            1,
+            session=query
+        )
+
     # GET COLLECTION TESTS
 
     def test_get_collection(self):
@@ -501,13 +541,25 @@ class DrowsyResourceTests(DrowsyTests):
             )
         )
 
-    def test_get_all_objects(self):
-        """Test getting all objects with an empty dict of params."""
-        query_params = {}
+    def test_get_collection_subresource_query(self):
+        """Test a subresource query."""
         album_resource = AlbumResource(session=self.db_session)
         result = album_resource.get_collection(
-            filters=ModelQueryParamParser(query_params).parse_filters(
-                album_resource.model)
+            subfilters={"tracks": SubfilterInfo(
+                filters={'track_id': 1}
+            )}
+        )
+        for album in result:
+            for track in album["tracks"]:
+                self.assertTrue(
+                    track["track_id"] == 1
+                )
+
+    def test_get_collection_simple(self):
+        """Test getting all objects with an empty dict of params."""
+        album_resource = AlbumResource(session=self.db_session)
+        result = album_resource.get_collection(
+            filters={}
         )
         self.assertTrue(len(result) == 347)
 
@@ -654,6 +706,19 @@ class DrowsyResourceTests(DrowsyTests):
             update_data
         )
 
+    # PUT TESTS
+
+    def test_put_validation_fail(self):
+        """Test put validation error failure."""
+        resource = AlbumResource(session=self.db_session)
+        self.assertRaisesCode(
+            UnprocessableEntityError,
+            "validation_failure",
+            resource.put,
+            1,
+            {"album_id": "bad"}
+        )
+
     # PUT COLLECTION TESTS
 
     def test_put_collection_fail(self):
@@ -665,6 +730,26 @@ class DrowsyResourceTests(DrowsyTests):
             "method_not_allowed",
             playlist_resource.put_collection,
             update_data
+        )
+
+    # DELETE TESTS
+    def test_delete(self):
+        """Test a simple delete action."""
+        resource = AlbumResource(session=self.db_session)
+        resource.delete(1)
+        result = self.db_session.query(Album).filter(
+            Album.album_id == 1
+        ).first()
+        self.assertTrue(result is None)
+
+    def test_delete_resource_not_found(self):
+        """Test deleting a non existant resource fails."""
+        resource = AlbumResource(session=self.db_session)
+        self.assertRaisesCode(
+            ResourceNotFoundError,
+            "resource_not_found",
+            resource.delete,
+            9999999
         )
 
     # DELETE COLLECTION TESTS
@@ -680,3 +765,75 @@ class DrowsyResourceTests(DrowsyTests):
             Playlist.playlist_id == 18).all()
         self.assertTrue(len(playlists) == 0)
         self.assertTrue(result is None)
+
+    # POST TESTS
+
+    def test_post_commit_fail(self):
+        """Test the commit failure on posts is handled properly."""
+        from sqlalchemy.orm import sessionmaker
+        DBSession = sessionmaker(bind=self.db_engine, autoflush=False)
+        db_session = DBSession()
+        new_album = Album(
+            album_id=1,
+            title="test",
+            artist_id=1
+        )
+        db_session.add(new_album)
+        resource = AlbumResource(session=db_session)
+        self.assertRaisesCode(
+            UnprocessableEntityError,
+            "commit_failure",
+            resource.post,
+            {"album_id": 1, "title": "test2", "artist": {"artist_id": 1}}
+        )
+
+    def test_post_commit_fail_already_exists(self):
+        """Test the commit fails when the same id already exists."""
+        resource = AlbumResource(session=self.db_session)
+        self.assertRaisesCode(
+            UnprocessableEntityError,
+            "commit_failure",
+            resource.post,
+            {"album_id": 1, "title": "test2", "artist": {"artist_id": 1}}
+        )
+
+    def test_post_collection_no_relation_fail(self):
+        """Test a missing non list relation causes a post fail."""
+        data = {"title": "test1"}
+        resource = AlbumResource(session=self.db_session)
+        self.assertRaisesCode(
+            UnprocessableEntityError,
+            "validation_failure",
+            resource.post,
+            data
+        )
+
+    # POST COLLECTION TESTS
+
+    def test_post_collection(self):
+        """Test posting multiple objects at once."""
+        data = [
+            {"title": "test1", "artist": {"artist_id": 1}},
+            {"album_id": 9999, "title": "test2", "artist": {"artist_id": 1}}
+        ]
+        resource = AlbumResource(session=self.db_session)
+        resource.post_collection(data)
+        result1 = self.db_session.query(Album).filter(
+            Album.album_id == 9999).first()
+        self.assertTrue(result1 is not None)
+        result2 = self.db_session.query(Album).filter(
+            Album.title == "test2"
+        )
+        self.assertTrue(result2 is not None)
+
+    def test_post_collection_bad_input(self):
+        """Test posting a non list to a collection fails."""
+        data = {"title": "test1", "artist_id": 1}
+        resource = AlbumResource(session=self.db_session)
+        self.assertRaisesCode(
+            BadRequestError,
+            "invalid_collection_input",
+            resource.post_collection,
+            data
+        )
+
