@@ -50,7 +50,18 @@ class DrowsyTests(unittest.TestCase):
         """
         try:
             args[0](*args[1:], **kwargs)
-            self.assertTrue(False)
+            raise AssertionError("Callable executed successfully.")
         except expected_exception as ex:
             self.assertTrue(hasattr(ex, "code"))
             self.assertTrue(ex.code == code)
+
+    def test_assert_raises_code_fail(self):
+        """Test assert raises code fails properly."""
+        self.assertRaises(
+            AssertionError,
+            self.assertRaisesCode,
+            ValueError,
+            "test",
+            int,
+            1
+        )

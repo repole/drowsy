@@ -1,7 +1,7 @@
 ## -*- coding: utf-8 -*-\
 """
-    drowsy.tests.models.py
-    ~~~~~~~~~~~~~~~~~~~~~~~~~~
+    drowsy.tests.models
+    ~~~~~~~~~~~~~~~~~~~
 
     SQLAlchemy models for the Chinook database.
 

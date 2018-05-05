@@ -4,12 +4,16 @@
 
     Resources used for test purposes.
 
-    :copyright: (c) 2016 by Nicholas Repole and contributors.
+    :copyright: (c) 2016-2018 by Nicholas Repole and contributors.
                 See AUTHORS for more details.
     :license: MIT - See LICENSE for more details.
 """
 from drowsy.resource import ModelResource
-from drowsy.tests.schemas import *
+from drowsy.tests.schemas import (
+    AlbumSchema, ArtistSchema, CompositeNodeSchema, CustomerSchema,
+    EmployeeSchema, GenreSchema, InvoiceLineSchema, InvoiceSchema,
+    MediaTypeSchema, NodeSchema, PlaylistSchema, TrackSchema
+)
 
 
 def page_max_100(resource):

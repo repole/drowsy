@@ -8,8 +8,12 @@
                 See AUTHORS for more details.
     :license: MIT - See LICENSE for more details.
 """
-from drowsy.tests.models import *
 from drowsy.schema import ModelResourceSchema
+from drowsy.tests.models import (
+    Album, Artist, CompositeNode, Customer, Employee,
+    Genre, Invoice, InvoiceLine, MediaType, Node,
+    Playlist, Track
+)
 
 
 class InvoiceLineSchema(ModelResourceSchema):

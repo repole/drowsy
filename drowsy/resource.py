@@ -1086,17 +1086,15 @@ class BaseModelResource(SchemaResourceABC, NestableResourceABC):
             if isinstance(sorts, list):
                 for sort in sorts:
                     if not isinstance(sort, SortInfo):
-                        if strict:
-                            self.fail("invalid_sort_type", sort=sort)
-                        continue
+                        raise ValueError("Each sort must be of type SortInfo.")
                     try:
                         query = self.query_builder.apply_sorts(
                             query, [sort], self.convert_key_name)
                     except AttributeError:
                         if strict:
                             self.fail("invalid_sort_field", field=sort.attr)
-            elif strict:
-                self.fail("invalid_sorts_type")
+            else:
+                raise ValueError("The sort parameter must be a list or None.")
         # offset/limit
         if limit is not None:
             try:
