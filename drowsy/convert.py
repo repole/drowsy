@@ -4,7 +4,7 @@
 
     Convert SQLAlchemy models into Marshmallow schemas.
 
-    :copyright: (c) 2016 by Nicholas Repole and contributors.
+    :copyright: (c) 2016-2018 by Nicholas Repole and contributors.
                 See AUTHORS for more details.
     :license: MIT - See LICENSE for more details.
 """
@@ -94,8 +94,8 @@ class ModelResourceConverter(ModelConverter):
             determine a corresponding field.
         :type prop: :class:`~sqlalchemy.orm.properties.ColumnProperty`
             or :class:`~sqlalchemy.orm.properties.RelationshipProperty`
-        :param instance: `True` if this method should return an actual
-            instance of a field, `False` to return the actual field
+        :param instance: ``True`` if this method should return an actual
+            instance of a field, ``False`` to return the actual field
             class.
         :param kwargs: Keyword args to be used in the construction of
             the field.
@@ -151,8 +151,8 @@ class ModelResourceConverter(ModelConverter):
 
         :param model: The SQLAlchemy model the generated fields
             correspond to.
-        :param bool include_fk: `True` if fields should be generated for
-            foreign keys, `False` otherwise.
+        :param bool include_fk: ``True`` if fields should be generated
+            for foreign keys, ``False`` otherwise.
         :param fields: A collection of field names to generate.
         :type fields: :class:`~collections.Iterable` or None
         :param exclude: A collection of field names not to generate.

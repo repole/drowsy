@@ -31,6 +31,8 @@ def get_error_message(error_messages, key, gettext=None, **kwargs):
     :param dict kwargs: Any additional arguments that may be passed
         to a callable error message, or used to translate and/or
         format an error message string.
+    :raise KeyError: If the ``error_messages`` dict does not contain
+        the provided ``key``.
     :return: An error message with the supplied kwargs injected.
     :rtype: str
 
@@ -49,8 +51,10 @@ def get_field_by_dump_name(schema, dump_name):
     """Helper method to get a field from schema by dump name.
 
     :param schema: Instantiated schema.
-    :param dump_name: Name as the field as it was serialized.
+    :type schema: :class:`~marshmallow.schema.Schema`
+    :param str dump_name: Name as the field as it was serialized.
     :return: The schema field if found, None otherwise.
+    :rtype: :class:`~marshmallow.fields.Field` or None
 
     """
     field = None

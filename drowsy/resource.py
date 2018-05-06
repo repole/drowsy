@@ -104,7 +104,7 @@ class ResourceABC(object):
 
         :param ident: Identifying info for the resource.
         :raise ResourceNotFoundError: If no such resource exists.
-        :return: `None`
+        :return: ``None``
 
         """
         raise NotImplementedError
@@ -119,7 +119,7 @@ class ResourceABC(object):
         :param data: Data used to create the collection of resources.
         :raise UnprocessableEntityError: If the supplied data cannot be
             processed.
-        :return: `None`
+        :return: ``None``
 
         """
         raise NotImplementedError
@@ -130,7 +130,7 @@ class ResourceABC(object):
         :param data: Data used to replace the collection of resources.
         :raise UnprocessableEntityError: If the supplied data cannot be
             processed.
-        :return: `None`
+        :return: ``None``
 
         """
         raise NotImplementedError
@@ -141,7 +141,7 @@ class ResourceABC(object):
         :param data: Data used to update the collection of resources.
         :raise UnprocessableEntityError: If the supplied data cannot be
             processed.
-        :return: `None`
+        :return: ``None``
 
         """
         raise NotImplementedError
@@ -163,10 +163,14 @@ class SchemaResourceABC(ResourceABC):
         """
         raise NotImplementedError
 
-    def make_schema(self, fields=None, subfilters=None, embeds=None,
+    def make_schema(self, subfilters=None, fields=None, embeds=None,
                     partial=False, instance=None, strict=True):
         """Used to generate a schema for this request.
 
+        :param subfilters: A dict of MQLAlchemy filters, with each key
+            being the dot notation of the relationship they are to be
+            applied to.
+        :type subfilters: dict or None
         :param fields: Names of fields to be included in the result.
         :type fields: list or None
         :param embeds: A list of child resources (and/or their fields)
@@ -174,11 +178,11 @@ class SchemaResourceABC(ResourceABC):
         :type embeds: list or None
         :param bool partial: Whether partial deserialization is allowed.
         :param instance: Object to associate with the schema.
-        :param bool strict: If `True`, will raise an exception when bad
-            parameters are passed. If `False`, will quietly ignore any
-            bad input and treat it as if none was provided.
+        :param bool strict: If ``True``, will raise an exception when
+            bad parameters are passed. If ``False``, will quietly ignore
+            any bad input and treat it as if none was provided.
         :raise BadRequestError: Invalid fields or embeds will result
-            in a raised exception if strict is `True`.
+            in a raised exception if strict is ``True``.
         :return: A schema with the supplied fields and embeds included.
         :rtype: :class:`~drowsy.schema.SchemaResourceABC`
 
@@ -212,7 +216,7 @@ class ModelResourceOpts(object):
     resource.
 
     A ``page_max_size`` option may be provided as an `int`, `callable`,
-    or `None` to specify default page size for this resource. If given
+    or ``None`` to specify default page size for this resource. If given
     a `callable`, it should the resource itself as an argument.
 
     Example usage:
@@ -272,7 +276,7 @@ class ModelResourceMeta(type):
         return klass
 
     def __init__(cls, name, bases, attrs):
-        """Initializes the meta class for a `ModelResource` class.
+        """Initializes the meta class for a ``ModelResource`` class.
 
         :param cls: This :class:`ModelResourceMeta` class.
         :param name: Class name of the
@@ -311,14 +315,12 @@ class BaseModelResource(SchemaResourceABC, NestableResourceABC):
         "invalid_sort_type": "The sort provided is invalid.",
         "invalid_sort_field": ("The sort provided for field %(field)s "
                                "is invalid."),
-        "invalid_limit_type": ("The limit provided (%(limit)s) can not be "
-                               "converted to an integer."),
+        "invalid_limit_value": ("The limit provided (%(limit)s) is not a "
+                                "non negative integer."),
         "limit_too_high": ("The limit provided (%(limit)d) is greater than "
                            "the max page size allowed (%(max_page_size)d)."),
-        "invalid_offset_type": ("The offset provided (%(offset)s) can not be "
-                                "converted to an integer."),
-        "invalid_offset_limit": ("The provided offset (%(offset)s) and limit "
-                                 "(%(limit)s) are invalid."),
+        "invalid_offset_value": ("The offset provided (%(offset)s) is not a "
+                                 "non negative integer."),
         "method_not_allowed": ("The method (%(method)s) used to make this "
                                "request is not allowed for this resource."),
         "invalid_subresource_options": ("Limit and offset for this "
@@ -375,10 +377,10 @@ class BaseModelResource(SchemaResourceABC, NestableResourceABC):
         :type context: dict, callable, or None
         :param page_max_size: Used to determine the maximum number of
             results to return by :meth:`get_collection`. Defaults to
-            the `page_max_size` from the resource's `opts` if
-            `None` is passed in. To explicitly allow no limit,
-            pass in `0`. If given a `callable`, it should accept
-            the resource itself as its first and only arguement.
+            the ``page_max_size`` from the resource's ``opts`` if
+            ``None`` is passed in. To explicitly allow no limit,
+            pass in ``0``. If given a ``callable``, it should accept
+            the resource itself as its first and only argument.
         :type page_max_size: int, callable, or None
         :param error_messages: May optionally be provided to override
             the default error messages for this resource.
@@ -554,6 +556,8 @@ class BaseModelResource(SchemaResourceABC, NestableResourceABC):
         if not (isinstance(ident, tuple) or
                 isinstance(ident, list)):
             ident = (ident,)
+        # NOTE: No risk of BadRequestError here due to no embeds or
+        # fields being passed to make_schema
         schema = self.make_schema()
         for i, field_name in enumerate(schema.id_keys):
             field = schema.fields.get(field_name)
@@ -566,19 +570,26 @@ class BaseModelResource(SchemaResourceABC, NestableResourceABC):
 
         :param ident: A value used to identify this resource.
             See :meth:`get` for more info.
+        :raise ResourceNotFound: Raised in cases where invalid
+            filters were supplied.
+        :return: An instance of this resource type.
 
         """
         filters = self._get_ident_filters(ident)
         query = self.session.query(self.model)
-        query = self.query_builder.apply_filters(
-            query,
-            model_class=self.model,
-            filters=filters,
-            whitelist=self.whitelist,
-            stack_size_limit=100,
-            convert_key_names_func=self.convert_key_name,
-            gettext=self.context.get("gettext", None))
-        query = self.apply_required_filters(query)
+        try:
+            query = self.query_builder.apply_filters(
+                query,
+                model_class=self.model,
+                filters=filters,
+                whitelist=self.whitelist,
+                stack_size_limit=100,
+                convert_key_names_func=self.convert_key_name,
+                gettext=self.context.get("gettext", None))
+            query = self.apply_required_filters(query)
+        # TODO - Clean up exceptions after MQLAlchemy update.
+        except (TypeError, ValueError, InvalidMQLException):
+            self.fail("resource_not_found", ident=ident)
         return query.first()
 
     def _get_embed_info(self, embeds=None, strict=True):
@@ -587,9 +598,11 @@ class BaseModelResource(SchemaResourceABC, NestableResourceABC):
         :param embeds: A list of relationship and relationship field
             names to be included in the result.
         :type embeds: list or None
-        :param bool strict: If `True`, will raise an exception when bad
-            parameters are passed. If `False`, will quietly ignore any
-            bad input and treat it as if none was provided.
+        :param bool strict: If ``True``, will raise an exception when
+            bad parameters are passed. If ``False``, will quietly ignore
+            any bad input and treat it as if none was provided.
+        :raise BadRequestError: If ``strict`` is ``True`` and ``embeds``
+            are not valid.
         :return: A list of converted embed field names, a dict mapping
             their original name to their converted name, and a list of
             the top level embed fields to be included.
@@ -639,8 +652,6 @@ class BaseModelResource(SchemaResourceABC, NestableResourceABC):
         """
         return query
 
-    # def _get_required_filters(self):
-    # def _apply_joins(self, session, embeds, ):
     def _get_query(self, session, filters, subfilters=None, embeds=None,
                    strict=True):
         """Used to generate a query for this request.
@@ -657,11 +668,11 @@ class BaseModelResource(SchemaResourceABC, NestableResourceABC):
         :param embeds: A list of relationship and relationship field
             names to be included in the result.
         :type embeds: list or None
-        :param bool strict: If `True`, will raise an exception when bad
-            parameters are passed. If `False`, will quietly ignore any
-            bad input and treat it as if none was provided.
+        :param bool strict: If ``True``, will raise an exception when
+            bad parameters are passed. If ``False``, will quietly ignore
+            any bad input and treat it as if none was provided.
         :raise BadRequestError: Invalid filters or embeds will
-            result in a raised exception if strict is `True`.
+            result in a raised exception if ``strict`` is ``True``.
         :return: A query with load options applied based on the supplied
             ``embeds`` and filters applied based on the supplied
             ``filters``.
@@ -674,6 +685,7 @@ class BaseModelResource(SchemaResourceABC, NestableResourceABC):
         else:
             query = session
         # apply filters
+        # TODO - better planning for new MQLAlchemy
         try:
             query = self.query_builder.apply_filters(
                 query,
@@ -702,6 +714,10 @@ class BaseModelResource(SchemaResourceABC, NestableResourceABC):
                     partial=False, instance=None, strict=True):
         """Used to generate a schema for this request.
 
+        :param subfilters: MQLAlchemy filters to be applied to child
+            objects of this query. Each key in the dictionary should
+            be a dot notation key corresponding to a subfilter.
+        :type subfilters: dict or None
         :param fields: Names of fields to be included in the result.
         :type fields: list or None
         :param embeds: A list of relationship and relationship field
@@ -709,11 +725,11 @@ class BaseModelResource(SchemaResourceABC, NestableResourceABC):
         :type embeds: list or None
         :param bool partial: Whether partial deserialization is allowed.
         :param instance: SQLAlchemy object to associate with the schema.
-        :param bool strict: If `True`, will raise an exception when bad
-            parameters are passed. If `False`, will quietly ignore any
-            bad input and treat it as if none was provided.
+        :param bool strict: If ``True``, will raise an exception when
+            bad parameters are passed. If ``False``, will quietly ignore
+            any bad input and treat it as if none was provided.
         :raise BadRequestError: Invalid fields or embeds will result
-            in a raised exception if strict is `True`.
+            in a raised exception if strict is ``True``.
         :return: A schema with the supplied fields and embeds included.
         :rtype: :class:`~drowsy.schema.ModelResourceSchema`
 
@@ -783,6 +799,8 @@ class BaseModelResource(SchemaResourceABC, NestableResourceABC):
         :returns: A constructed :class:`~drowsy.resource.Resource`
 
         """
+        # NOTE: No risk of BadRequestError here due to no embeds or
+        # fields being passed to make_schema
         field = get_field_by_dump_name(self.make_schema(), dump_name=name)
         if isinstance(field, NestedRelated):
             return field.resource_cls(
@@ -812,7 +830,9 @@ class BaseModelResource(SchemaResourceABC, NestableResourceABC):
             other cases.
 
         """
-        if key == "validation_failure" or key == "commit_failure":
+        unproccessable_errors = {"validation_failure", "commit_failure",
+                                 "invalid_collection_input"}
+        if key in unproccessable_errors:
             raise UnprocessableEntityError(
                 code=key,
                 message=self._get_error_message(key, **kwargs),
@@ -861,6 +881,10 @@ class BaseModelResource(SchemaResourceABC, NestableResourceABC):
         :param dict kwargs: Any additional arguments that may be passed
             to a callable error message, or used to translate and/or
             format an error message string.
+        :raise AssertionError: If ``key`` does not exist in the
+            error messages dict.
+        return: An error message as a string.
+        :rtype: str
 
         """
         try:
@@ -881,6 +905,10 @@ class BaseModelResource(SchemaResourceABC, NestableResourceABC):
         :param ident: A value used to identify this resource. If the
             schema associated with this resource has multiple
             ``id_keys``, this value may be a list or tuple.
+        :param subfilters: A dict of MQLAlchemy filters, with each key
+            being the dot notation of the relationship they are to be
+            applied to.
+        :type subfilters: dict or None
         :param fields: Names of fields to be included in the result.
         :type fields: list or None
         :param embeds: A list of relationship and relationship field
@@ -892,12 +920,12 @@ class BaseModelResource(SchemaResourceABC, NestableResourceABC):
             :meth:~`sqlalchemy.orm.query.Query.with_parent`.
         :type session: :class:`~sqlalchemy.orm.session.Session` or
             :class:`~sqlalchemy.orm.query.Query`
-        :param bool strict: If `True`, will raise an exception when bad
-            parameters are passed. If `False`, will quietly ignore any
-            bad input and treat it as if none was provided.
+        :param bool strict: If ``True``, will raise an exception when
+            bad parameters are passed. If ``False``, will quietly ignore
+            any bad input and treat it as if none was provided.
         :raise ResourceNotFoundError: If no such resource exists.
         :raise BadRequestError: Invalid fields or embeds will result
-            in a raised exception if strict is set to `True`.
+            in a raised exception if strict is set to ``True``.
         :return: The resource itself if found.
         :rtype: dict
 
@@ -905,15 +933,21 @@ class BaseModelResource(SchemaResourceABC, NestableResourceABC):
         filters = self._get_ident_filters(ident)
         if session is None:
             session = self.session
+        # NOTE: No risk of BadRequestError here due to no embeds or
+        # fields being passed to make_schema
         schema = self.make_schema(
             fields=fields,
             subfilters=subfilters,
             embeds=embeds,
             strict=strict)
-        query = self._get_query(
-            session=session,
-            filters=filters,
-            embeds=embeds)
+        try:
+            query = self._get_query(
+                session=session,
+                filters=filters,
+                subfilters=subfilters,
+                embeds=embeds)
+        except (ValueError, TypeError):
+            self.fail("resource_not_found", ident=ident)
         instance = query.first()
         if instance is not None:
             return schema.dump(instance).data
@@ -929,6 +963,8 @@ class BaseModelResource(SchemaResourceABC, NestableResourceABC):
         :rtype: dict
 
         """
+        # NOTE: No risk of BadRequestError here due to no embeds or
+        # fields being passed to make_schema
         schema = self.make_schema(partial=False)
         instance = self.model()
         instance, errors = schema.load(
@@ -960,6 +996,8 @@ class BaseModelResource(SchemaResourceABC, NestableResourceABC):
         """
         obj = data
         instance = self._get_instance(ident)
+        # NOTE: No risk of BadRequestError here due to no embeds or
+        # fields being passed to make_schema
         schema = self.make_schema(
             partial=False,
             instance=instance)
@@ -991,6 +1029,8 @@ class BaseModelResource(SchemaResourceABC, NestableResourceABC):
         """
         obj = data
         instance = self._get_instance(ident)
+        # NOTE: No risk of BadRequestError here due to no embeds or
+        # fields being passed to make_schema
         schema = self.make_schema(
             partial=True,
             instance=instance)
@@ -1013,7 +1053,7 @@ class BaseModelResource(SchemaResourceABC, NestableResourceABC):
         :param ident: A value used to identify this resource.
             See :meth:`get` for more info.
         :raise ResourceNotFoundError: If no such resource exists.
-        :return: `None`
+        :return: ``None``
 
         """
         instance = self._get_instance(ident)
@@ -1053,28 +1093,22 @@ class BaseModelResource(SchemaResourceABC, NestableResourceABC):
             :meth:`get` for more info.
         :type session: :class:`~sqlalchemy.orm.session.Session` or
             :class:`~sqlalchemy.orm.query.Query`
-        :param bool strict: If `True`, will raise an exception when bad
-            parameters are passed. If `False`, will quietly ignore any
-            bad input and treat it as if none was provided.
+        :param bool strict: If ``True``, will raise an exception when
+            bad parameters are passed. If ``False``, will quietly ignore
+            any bad input and treat it as if none was provided.
         :raise BadRequestError: Invalid filters, sorts, fields,
             embeds, offset, or limit will result in a raised exception
-            if strict is set to `True`.
-        :raise ValueError: If parameters of the wrong format are
-            supplied.
+            if strict is set to ``True``.
         :return: Resources meeting the supplied criteria.
         :rtype: :class:`ResourceCollection`
 
         """
-        if limit is not None and not isinstance(limit, int):
-            raise TypeError("The provided limit must be an integer.")
-        if offset is not None and not isinstance(offset, int):
-            raise TypeError("The provided offset must be an integer.")
-        if sorts is not None and not isinstance(sorts, list):
-            raise TypeError("The sorts parameter must be a list or None.")
         if filters is None:
             filters = {}
         if session is None:
             session = self.session
+        # NOTE: No risk of BadRequestError here due to no embeds or
+        # fields being passed to make_schema
         schema = self.make_schema(
             fields=fields,
             subfilters=subfilters,
@@ -1108,17 +1142,17 @@ class BaseModelResource(SchemaResourceABC, NestableResourceABC):
                 self.fail("limit_too_high",
                           limit=limit,
                           max_page_size=self.page_max_size)
-            else:
-                limit = self.page_max_size
+            limit = self.page_max_size
         if not offset:
             offset = 0
         try:
-            query = self.query_builder.apply_offset_and_limit(
-                query, offset, limit)
+            query = self.query_builder.apply_offset(query, offset)
         except ValueError:
-            self.fail("invalid_offset_limit",
-                      offset=offset,
-                      limit=limit)
+            self.fail("invalid_offset_value", offset=offset)
+        try:
+            query = self.query_builder.apply_limit(query, limit)
+        except ValueError:
+            self.fail("invalid_limit_value", limit=limit)
         records = query.all()
         # get result
         dump = schema.dump(records, many=True)
@@ -1130,12 +1164,14 @@ class BaseModelResource(SchemaResourceABC, NestableResourceABC):
         :param list data: List of resources to be created.
         :raise UnprocessableEntityError: If the supplied data cannot be
             processed.
-        :return: `None`
+        :return: ``None``
 
         """
         if not isinstance(data, list):
             self.fail("invalid_collection_input", data=data)
         for obj in data:
+            # NOTE: No risk of BadRequestError here due to no embeds or
+            # fields being passed to make_schema
             schema = self.make_schema(partial=False)
             instance, errors = schema.load(obj, self.session)
             if not errors:
@@ -1172,7 +1208,7 @@ class BaseModelResource(SchemaResourceABC, NestableResourceABC):
             accordingly removed from the collection.
         :raise UnprocessableEntityError: If the supplied data cannot be
             processed.
-        :return: `None`
+        :return: ``None``
 
         """
         if not isinstance(data, list):
@@ -1180,6 +1216,8 @@ class BaseModelResource(SchemaResourceABC, NestableResourceABC):
         for obj in data:
             if obj.get("$op") == "add":
                 # basically a post
+                # NOTE: No risk of BadRequestError here due to no embeds
+                # or fields being passed to make_schema
                 schema = self.make_schema(partial=False)
                 instance, errors = schema.load(obj, self.session)
                 if not errors:
@@ -1189,6 +1227,8 @@ class BaseModelResource(SchemaResourceABC, NestableResourceABC):
                     self.fail("validation_failure", errors=errors)
             elif obj.get("$op") == "remove":
                 # basically a delete
+                # NOTE: No risk of BadRequestError here due to no embeds
+                # or fields being passed to make_schema
                 schema = self.make_schema(partial=True)
                 instance, errors = schema.load(obj, self.session)
                 if not errors:
@@ -1197,6 +1237,8 @@ class BaseModelResource(SchemaResourceABC, NestableResourceABC):
                     self.session.rollback()
                     self.fail("validation_failure", errors=errors)
             else:
+                # NOTE: No risk of BadRequestError here due to no embeds
+                # or fields being passed to make_schema
                 schema = self.make_schema(partial=True)
                 instance, errors = schema.load(obj, self.session)
                 if errors:
@@ -1216,12 +1258,12 @@ class BaseModelResource(SchemaResourceABC, NestableResourceABC):
         :param session: See :meth:`get` for more info.
         :type session: :class:`~sqlalchemy.orm.session.Session` or
             :class:`~sqlalchemy.orm.query.Query`
-        :param bool strict: If `True`, will raise an exception when bad
-            parameters are passed. If `False`, will quietly ignore any
-            bad input and treat it as if none was provided.
+        :param bool strict: If ``True``, will raise an exception when
+            bad parameters are passed. If ``False``, will quietly ignore
+            any bad input and treat it as if none was provided.
         :raise UnprocessableEntityError: If the deletions are unable to
             be processed.
-        :return: `None`
+        :return: ``None``
 
         """
         filters = filters or {}

@@ -9,10 +9,10 @@
     :license: MIT - See LICENSE for more details.
 """
 from marshmallow.compat import basestring
-from marshmallow.fields import MISSING_ERROR_MESSAGE
 from drowsy.utils import get_error_message
 from drowsy.exc import (
-    ParseError, FilterParseError, OffsetLimitParseError)
+    ParseError, FilterParseError, OffsetLimitParseError,
+    MISSING_ERROR_MESSAGE)
 import json
 
 
@@ -213,8 +213,8 @@ class QueryParamParser(object):
         "invalid_suboffset_value": ("The offset (%(offset)s) provided for the "
                                     "subresource (%(subresource)s) is not a "
                                     "non negative integer."),
-        "limit_too_high": ("The limit provided (%(limit)d) is greater than "
-                           "the max page size allowed (%(max_page_size)d)."),
+        "limit_too_high": ("The limit provided (%(limit)s) is greater than "
+                           "the max page size allowed (%(max_page_size)s)."),
         "invalid_page_value": ("The page value provided (%(page)s) is not a "
                                "positive integer."),
         "page_no_max": "Page greater than 1 provided without a page max size.",
@@ -318,7 +318,7 @@ class QueryParamParser(object):
             sort directions as + or -. If neither + or - is
             provided, ASC is assumed.
             As an example, sorts might look like:
-            "artist.name+,album.name-".
+            ``"+artist.name,-album.name"``.
         :return: A list of sorts to be applied to a result.
         :rtype: list of :class:`SortInfo`
 
@@ -416,8 +416,8 @@ class QueryParamParser(object):
             for an offset value in the provided ``query_params``.
         :param str limit_query_name: The name of the key used to check
             for a limit value in the provided ``query_params``.
-        :param strict: If `True`, exceptions will be raised for invalid
-            input. Otherwise, invalid input will be ignored.
+        :param strict: If ``True``, exceptions will be raised for
+            invalid input. Otherwise, invalid input will be ignored.
         :raise OffsetLimitParseError: Applicable if using strict mode
             only. If the provided limit is greater than page_max_size,
             or an invalid page, offset, or limit value is provided, then
@@ -434,9 +434,11 @@ class QueryParamParser(object):
                     limit = int(self.query_params.get(limit_query_name))
                     if limit < 0:
                         raise ValueError
-                except ValueError:
+                except (ValueError, TypeError):
                     if strict:
-                        self.fail(key="invalid_limit_value", limit=limit)
+                        self.fail(
+                            key="invalid_limit_value",
+                            limit=self.query_params.get(limit_query_name))
         # parse page
         page = self.query_params.get(page_query_name, None)
         if page is not None:
@@ -444,10 +446,12 @@ class QueryParamParser(object):
                 page = int(page)
                 if page < 1:
                     raise ValueError
-            except ValueError:
+            except (ValueError, TypeError):
                 page = None
                 if strict:
-                    self.fail("invalid_page_value", page=page)
+                    self.fail(
+                        "invalid_page_value",
+                        page=self.query_params.get(page_query_name, None))
             if page > 1 and page_max_size is None and limit is None:
                 page = None
                 if strict:
@@ -460,16 +464,18 @@ class QueryParamParser(object):
                     offset = int(self.query_params.get(offset_query_name))
                     if offset < 0:
                         raise ValueError
-                except ValueError:
+                except (ValueError, TypeError):
                     offset = 0
                     if strict:
-                        self.fail("invalid_offset_value", offset=offset)
+                        self.fail(
+                            "invalid_offset_value",
+                            offset=self.query_params.get(offset_query_name))
         if page_max_size and limit > page_max_size:
             # make sure an excessively high limit can't be set
             limit = page_max_size
             if strict:
                 self.fail("limit_too_high",
-                          limit=limit,
+                          limit=self.query_params.get(limit_query_name, None),
                           max_page_size=page_max_size)
         if page is not None and page > 1:
             if limit is not None and page_max_size is None:
@@ -514,13 +520,14 @@ class ModelQueryParamParser(QueryParamParser):
         :param str subkey_name: The name of the portion of the key
             that we're searching for. By default, this can be
             ``"_limit_"``, ``"_offset_"``, or ``"_sorts_"``.
-        :param bool strict: If `True`, exceptions will be raised for
+        :param bool strict: If ``True``, exceptions will be raised for
             invalid input. Otherwise, invalid input will be ignored.
         :raise OffsetLimitParseError: Raised in cases where there was
-            an issue parsing an offset or limit if ``strict`` is `True`.
-        :raise DrowsyError: An invalid ``key_value`` or ``key``
-            will result in an :exc:`~drowsy.exc.FilterParseError` being
-            raised if ``strict`` is `True`.
+            an issue parsing an offset or limit if ``strict`` is
+            ``True``.
+        :raise ParseError: Raised if ``strict`` is ``True`` and
+            the ``parse_type`` is ``"sorts"`` and there is an issue
+            parsing.
         :return: None, but the subqueries parameter may be modified.
         :rtype: None
 
@@ -532,7 +539,7 @@ class ModelQueryParamParser(QueryParamParser):
                 value = int(key_value)
             elif parse_type == "sorts":
                 value = self._parse_sorts_helper(key_value)
-        except ValueError:
+        except (ValueError, TypeError):
             if strict:
                 code = "invalid_sub" + parse_type + "_value"
                 kwargs = {
@@ -572,8 +579,15 @@ class ModelQueryParamParser(QueryParamParser):
         Given a query param "album.artist._subquery_.tracks.track_id"
         with value "5", the resulting subfilters returned would be:
 
-        {"album.artist": SubfilterInfo(
-            filters={"$and": ["tracks.track_id": {"eq": 5}]})}
+        .. code-block:: python
+
+            result = {
+                "album.artist": SubfilterInfo(
+                    filters={
+                        "$and": ["tracks.track_id": {"eq": 5}]
+                    }
+                )
+            }
 
         :param str subquery_name: The name of the key used to check
             for a subquery value in the provided ``query_params``.
@@ -583,12 +597,18 @@ class ModelQueryParamParser(QueryParamParser):
             for a suboffset value in the provided ``query_params``.
         :param str subsorts_name: The name of the key used to check
             for a subsorts value in the provided ``query_params``.
-        :param bool strict: If `True`, exceptions will be raised for
+        :param bool strict: If ``True``, exceptions will be raised for
             invalid input. Otherwise, invalid input will be ignored.
         :raise FilterParseError: Malformed complex queries or
             invalid ``query_params`` will result in an
             :exc:`~drowsy.exc.FilterParseError` being raised if
-            ``strict`` is `True`.
+            ``strict`` is ``True``.
+        :raise OffsetLimitParseError: Raised in cases where there was
+            an issue parsing an offset or limit if ``strict`` is
+            ``True``.
+        :raise ParseError: Raised if ``strict`` is ``True`` and
+            there is an issue parsing the provided sorts for a
+            subfilter.
         :return: A dictionary containing subqueries that can be passed
             to mqlalchemy for query filtering.
         :rtype: dict of str, SubfilterInfo
@@ -682,12 +702,12 @@ class ModelQueryParamParser(QueryParamParser):
         :param str attr_name: The name of the query param to parse.
         :param value: The value of that query param.
         :type value: str or list of str
-        :param bool strict: If `True`, exceptions will be raised for
+        :param bool strict: If ``True``, exceptions will be raised for
             invalid input. Otherwise, invalid input will be ignored.
         :raise FilterParseError: Malformed complex queries or
             invalid ``query_params`` will result in an
             :exc:`~drowsy.exc.FilterParseError` being raised if
-            ``strict`` is `True`.
+            ``strict`` is ``True``.
         :return: List of filters as dictionaries.
         :rtype: list of dict
 
@@ -755,7 +775,7 @@ class ModelQueryParamParser(QueryParamParser):
             for a complex query value in the provided ``query_params``.
             Note that the complex query should be a json dumped
             dictionary value.
-        :param bool only_parse_complex: Set to `True` if all simple
+        :param bool only_parse_complex: Set to ``True`` if all simple
             filters in the query params should be ignored.
         :param convert_key_names_func: If provided, should take in a dot
             separated attr name and transform it such that the result is
@@ -782,12 +802,12 @@ class ModelQueryParamParser(QueryParamParser):
             subquery sort. Query params that include this name will be
             ignored.
         :type subsorts_name: str or None
-        :param bool strict: If `True`, exceptions will be raised for
+        :param bool strict: If ``True``, exceptions will be raised for
             invalid input. Otherwise, invalid input will be ignored.
         :raise FilterParseError: Malformed complex queries or
             invalid ``query_params`` will result in an
             :exc:`~drowsy.exc.FilterParseError` being raised if
-            ``strict`` is `True`.
+            ``strict`` is ``True``.
         :return: A dictionary containing filters that can be passed
             to mqlalchemy for query filtering.
         :rtype: dict

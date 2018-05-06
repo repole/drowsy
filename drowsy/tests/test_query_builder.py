@@ -51,6 +51,28 @@ class DrowsyQueryBuilderTests(DrowsyTests):
             sorts=[SortInfo(attr="badattr", direction="ASC")]
         )
 
+    def test_apply_limit_negative_limit_fail(self):
+        """Test that a negative limit fails."""
+        query_builder = QueryBuilder()
+        query = self.db_session.query(Album)
+        self.assertRaises(
+            ValueError,
+            query_builder.apply_limit,
+            query=query,
+            limit=-1
+        )
+
+    def test_apply_offset_negative_offset_fail(self):
+        """Test that a negative offset fails."""
+        query_builder = QueryBuilder()
+        query = self.db_session.query(Album)
+        self.assertRaises(
+            ValueError,
+            query_builder.apply_offset,
+            query=query,
+            offset=-1
+        )
+
     def test_simple_subfilter(self):
         """Test applying a simple subfilter."""
         query_builder = QueryBuilder()

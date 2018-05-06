@@ -4,7 +4,7 @@
 
     Classes for building REST API friendly, model based schemas.
 
-    :copyright: (c) 2018 by Nicholas Repole and contributors.
+    :copyright: (c) 2016-2018 by Nicholas Repole and contributors.
                 See AUTHORS for more details.
     :license: MIT - See LICENSE for more details.
 """
@@ -17,12 +17,12 @@ from drowsy.fields import EmbeddableMixinABC
 
 
 class ModelResourceSchemaOpts(ModelSchemaOpts):
-    """Meta class options for use with a `ModelResourceSchema`.
+    """Meta class options for use with a ``ModelResourceSchema``.
 
     Defaults ``model_converter`` to
     :class:`~drowsy.convert.ModelResourceConverter`.
 
-    Defaults ``id_keys`` to `None`, resulting in the model's
+    Defaults ``id_keys`` to ``None``, resulting in the model's
     primary keys being used as identifier fields.
 
     Example usage:
@@ -80,8 +80,9 @@ class ModelResourceSchema(ModelSchema):
         :type exclude: tuple or list
         :param str prefix: Prefix to be prepended to serialized field
             names.
-        :param bool strict: Raises exceptions on validation if `True`.
-        :param bool many: `True` if loading a collection of items.
+        :param bool strict: Raises exceptions on validation if
+            ``True``.
+        :param bool many: ``True`` if loading a collection of items.
         :param context: Dictionary of values relevant to the current
             execution context. Should have a `gettext` key and
             `callable` value for that key if you're intending to
@@ -92,7 +93,7 @@ class ModelResourceSchema(ModelSchema):
         :param dump_only: Fields to be skipped during deserialization.
         :type dump_only: tuple or list
         :param bool partial: Ignores missing fields when deserializing
-            if `True`.
+            if ``True``.
         :param instance: SQLAlchemy model instance data should be loaded
             into. If ``None`` is provided, an instance will either be
             determined using the provided data via :meth:`get_instance`,

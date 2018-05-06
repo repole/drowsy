@@ -242,26 +242,47 @@ class QueryBuilder(object):
             raise ValueError
         return query
 
-    def apply_offset_and_limit(self, query, offset, limit):
+    def apply_offset(self, query, offset):
         """Applies offset and limit to the query if appropriate.
 
         :param query: Any desired filters must already have been applied.
         :type query: :class:`~sqlalchemy.orm.query.Query`
         :param offset: Integer used to offset the query result.
         :type offset: int or None
-        :param limit: Integer used to limit the number of results returned.
-        :type limit: int or None
-        :raise ValueError: If a non `None` offset or limit is provided
-            that can't be converted to an integer.
-        :return: A modified query object with an offset and limit applied.
+        :raise ValueError: If a non ``None`` offset is provided
+            that is converted to a negative integer.
+        :raise TypeError: If a non ``None`` offset is provided
+            of a non integer, or integer convertible, type.
+        :return: A modified query object with an offset applied.
         :rtype: :class:`~sqlalchemy.orm.query.Query`
 
         """
         if offset is not None:
             offset = int(offset)
+            if offset < 0:
+                raise ValueError("offset can not be a negative integer.")
             query = query.offset(offset)
+        return query
+
+    def apply_limit(self, query, limit):
+        """Applies limit to the query if appropriate.
+
+        :param query: Any desired filters must already have been applied.
+        :type query: :class:`~sqlalchemy.orm.query.Query`
+        :param limit: Integer used to limit the number of results returned.
+        :type limit: int or None
+        :raise ValueError: If a non ``None`` limit is provided
+            that is converted to a negative integer.
+        :raise TypeError: If a non ``None`` offset is provided
+            of a non integer, or integer convertible, type.
+        :return: A modified query object with an limit applied.
+        :rtype: :class:`~sqlalchemy.orm.query.Query`
+
+        """
         if limit is not None:
             limit = int(limit)
+            if limit < 0:
+                raise ValueError("limit can not be a negative integer.")
             query = query.limit(limit)
         return query
 
@@ -318,13 +339,13 @@ class QueryBuilder(object):
         :type subfilters: dict or None
         :param embeds: List of subresources and fields to embed.
         :type embeds: list or None
-        :param bool strict: If `True`, will raise an exception when bad
-            parameters are passed. If `False`, will quietly ignore any
-            bad input and treat it as if none was provided.
+        :param bool strict: If ``True``, will raise an exception when
+            bad parameters are passed. If ``False``, will quietly ignore
+            any bad input and treat it as if none was provided.
         :param stack_size_limit: Used to limit the allowable complexity
             of the applied filters.
         :type stack_size_limit: int or None
-        :param bool dialect_override: `True` will override any
+        :param bool dialect_override: ``True`` will override any
             SQL dialect limitations. Mainly used for testing.
         :return: query with joins, load options, and subresource
             filters applied as appropriate.
@@ -375,7 +396,8 @@ class QueryBuilder(object):
                 user_supplied_filters = subfilter_info.filters
                 user_supplied_sorts = subfilter_info.sorts
             else:
-                raise ValueError
+                raise ValueError(
+                    "Each subfilter in subfilters must be a SubfilterInfo.")
             failed = False
             while split_subfilter_keys and not failed:
                 failed = False

@@ -232,7 +232,7 @@ class ResourceRouterABC(object):
         :param query_params: Dictionary of query parameters, likely
             provided as part of a request. Defaults to an empty dict.
         :type query_params: dict or None
-        :param bool strict: If `True`, bad query params will raise
+        :param bool strict: If ``True``, bad query params will raise
             non fatal errors rather than ignoring them.
         :return: If this is a single entity query, an individual
             resource in dict form. If this is a collection query,
@@ -242,7 +242,7 @@ class ResourceRouterABC(object):
         :raise BadRequestError: Invalid filters, sorts, fields,
             embeds, offset, or limit as defined in the provided query
             params will result in a raised exception if strict is set
-            to `True`.
+            to ``True``.
 
         """
         raise NotImplementedError
@@ -325,7 +325,7 @@ class ResourceRouterABC(object):
         :raise BadRequestError: Invalid filters, sorts, fields,
             embeds, offset, or limit as defined in the provided query
             params will result in a raised exception if strict is set
-            to `True`.
+            to ``True``.
         :raise MethodNotAllowedError: If deleting the resource at the
             supplied path is not allowed.
 
@@ -341,7 +341,7 @@ class ResourceRouterABC(object):
             include the root ``/api`` or any versioning info.
         :param dict query_params: Dictionary of query parameters, likely
             provided as part of a request.
-        :param bool strict: If `True`, faulty pagination info, fields,
+        :param bool strict: If ``True``, faulty pagination info, fields,
             or embeds will result in an error being raised rather than
             silently ignoring them.
         :param data: The data supplied as part of the incoming request
@@ -351,7 +351,7 @@ class ResourceRouterABC(object):
         :raise BadRequestError: Invalid filters, sorts, fields,
             embeds, offset, or limit as defined in the provided query
             params will result in a raised exception if strict is set
-            to `True`.
+            to ``True``.
         :raise UnprocessableEntityError: On post, patch, put, and delete
             requests, if the corresponding action can not be completed,
             an exception will be raised.
@@ -362,11 +362,11 @@ class ResourceRouterABC(object):
             * Post: The created resource in dict form if successful.
             * Patch: The updated resource in dict form if successful.
             * Put: The replaced resource in dict form if successful.
-            * Delete: `None` if successful.
+            * Delete: ``None`` if successful.
             * Get collection: A list of resources in dict form.
-            * Patch collection: `None` if successful.
+            * Patch collection: ``None`` if successful.
             * Post collection: A list of created resources in dict form.
-            * Delete collection: `None` if successful.
+            * Delete collection: ``None`` if successful.
 
         """
         if method.lower() == "get":
@@ -809,18 +809,18 @@ class ModelResourceRouter(ResourceRouterABC):
         :param query_params: Dictionary of query parameters, likely
             provided as part of a request. Defaults to an empty dict.
         :type query_params: dict or None
-        :param bool strict: If `True`, bad query params will raise
+        :param bool strict: If ``True``, bad query params will raise
             non fatal errors rather than ignoring them.
         :return: If this is a single entity query, an individual
-            resource or `None`. If this is a collection query, a list
-            of resources. If it's an instance field query, the raw
-            field value.
+            resource or ``None``. If this is a collection query, a
+            list of resources. If it's an instance field query, the
+            raw field value.
         :raise ResourceNotFoundError: If no resource can be found at
             the provided path.
         :raise BadRequestError: Invalid filters, sorts, fields,
             embeds, offset, or limit as defined in the provided query
             params will result in a raised exception if strict is set
-            to `True`.
+            to ``True``.
 
         """
         if self.resource is None:
@@ -913,7 +913,7 @@ class ModelResourceRouter(ResourceRouterABC):
         :raise BadRequestError: Invalid filters, sorts, fields,
             embeds, offset, or limit as defined in the provided query
             params will result in a raised exception if strict is set
-            to `True`.
+            to ``True``.
         :raise MethodNotAllowedError: If deleting the resource at the
             supplied path is not allowed.
 

@@ -400,7 +400,7 @@ class DrowsyResourceTests(DrowsyTests):
             result["artist"]["name"] == album.artist.name)
 
     def test_set_single_relation_item_to_none(self):
-        """Make sure that a non-list relation can be set to `None`."""
+        """Make sure that a non-list relation can be set to ``None``."""
         track = self.db_session.query(Track).filter(
             Track.track_id == 1).all()[0]
         track_resource = TrackResource(session=self.db_session)
@@ -483,6 +483,16 @@ class DrowsyResourceTests(DrowsyTests):
             resource.get,
             1,
             session=query
+        )
+
+    def test_get_bad_ident(self):
+        """Test get fails with a bad identity provided."""
+        resource = AlbumResource(session=self.db_session)
+        self.assertRaisesCode(
+            ResourceNotFoundError,
+            "resource_not_found",
+            resource.get,
+            "bad"
         )
 
     # GET COLLECTION TESTS
@@ -584,8 +594,8 @@ class DrowsyResourceTests(DrowsyTests):
         )
         self.assertTrue(len(result) == 347)
 
-    def test_get_all_objects_null_query(self):
-        """Test getting all objects with query_params set to `None`."""
+    def test_get_collection_empty_filters(self):
+        """Test getting all objects with empty filters."""
         filters = {"$and": []}
         album_resource = AlbumResource(session=self.db_session)
         result = album_resource.get_collection(
@@ -667,7 +677,7 @@ class DrowsyResourceTests(DrowsyTests):
         data = {"title": "test1", "artist_id": 1}
         resource = AlbumResource(session=self.db_session)
         self.assertRaisesCode(
-            BadRequestError,
+            UnprocessableEntityError,
             "invalid_collection_input",
             resource.post_collection,
             data
@@ -751,7 +761,7 @@ class DrowsyResourceTests(DrowsyTests):
         }
         playlist_resource = PlaylistResource(session=self.db_session)
         self.assertRaisesCode(
-            BadRequestError,
+            UnprocessableEntityError,
             "invalid_collection_input",
             playlist_resource.patch_collection,
             update_data

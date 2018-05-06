@@ -4,7 +4,7 @@
 
     Classes for building permissions into an API.
 
-    :copyright: (c) 2018 by Nicholas Repole and contributors.
+    :copyright: (c) 2016-2018 by Nicholas Repole and contributors.
                 See AUTHORS for more details.
     :license: MIT - See LICENSE for more details.
 """
@@ -37,7 +37,7 @@ class OpPermissionsABC(object):
             checking permissions.
         :raise PermissionError: Raised in cases where the provided
             action is not permissible in the current context.
-        :return: `True` if no error is raised.
+        :return: ``True`` if no error is raised.
 
         """
         raise NotImplementedError
@@ -51,7 +51,7 @@ class AllowAllOpPermissions(OpPermissionsABC):
               **kwargs):
         """Check if the given action is allowed.
 
-        Always returns `True`.
+        Always returns ``True``.
 
         :param str operation: Action type. Options include ``"add"``,
             ``"remove"``, ``"create"`` for collections, and ``"set"``
@@ -68,7 +68,7 @@ class AllowAllOpPermissions(OpPermissionsABC):
             checking permissions.
         :raise PermissionError: Raised in cases where the provided
             action is not permissible in the current context.
-        :return: `True` if no error is raised.
+        :return: ``True`` if no error is raised.
 
         """
         return True

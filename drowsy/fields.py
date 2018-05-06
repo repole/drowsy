@@ -4,7 +4,7 @@
 
     Marshmallow fields used in resource schemas.
 
-    :copyright: (c) 2016 by Nicholas Repole and contributors.
+    :copyright: (c) 2016-2018 by Nicholas Repole and contributors.
                 See AUTHORS for more details.
     :license: MIT - See LICENSE for more details.
 """
@@ -42,7 +42,7 @@ class EmbeddableMixinABC(Field):
     def embedded(self, value):
         """Set the embedded property.
 
-        :param bool value: If `True`, the field will be included in
+        :param bool value: If ``True``, the field will be included in
             the serialized output.
 
         """
@@ -145,7 +145,7 @@ class NestedPermissibleABC(Nested):
         :param exclude: Fields to exclude.
         :type exclude: list, tuple, or None
         :param only: A tuple or string of the field(s) to marshal. If
-            `None`, all fields will be marshalled. If a field name
+            ``None``, all fields will be marshalled. If a field name
             (string) is given, only a single value will be returned as
             output instead of a dictionary. This parameter takes
             precedence over ``exclude``.
@@ -202,14 +202,14 @@ class NestedPermissibleABC(Nested):
         param instance: An instance of the object with data already
             loaded into it.
         :param index: index at which to insert the error messages
-            into the errors dict. `None` if the operation is on
+            into the errors dict. ``None`` if the operation is on
             a non list nested value or sub-object.
         :type index: int or None
         :param dict errors: The error dictionary to be modified.
-        :param bool strict: `True` if an error should be raised.
+        :param bool strict: ``True`` if an error should be raised.
         :raise ValidationError: When in strict mode if not
             permissible.
-        :return: `True` if permissible, `False` otherwise.
+        :return: ``True`` if permissible, ``False`` otherwise.
         :rtype: bool
 
         """
@@ -240,8 +240,8 @@ class NestedPermissibleABC(Nested):
         :param parent: An object whose attr for this field may
             contain this instance as a child object.
         :param instance: A potential child object of the parent.
-        :return: `True` if the parent attr already contains the
-            instance, `False` otherwise.
+        :return: ``True`` if the parent attr already contains the
+            instance, ``False`` otherwise.
         :rtype: bool
 
         """
@@ -252,7 +252,7 @@ class NestedPermissibleABC(Nested):
 
         :param obj_data: Likely a dict, but could be any user provided
             data.
-        :return: `True` or `False`.
+        :return: ``True`` or ``False``.
         :rtype: bool
 
         """
@@ -291,7 +291,7 @@ class NestedPermissibleABC(Nested):
         :param dict errors: Dict of errors for this field. Any issue
             that arises while performing the intended operation will
             be added to this dict (at the provided index if supplied).
-        :param bool strict: If `True`, an exception will be raised for
+        :param bool strict: If ``True``, an exception will be raised for
             an encountered error. Otherwise, the error will simply be
             included in the provided `error` dict and things will
             proceed as normal.
@@ -343,14 +343,14 @@ class NestedPermissibleABC(Nested):
         :param str key: The error message key to use for failure.
         :param dict errors: The error dictionary to be modified.
         :param index: index at which to insert the error messages
-            into the errors dict. `None` if the operation is on
+            into the errors dict. ``None`` if the operation is on
             a non list nested field or sub-object.
         :type index: int or None
-        :param bool strict: `True` if an error should be raised.
+        :param bool strict: ``True`` if an error should be raised.
         :param kwargs: Any additional arguments to pass to
             :meth:`fail` when generating the error message.
         :raise ValidationError: When in strict mode.
-        :return: `None`
+        :return: ``None``
 
         """
         try:
@@ -368,11 +368,11 @@ class NestedPermissibleABC(Nested):
 
         In the case of a nested field with many items, the behavior of
         this field varies in a few key ways depending on whether the
-        parent form has `partial` set to `True` or `False`.
-        If `True`, items can be explicitly added or removed from a
+        parent form has ``partial`` set to ``True`` or ``False``.
+        If ``True``, items can be explicitly added or removed from a
         collection, but the rest of the collection will remain
         intact.
-        If `False`, the collection will be set to an empty list, and
+        If ``False``, the collection will be set to an empty list, and
         only items included in the supplied data will in the
         collection.
         Important to note also that updates to items contained in this
@@ -386,7 +386,7 @@ class NestedPermissibleABC(Nested):
         :type value: list of dict or dict
         :return: The deserialized form of this nested field. In the
             case of a value that doesn't use a list, this is
-            a single object (or `None`). Otherwise a list of objects
+            a single object (or ``None``). Otherwise a list of objects
             is returned.
 
         """
@@ -495,7 +495,7 @@ class NestedRelated(NestedPermissibleABC, Related):
         :param exclude: Fields to exclude.
         :type exclude: list, tuple, or None
         :param only: A tuple or string of the field(s) to marshal. If
-            `None`, all fields will be marshalled. If a field name
+            ``None``, all fields will be marshalled. If a field name
             (string) is given, only a single value will be returned as
             output instead of a dictionary. This parameter takes
             precedence over ``exclude``.
@@ -567,8 +567,8 @@ class NestedRelated(NestedPermissibleABC, Related):
         :param instance: A potential child object of the parent.
         :param str relationship_name: The name of the relationship
             we're checking on `parent`.
-        :return: `True` if the parent attr already contains the
-            instance, `False` otherwise.
+        :return: ``True`` if the parent attr already contains the
+            instance, ``False`` otherwise.
         :rtype: bool
 
         """
@@ -605,7 +605,7 @@ class NestedRelated(NestedPermissibleABC, Related):
 
         :param obj_data: Likely a dict, but could be any user provided
             data.
-        :return: `True` or `False`.
+        :return: ``True`` or ``False``.
         :rtype: bool
 
         """
@@ -625,7 +625,7 @@ class NestedRelated(NestedPermissibleABC, Related):
         :param obj_data: Likely a dict, but could be any user provided
             data.
         :return: A SQLAlchemy object instance based on the identifier
-            contained in the user supplied data, or `None` if no
+            contained in the user supplied data, or ``None`` if no
             instance could be found.
 
         """
@@ -648,13 +648,14 @@ class NestedRelated(NestedPermissibleABC, Related):
 
         Example:
         If this field corresponds to the `tracks` collection of a parent
-        `album` object, then the provided instance should be a `track`
-        object, and the action might be to `"add"` or `"remove"` the
-        provided `track` instance from the parent `album`.
+        ``album`` object, then the provided instance should be a
+        ``track`` object, and the action might be to ``"add"`` or
+        ``"remove"`` the provided ``track`` instance from the parent
+        ``album``.
 
-        :param str operation:`"add"` or `"remove"` for collections, or
-            `"set"` for one to one relations. May also be any custom
-            operations manually defined.
+        :param str operation: ``"add"`` or ``"remove"`` for collections,
+            or ``"set"`` for one to one relations. May also be any
+            custom operations manually defined.
         :param parent: Object containing the attribute the operation
             is being performed on.
         :param instance: A potential child object of the parent.
@@ -664,9 +665,9 @@ class NestedRelated(NestedPermissibleABC, Related):
         :param dict errors: Dict of errors for this field. Any issue
             that arises while performing the intended operation will
             be added to this dict (at the provided index if supplied).
-        :param bool strict: If `True`, an exception will be raised for
+        :param bool strict: If ``True``, an exception will be raised for
             an encountered error. Otherwise, the error will simply be
-            included in the provided `error` dict and things will
+            included in the provided ``errors`` dict and things will
             proceed as normal.
         :raise ValidationError: If there's an error when in strict mode.
         :return: The corresponding attr for this field with the provided

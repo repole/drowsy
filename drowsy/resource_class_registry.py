@@ -10,8 +10,8 @@ reference them dynamically and avoid circular dependencies.
     This module is treated as private API.
     Users should not need to use this module directly.
 
-This module was taken directly from Marshmallow. The only core 
-difference is that it serves as a registry of resources rather than 
+This module was taken directly from Marshmallow. The only core
+difference is that it serves as a registry of resources rather than
 schemas.
 Please see below for the appropriate Marshmallow attribution.
 
@@ -92,14 +92,14 @@ def get_class(classname, all=False):
     """Retrieve a class from the registry.
 
     :param str classname: Name of the class to be retrieved.
-    :param bool all: If `True`, return all classes registered using
+    :param bool all: If ``True``, return all classes registered using
         the given class name.
     :raise: :exc:`~marshmallow.exceptions.RegistryError` if the class
         cannot be found or if there are multiple entries for the given
-        class name and ``all`` is not `True`.
+        class name and ``all`` is not ``True``.
     :return: The class matching the name provided if previously
         registered, or potentially a list of classes if ``all`` is
-        `True`.
+        ``True``.
 
     """
     try:
