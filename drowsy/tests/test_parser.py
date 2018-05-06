@@ -33,7 +33,7 @@ class DrowsyParserTests(DrowsyTests):
     def test_sortinfo_bad_attr_fail(self):
         """Test SortInfo fails when given a bad attr."""
         self.assertRaises(
-            ValueError,
+            TypeError,
             SortInfo,
             attr=5,
             direction="ASC"
@@ -49,9 +49,10 @@ class DrowsyParserTests(DrowsyTests):
         )
 
     def test_subfilterinfo_valid(self):
-        """Test SubfilterInfo fails when given a bad offset/limit."""
+        """Test SubfilterInfo works with valid input."""
         sub_info = SubfilterInfo(
-            offset_limit_info=OffsetLimitInfo(offset=1, limit=100),
+            offset=1,
+            limit=100,
             sorts=[SortInfo("test", "ASC")],
             filters={}
         )
@@ -64,7 +65,7 @@ class DrowsyParserTests(DrowsyTests):
     def test_subfilterinfo_bad_limit_fail(self):
         """Test SubfilterInfo fails when given a bad offset/limit."""
         self.assertRaises(
-            ValueError,
+            TypeError,
             SubfilterInfo,
             offset_limit_info="test"
         )
@@ -72,7 +73,7 @@ class DrowsyParserTests(DrowsyTests):
     def test_subfilterinfo_bad_sorts_fail(self):
         """Test SubfilterInfo fails when given bad sorts."""
         self.assertRaises(
-            ValueError,
+            TypeError,
             SubfilterInfo,
             sorts="test"
         )
@@ -80,7 +81,7 @@ class DrowsyParserTests(DrowsyTests):
     def test_subfilterinfo_bad_filters_fail(self):
         """Test SubfilterInfo fails when given bad filters."""
         self.assertRaises(
-            ValueError,
+            TypeError,
             SubfilterInfo,
             filters="test"
         )
@@ -88,7 +89,7 @@ class DrowsyParserTests(DrowsyTests):
     def test_offsetlimitinfo_bad_offset_fail(self):
         """Test that OffsetLimitInfo fails when given a bad offset."""
         self.assertRaises(
-            ValueError,
+            TypeError,
             OffsetLimitInfo,
             offset="test",
             limit=1
@@ -97,7 +98,7 @@ class DrowsyParserTests(DrowsyTests):
     def test_offsetlimitinfo_bad_limit_fail(self):
         """Test that OffsetLimitInfo fails when given a bad limit."""
         self.assertRaises(
-            ValueError,
+            TypeError,
             OffsetLimitInfo,
             offset=1,
             limit="test"
@@ -140,7 +141,7 @@ class DrowsyParserTests(DrowsyTests):
         self.assertTrue(embeds[2] == "c")
 
     def test_parser_fields(self):
-        """Test embed parsing."""
+        """Test fields parsing."""
         parser = QueryParamParser(query_params={"fields": "a,b,c"})
         fields = parser.parse_fields()
         self.assertTrue(len(fields) == 3)
@@ -154,7 +155,7 @@ class DrowsyParserTests(DrowsyTests):
         parser = QueryParamParser(query_params)
         self.assertRaisesCode(
             OffsetLimitParseError,
-            "invalid_page_type",
+            "invalid_page_value",
             parser.parse_offset_limit)
 
     def test_no_page_max_size_fail(self):
@@ -241,7 +242,7 @@ class DrowsyParserTests(DrowsyTests):
         parser = ModelQueryParamParser(query_params)
         self.assertRaisesCode(
             OffsetLimitParseError,
-            "invalid_sublimit_type",
+            "invalid_sublimit_value",
             parser.parse_subfilters)
 
     def test_sublimit_parser_bad_value_ignore(self):
@@ -271,7 +272,7 @@ class DrowsyParserTests(DrowsyTests):
         parser = ModelQueryParamParser(query_params)
         self.assertRaisesCode(
             OffsetLimitParseError,
-            "invalid_suboffset_type",
+            "invalid_suboffset_value",
             parser.parse_subfilters)
 
     def test_root_complex_filters_parser(self):

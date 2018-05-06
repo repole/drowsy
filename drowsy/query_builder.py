@@ -38,12 +38,13 @@ class QueryBuilder(object):
         :type convert_key_names_func: callable
         :raise AttributeError: If a sort with an invalid attr name is
             provided.
-        :raise ValueError: If a sort not of type
+        :raise TypeError: If a sort not of type
             :class:`~drowsy.parser.SortInfo` is provided.
         :return: A list of order_by parameters to be applied to a query.
         :rtype: list
 
         """
+        # TODO - ValueError/TypeError?
         result = list()
         for sort in sorts:
             attr_name = convert_key_names_func(sort.attr)
@@ -68,9 +69,11 @@ class QueryBuilder(object):
         :type parent: :class:`~sqlalchemy.orm.util.AliasedClass` or
             SQLAlchemy model class.
         :param str relationship_name: Field name of the relationship.
-        :raises ValueError: If
+        :raises ValueError: If the ``child``, ``parent``, and
+            ``relationship_name`` can not be used to produce
+            a valid result.
         :return:
-        :rtype: list of SQLAlchemy partition by statements
+        :rtype: TODO
 
         """
         relationship = getattr(parent, relationship_name)

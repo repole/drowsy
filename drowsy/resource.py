@@ -789,7 +789,7 @@ class BaseModelResource(SchemaResourceABC, NestableResourceABC):
                 context=self.context,
                 session=self.session
             )
-        raise ValueError
+        raise ValueError("The provided name is not a valid subresource.")
 
     def fail(self, key, errors=None, exc=None, **kwargs):
         """Raises an exception based on the ``key`` provided.
@@ -1059,10 +1059,18 @@ class BaseModelResource(SchemaResourceABC, NestableResourceABC):
         :raise BadRequestError: Invalid filters, sorts, fields,
             embeds, offset, or limit will result in a raised exception
             if strict is set to `True`.
+        :raise ValueError: If parameters of the wrong format are
+            supplied.
         :return: Resources meeting the supplied criteria.
         :rtype: :class:`ResourceCollection`
 
         """
+        if limit is not None and not isinstance(limit, int):
+            raise TypeError("The provided limit must be an integer.")
+        if offset is not None and not isinstance(offset, int):
+            raise TypeError("The provided offset must be an integer.")
+        if sorts is not None and not isinstance(sorts, list):
+            raise TypeError("The sorts parameter must be a list or None.")
         if filters is None:
             filters = {}
         if session is None:
@@ -1083,27 +1091,16 @@ class BaseModelResource(SchemaResourceABC, NestableResourceABC):
             embeds=embeds)
         # sort
         if sorts:
-            if isinstance(sorts, list):
-                for sort in sorts:
-                    if not isinstance(sort, SortInfo):
-                        raise ValueError("Each sort must be of type SortInfo.")
-                    try:
-                        query = self.query_builder.apply_sorts(
-                            query, [sort], self.convert_key_name)
-                    except AttributeError:
-                        if strict:
-                            self.fail("invalid_sort_field", field=sort.attr)
-            else:
-                raise ValueError("The sort parameter must be a list or None.")
+            for sort in sorts:
+                if not isinstance(sort, SortInfo):
+                    raise TypeError("Each sort must be of type SortInfo.")
+                try:
+                    query = self.query_builder.apply_sorts(
+                        query, [sort], self.convert_key_name)
+                except AttributeError:
+                    if strict:
+                        self.fail("invalid_sort_field", field=sort.attr)
         # offset/limit
-        if limit is not None:
-            try:
-                limit = int(limit)
-            except ValueError:
-                if strict:
-                    self.fail("invalid_limit_type", limit=limit)
-                else:
-                    limit = self.page_max_size
         if (limit is not None and
                 isinstance(self.page_max_size, int) and
                 limit > self.page_max_size):
@@ -1113,14 +1110,8 @@ class BaseModelResource(SchemaResourceABC, NestableResourceABC):
                           max_page_size=self.page_max_size)
             else:
                 limit = self.page_max_size
-        if offset:
-            try:
-                offset = int(offset)
-            except ValueError:
-                if strict:
-                    self.fail("invalid_offset_type", offset=offset)
-                else:
-                    offset = 0
+        if not offset:
+            offset = 0
         try:
             query = self.query_builder.apply_offset_and_limit(
                 query, offset, limit)
@@ -1217,7 +1208,7 @@ class BaseModelResource(SchemaResourceABC, NestableResourceABC):
             self.session.rollback()
             self.fail("commit_failure")
 
-    def delete_collection(self, filters=None, session=None):
+    def delete_collection(self, filters=None, session=None, strict=True):
         """Delete all filter matching members of the collection.
 
         :param filters: MQLAlchemy style filters.
@@ -1225,6 +1216,11 @@ class BaseModelResource(SchemaResourceABC, NestableResourceABC):
         :param session: See :meth:`get` for more info.
         :type session: :class:`~sqlalchemy.orm.session.Session` or
             :class:`~sqlalchemy.orm.query.Query`
+        :param bool strict: If `True`, will raise an exception when bad
+            parameters are passed. If `False`, will quietly ignore any
+            bad input and treat it as if none was provided.
+        :raise UnprocessableEntityError: If the deletions are unable to
+            be processed.
         :return: `None`
 
         """
@@ -1233,7 +1229,8 @@ class BaseModelResource(SchemaResourceABC, NestableResourceABC):
             session = self.session
         query = self._get_query(
             session=session,
-            filters=filters)
+            filters=filters,
+            strict=strict)
         query.delete()
         try:
             self.session.commit()

@@ -854,6 +854,8 @@ class ModelResourceRouter(ResourceRouterABC):
             # resource collection
             # any non subresource field would already have been handled
             if not (isinstance(path_part, Nested) and not path_part.many):
+                # TODO - should split this out one by one so one failure
+                # doesn't kill everything
                 try:
                     offset_limit_info = parser.parse_offset_limit(
                         resource.page_max_size)
@@ -864,8 +866,8 @@ class ModelResourceRouter(ResourceRouterABC):
                         convert_key_names_func=resource.convert_key_name)
                 except (OffsetLimitParseError, FilterParseError) as e:
                     if strict:
-                        key = e.code
-                        self.fail(key=key, **e.kwargs)
+                        raise BadRequestError(code=e.code, message=e.message,
+                                              **e.kwargs)
                     offset, limit, filters = None, None, None
                 sorts = parser.parse_sorts()
                 return resource.get_collection(

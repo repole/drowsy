@@ -13,7 +13,7 @@ import json
 from drowsy.exc import (
     UnprocessableEntityError, BadRequestError, MethodNotAllowedError,
     ResourceNotFoundError)
-from drowsy.parser import ModelQueryParamParser, SubfilterInfo, SortInfo
+from drowsy.parser import SubfilterInfo, SortInfo
 from drowsy.resource import (
     ResourceABC, NestableResourceABC, SchemaResourceABC, ResourceCollection)
 from drowsy.tests.base import DrowsyTests
@@ -489,63 +489,56 @@ class DrowsyResourceTests(DrowsyTests):
 
     def test_get_collection(self):
         """Test simple get_collection functionality."""
-        query_params = {
-            "album_id-lt": "10",
-            "query": json.dumps({"title": "Big Ones"})
-        }
         album_resource = AlbumResource(session=self.db_session)
-        result = album_resource.get_collection(
-            filters=ModelQueryParamParser(query_params).parse_filters(
-                album_resource.model)
-        )
+        result = album_resource.get_collection()
         self.assertTrue(
-            len(result) == 1 and
-            result[0]["album_id"] == 5
+            len(result) == 347
         )
 
     def test_get_collection_filters(self):
         """Test simple get_collection filtering functionality."""
-        query_params = {
-            "album_id-lt": "10",
-            "title-like": "Big",
-            "album_id-gt": 4,
-            "album_id-gte": 5,
-            "album_id-lte": 5,
-            "album_id-eq": 5,
-            "album_id": 5,
-            "album_id-ne": 6,
-            "query": json.dumps({"title": "Big Ones"})
+        filters = {
+            "$and": [
+                {"album_id": {"$lt": "10"}},
+                {"title": {"$like": "Big"}},
+                {"album_id": {"$gt": "4"}},
+                {"album_id": {"$gte": "5"}},
+                {"album_id": {"$lte": "5"}},
+                {"album_id": {"$eq": "5"}},
+                {"album_id": 5},
+                {"album_id": {"$ne": 6}},
+                {"title": "Big Ones"}
+            ]
         }
         album_resource = AlbumResource(session=self.db_session)
         result = album_resource.get_collection(
-            filters=ModelQueryParamParser(query_params).parse_filters(
-                album_resource.model)
+            filters=filters
         )
         self.assertTrue(
             len(result) == 1 and
             result[0]["album_id"] == 5
         )
 
-    def test_get_collection_filters_invalid(self):
+    def test_get_collection_invalid_filters(self):
         """Test simple get_collection filtering failure."""
-        query_params = {
-            "query": json.dumps({"title": {"$bad": "Big Ones"}})
+        filters = {
+            "$and": [
+                {"title": {"$bad": "Big Ones"}}
+            ]
         }
         album_resource = AlbumResource(session=self.db_session)
         self.assertRaisesCode(
             BadRequestError,
             "invalid_filters",
             album_resource.get_collection,
-            filters=ModelQueryParamParser(query_params).parse_filters(
-                album_resource.model
-            )
+            filters=filters
         )
 
     def test_get_collection_invalid_sorts_type(self):
         """Test non list sorts with get_collection fails."""
         album_resource = AlbumResource(session=self.db_session)
         self.assertRaises(
-            ValueError,
+            TypeError,
             album_resource.get_collection,
             sorts="test"
         )
@@ -554,9 +547,19 @@ class DrowsyResourceTests(DrowsyTests):
         """Test non SortInfo sort with get_collection fails."""
         album_resource = AlbumResource(session=self.db_session)
         self.assertRaises(
-            ValueError,
+            TypeError,
             album_resource.get_collection,
             sorts=["test"]
+        )
+
+    def test_get_collection_invalid_sort_field(self):
+        """Test a bad field on SortInfo with get_collection fails."""
+        album_resource = AlbumResource(session=self.db_session)
+        self.assertRaisesCode(
+            BadRequestError,
+            "invalid_sort_field",
+            album_resource.get_collection,
+            sorts=[SortInfo(attr="TEST")]
         )
 
     def test_get_collection_subresource_query(self):
@@ -583,11 +586,10 @@ class DrowsyResourceTests(DrowsyTests):
 
     def test_get_all_objects_null_query(self):
         """Test getting all objects with query_params set to `None`."""
-        query_params = None
+        filters = {"$and": []}
         album_resource = AlbumResource(session=self.db_session)
         result = album_resource.get_collection(
-            filters=ModelQueryParamParser(query_params).parse_filters(
-                album_resource.model)
+            filters=filters
         )
         self.assertTrue(len(result) == 347)
 

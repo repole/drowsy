@@ -19,15 +19,21 @@ import json
 class SortInfo(object):
     """Used to transport info regarding sorts around."""
 
-    def __init__(self, attr=None, direction=None):
+    def __init__(self, attr=None, direction="ASC"):
         """Instantiates a SortInfo object.
 
         :param str attr: Name of the attr to be sorted on.
-        :param str direction: Must be ASC or DESC.
+        :param str direction: Must be ``"ASC"`` or ``"DESC"``.
+        :raise ValueError: If ``direction`` is not ``"ASC"``,
+            ``"DESC"``, or ``None``.
+        :raise TypeError: If any of the provided parameters
+            are not of the specified type.
 
         """
         if not isinstance(attr, basestring):
-            raise ValueError("attr must be a string.")
+            raise TypeError("attr must be a string.")
+        if not isinstance(direction, basestring):
+            raise TypeError("direction must be ASC or DESC.")
         if direction != "DESC" and direction != "ASC":
             raise ValueError("direction must be ASC or DESC.")
         self.attr = attr
@@ -44,47 +50,152 @@ class OffsetLimitInfo(object):
         :type offset: int or None
         :param limit: Limit to be applied.
         :type limit: int or None
+        :raise ValueError: If ``offset`` or ``limit`` is not a positive
+            number or ``None``.
+        :raise TypeError: If any of the provided parameters
+            are not of the specified type.
 
         """
-        if not isinstance(offset, int) and offset is not None:
-            raise ValueError("offset must be an int or None.")
-        if not isinstance(limit, int) and limit is not None:
-            raise ValueError("limit must be an int or None.")
+        self._offset = None
+        self._limit = None
         self.offset = offset
         self.limit = limit
 
+    @property
+    def offset(self):
+        """Get an offset value.
 
-class SubfilterInfo(object):
+        :return: An offset value.
+        :rtype: int or None
+
+        """
+        return self._offset
+
+    @offset.setter
+    def offset(self, value):
+        """Set an offset value.
+
+        :param value: The value of an offset. If not None, must be a
+            non negative int.
+        :type value: int or None
+        :raise TypeError: If a non int or None value is given.
+        :raise ValueError: If the provided value is a negative integer.
+        :return: None
+        :rtype: None
+
+        """
+        if not isinstance(value, int) and value is not None:
+            raise TypeError("offset must be an int or None.")
+        if value is not None and value < 0:
+            raise ValueError("offset must be a positive value.")
+        self._offset = value
+
+    @property
+    def limit(self):
+        """Get a limit value.
+
+        :return: An limit value.
+        :rtype: int or None
+
+        """
+        return self._limit
+
+    @limit.setter
+    def limit(self, value):
+        """Set a limit value.
+
+        :param value: The value of a limit. If not None, must be a
+            non negative int.
+        :type value: int or None
+        :raise TypeError: If a non int or None value is given.
+        :raise ValueError: If the provided value is a negative integer.
+        :return: None
+        :rtype: None
+
+        """
+        if not isinstance(value, int) and value is not None:
+            raise TypeError("limit must be an int or None.")
+        if value is not None and value < 0:
+            raise ValueError("limit must be a positive value.")
+        self._limit = value
+
+
+class SubfilterInfo(OffsetLimitInfo):
 
     """Object used to transport info regarding subqueries around."""
 
-    def __init__(self, filters=None, offset_limit_info=None, sorts=None):
+    def __init__(self, offset=None, limit=None, filters=None, sorts=None):
         """Instantiates a SubfilterInfo object.
 
+        :param offset: Offset to be applied.
+        :type offset: int or None
+        :param limit: Limit to be applied.
+        :type limit: int or None
         :param filters: Filters to be applied.
         :type filters: dict or None
-        :param offset_limit_info: Offset and/or limit to be applied.
-        :type offset_limit_info: OffsetLimitInfo or None
         :param sorts: Any sorts that are to be applied.
         :type sorts: list of SortInfo or None
+        :raise ValueError: If ``offset`` or ``limit`` is not a positive
+            number or ``None``.
+        :raise TypeError: If any of the provided parameters
+            are not of the specified type.
 
         """
-        if not isinstance(filters, dict) and filters is not None:
-            raise ValueError("filters must be a dict or None.")
-        if not isinstance(offset_limit_info, OffsetLimitInfo) and (
-                offset_limit_info is not None):
-            raise ValueError(
-                "offset_limit_info must be an OffsetLimitInfo or None.")
-        if not isinstance(sorts, list) and sorts is not None:
-            raise ValueError("sort_info must be a SortInfo or None.")
+        self._filters = None
+        self._sorts = None
         self.filters = filters
-        if offset_limit_info is None:
-            self.offset = None
-            self.limit = None
-        else:
-            self.offset = offset_limit_info.offset
-            self.limit = offset_limit_info.limit
         self.sorts = sorts
+        super(SubfilterInfo, self).__init__(offset, limit)
+
+    @property
+    def filters(self):
+        """Get the filters to be applied to a subresource.
+
+        :return: A dictionary of filters for a subresource.
+        :rtype: dict or None
+
+        """
+        return self._filters
+
+    @filters.setter
+    def filters(self, value):
+        """Set an offset value.
+
+        :param value: Filters to be applied to the subresource.
+        :type value: dict or None
+        :raise TypeError: If a non dict or None value is given.
+        :return: None
+        :rtype: None
+
+        """
+        if not isinstance(value, dict) and value is not None:
+            raise TypeError("filters must be a dict or None.")
+        self._filters = value
+
+    @property
+    def sorts(self):
+        """Get the sorts to be applied to a subresource.
+
+        :return: A collection of sorts for a subresource.
+        :rtype: list or None
+
+        """
+        return self._sorts
+
+    @sorts.setter
+    def sorts(self, value):
+        """Set the sorts to be used for the subresource.
+
+        :param value: Sorts to be applied to the subresource.
+        :type value: dict or None
+        :raise TypeError: If a non list or None value is given.
+        :return: None
+        :rtype: None
+
+        """
+        if not isinstance(value, list) and value is not None:
+            raise TypeError("sorts must be a list or None.")
+        self._sorts = value
 
 
 class QueryParamParser(object):
@@ -92,25 +203,25 @@ class QueryParamParser(object):
     """Utility class used to parse query parameters."""
 
     default_error_messages = {
-        "invalid_limit_type": ("The limit provided (%(limit)s) can not be "
-                               "converted to an integer."),
-        "invalid_sublimit_type": ("The limit (%(limit)s) provided for the "
-                                  "subresource (%(subresource)s) can not be "
-                                  "converted to an integer."),
+        "invalid_limit_value": ("The limit provided (%(limit)s)) is not a "
+                                "non negative integer."),
+        "invalid_sublimit_value": ("The limit (%(limit)s) provided for the "
+                                   "subresource (%(subresource)s) is not a "
+                                   "non negative integer."),
+        "invalid_offset_value": ("The offset provided (%(offset)s) is not a "
+                                 "non negative integer."),
+        "invalid_suboffset_value": ("The offset (%(offset)s) provided for the "
+                                    "subresource (%(subresource)s) is not a "
+                                    "non negative integer."),
         "limit_too_high": ("The limit provided (%(limit)d) is greater than "
                            "the max page size allowed (%(max_page_size)d)."),
-        "invalid_page_type": ("The page value provided (%(page)s) can not be "
-                              "converted to an integer."),
+        "invalid_page_value": ("The page value provided (%(page)s) is not a "
+                               "positive integer."),
         "page_no_max": "Page greater than 1 provided without a page max size.",
         "page_negative": "Page number can not be less than 1.",
-        "invalid_offset_type": ("The offset provided (%(offset)s) can not be "
-                                "converted to an integer."),
-        "invalid_suboffset_type": ("The offset (%(offset)s) provided for the "
-                                   "subresource (%(subresource)s) can not be "
-                                   "converted to an integer."),
-        "invalid_subsorts_type": ("The sorts provided (%(sort)s) for the "
-                                  "subresource (%(subresource)s) are not "
-                                  "valid."),
+        "invalid_subsorts_value": ("The sorts provided (%(sort)s) for the "
+                                   "subresource (%(subresource)s) are not "
+                                   "valid."),
         "invalid_complex_filters": ("The complex filters query value for "
                                     "%(qparam)s must be set to a valid json "
                                     "dict."),
@@ -181,9 +292,9 @@ class QueryParamParser(object):
 
         """
         offset_limit_parse_keys = {
-            "invalid_limit_type", "limit_too_high", "invalid_offset_type",
-            "invalid_page_type", "page_no_max", "page_negative",
-            "invalid_sublimit_type", "invalid_suboffset_type"}
+            "invalid_limit_value", "limit_too_high", "invalid_offset_value",
+            "invalid_page_value", "page_no_max", "page_negative",
+            "invalid_sublimit_value", "invalid_suboffset_value"}
         if key in offset_limit_parse_keys:
             raise OffsetLimitParseError(
                 code=key,
@@ -321,33 +432,38 @@ class QueryParamParser(object):
             if self.query_params.get(limit_query_name):
                 try:
                     limit = int(self.query_params.get(limit_query_name))
+                    if limit < 0:
+                        raise ValueError
                 except ValueError:
                     if strict:
-                        self.fail(key="invalid_limit_type", limit=limit)
+                        self.fail(key="invalid_limit_value", limit=limit)
         # parse page
         page = self.query_params.get(page_query_name, None)
         if page is not None:
             try:
                 page = int(page)
+                if page < 1:
+                    raise ValueError
             except ValueError:
-                self.fail("invalid_page_type", page=page)
+                page = None
+                if strict:
+                    self.fail("invalid_page_value", page=page)
             if page > 1 and page_max_size is None and limit is None:
                 page = None
                 if strict:
                     self.fail("page_no_max")
-            if page < 1:
-                page = None
-                if strict:
-                    self.fail("page_negative")
         # defaults
         offset = 0
         if offset_query_name is not None:
             if self.query_params.get(offset_query_name):
                 try:
                     offset = int(self.query_params.get(offset_query_name))
+                    if offset < 0:
+                        raise ValueError
                 except ValueError:
+                    offset = 0
                     if strict:
-                        self.fail("invalid_offset_type", offset=offset)
+                        self.fail("invalid_offset_value", offset=offset)
         if page_max_size and limit > page_max_size:
             # make sure an excessively high limit can't be set
             limit = page_max_size
@@ -418,7 +534,7 @@ class ModelQueryParamParser(QueryParamParser):
                 value = self._parse_sorts_helper(key_value)
         except ValueError:
             if strict:
-                code = "invalid_sub" + parse_type + "_type"
+                code = "invalid_sub" + parse_type + "_value"
                 kwargs = {
                     parse_type: key_value,
                     "subresource": key
@@ -696,7 +812,7 @@ class ModelQueryParamParser(QueryParamParser):
                     try:
                         query = json.loads(complex_query)
                         if not isinstance(query, dict):
-                            raise ValueError()
+                            raise ValueError
                         result["$and"].append(query)
                     except (TypeError, ValueError):
                         if strict:

@@ -79,7 +79,8 @@ class DrowsyQueryBuilderTests(DrowsyTests):
         subfilters = {
             "tracks": SubfilterInfo(
                 filters={"track_id": {"$gte": 5}},
-                offset_limit_info=OffsetLimitInfo(offset=1, limit=1)
+                offset=1,
+                limit=1
             )
         }
         query = query_builder.apply_subquery_loads(
@@ -123,7 +124,8 @@ class DrowsyQueryBuilderTests(DrowsyTests):
         subfilters = {
             "tracks": SubfilterInfo(
                 filters={"track_id": {"$gte": 5}},
-                offset_limit_info=OffsetLimitInfo(offset=1, limit=1),
+                offset=1,
+                limit=1,
                 sorts=[SortInfo(attr="name", direction="ASC")]
             )
         }
@@ -189,7 +191,8 @@ class DrowsyQueryBuilderTests(DrowsyTests):
         query = self.db_session.query(Customer)
         subfilters = {
             "invoices": SubfilterInfo(
-                offset_limit_info=OffsetLimitInfo(offset=1, limit=10000)
+                offset=1,
+                limit=10000
             )
         }
         self.assertRaisesCode(
@@ -252,7 +255,8 @@ class DrowsyQueryBuilderTests(DrowsyTests):
         query = self.db_session.query(Track)
         subfilters = {
             "album": SubfilterInfo(
-                offset_limit_info=OffsetLimitInfo(offset=1, limit=None)
+                offset=1,
+                limit=None
             )
         }
         self.assertRaisesCode(
@@ -273,7 +277,8 @@ class DrowsyQueryBuilderTests(DrowsyTests):
         query = self.db_session.query(Album)
         subfilters = {
             "tracks": SubfilterInfo(
-                offset_limit_info=OffsetLimitInfo(offset=1, limit=10)
+                offset=1,
+                limit=10
             )
         }
         self.assertRaisesCode(
@@ -297,7 +302,8 @@ class DrowsyQueryBuilderTests(DrowsyTests):
             resource=CustomerResource(session=self.db_session),
             subfilters={
                 "invoices": SubfilterInfo(
-                    offset_limit_info=OffsetLimitInfo(offset=1, limit=10000)
+                    offset=1,
+                    limit=10000
                 )
             },
             embeds=[],
@@ -527,9 +533,8 @@ class DrowsyQueryBuilderTests(DrowsyTests):
         subfilters = {
             "children": SubfilterInfo(
                 filters={"node_id": 1},
-                offset_limit_info=OffsetLimitInfo(
-                    offset=1, limit=1
-                )
+                offset=1,
+                limit=1
             )
         }
         query = query_builder.apply_subquery_loads(
