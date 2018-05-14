@@ -416,7 +416,7 @@ class BaseModelResource(SchemaResourceABC, NestableResourceABC):
 
         Uses the load_only property for the resource's schema fields
         to determine whether the field should be queryable. Also handles
-        nested queries without issue.
+        nested queries with the same logic.
 
         :param str key: Dot notation field name. For example, if trying
             to query an album, this may look something like
@@ -614,23 +614,22 @@ class BaseModelResource(SchemaResourceABC, NestableResourceABC):
         embed_name_mapping = {}
         converted_embeds = []
         embed_fields = set()
-        if isinstance(embeds, list):
-            for embed in embeds:
-                converted_embed = self.convert_key_name(embed)
-                embed_name_mapping[converted_embed] = embed
-                if converted_embed is None:
-                    if strict:
-                        self.fail("invalid_embed", embed=embed)
-                elif converted_embed:
-                    # used so if a fields param is provided, embeds are
-                    # still included.
-                    # e.g. albums?fields=album_id,tracks.track_id
-                    #             &embeds=tracks.title
-                    # tracks.title will get added to fields to include.
-                    embed_fields.add(converted_embed.split(".")[0])
-                converted_embeds.append(converted_embed)
-        elif embeds is not None and strict:
-            self.fail("invalid_embeds", embeds=embeds)
+        if embeds is None:
+            embeds = []
+        for embed in embeds:
+            converted_embed = self.convert_key_name(embed)
+            embed_name_mapping[converted_embed] = embed
+            if converted_embed is None:
+                if strict:
+                    self.fail("invalid_embed", embed=embed)
+            elif converted_embed:
+                # used so if a fields param is provided, embeds are
+                # still included.
+                # e.g. albums?fields=album_id,tracks.track_id
+                #             &embeds=tracks.title
+                # tracks.title will get added to fields to include.
+                embed_fields.add(converted_embed.split(".")[0])
+            converted_embeds.append(converted_embed)
         return converted_embeds, embed_name_mapping, embed_fields
 
     def apply_required_filters(self, query, alias=None):
@@ -753,7 +752,7 @@ class BaseModelResource(SchemaResourceABC, NestableResourceABC):
             self._get_embed_info(embeds=embeds_subfilters, strict=strict))
         # fields
         converted_fields = []
-        if isinstance(fields, list):
+        if fields:
             for field in fields:
                 converted_field = self.convert_key_name(field)
                 if converted_field is None:
@@ -761,8 +760,6 @@ class BaseModelResource(SchemaResourceABC, NestableResourceABC):
                         self.fail("invalid_field", field=field)
                 elif converted_field:
                     converted_fields.append(converted_field)
-        elif fields is not None and strict:
-            self.fail("invalid_fields", fields=fields)
         if converted_fields:
             for embed_field in embed_fields:
                 if embed_field not in converted_fields:
@@ -1148,11 +1145,13 @@ class BaseModelResource(SchemaResourceABC, NestableResourceABC):
         try:
             query = self.query_builder.apply_offset(query, offset)
         except ValueError:
-            self.fail("invalid_offset_value", offset=offset)
+            if strict:
+                self.fail("invalid_offset_value", offset=offset)
         try:
             query = self.query_builder.apply_limit(query, limit)
         except ValueError:
-            self.fail("invalid_limit_value", limit=limit)
+            if strict:
+                self.fail("invalid_limit_value", limit=limit)
         records = query.all()
         # get result
         dump = schema.dump(records, many=True)

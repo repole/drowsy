@@ -186,6 +186,49 @@ class DrowsyResourceTests(DrowsyTests):
                                     page_max_size=0)
         self.assertTrue(resource.page_max_size is None)
 
+    def test_resource_limit_too_high_fail(self):
+        """Test providing a limit greater than page_max_size fails."""
+        resource = EmployeeResource(session=self.db_session,
+                                    page_max_size=100)
+        self.assertRaisesCode(
+            BadRequestError,
+            "limit_too_high",
+            resource.get_collection,
+            limit=101,
+            strict=True
+        )
+
+    def test_resource_limit_negative_fail(self):
+        """Test providing a negative_limit fails."""
+        resource = AlbumResource(session=self.db_session)
+        self.assertRaisesCode(
+            BadRequestError,
+            "invalid_limit_value",
+            resource.get_collection,
+            limit=-1,
+            strict=True
+        )
+
+    def test_resource_limit_too_high_soft_fail(self):
+        """Test in non strict page_max_size overrides high limit."""
+        resource = AlbumResource(session=self.db_session,
+                                 page_max_size=100)
+        results = resource.get_collection(
+            limit=101,
+            strict=False)
+        self.assertTrue(len(results) == 100)
+
+    def test_resource_offset_negative_fail(self):
+        """Test providing a negative_limit fails."""
+        resource = AlbumResource(session=self.db_session)
+        self.assertRaisesCode(
+            BadRequestError,
+            "invalid_offset_value",
+            resource.get_collection,
+            offset=-1,
+            strict=True
+        )
+
     def test_resource_error_message_override(self):
         """Test that error message overrides are handled properly."""
         resource = EmployeeResource(session=self.db_session)
@@ -206,12 +249,18 @@ class DrowsyResourceTests(DrowsyTests):
         )
 
     def test_resource_fail_missing_key(self):
+        """Test resource failure missing key error message."""
         resource = EmployeeResource(session=self.db_session)
         self.assertRaises(
             AssertionError,
             resource.fail,
             key="test"
         )
+
+    def test_resource_whitelist(self):
+        """Test that a multi level whitelist check works."""
+        resource = AlbumResource(session=self.db_session, context={"hey": "Hi"})
+        self.assertTrue(resource.whitelist("tracks.playlists.playlist_id"))
 
     # PATCH TESTS
 
@@ -234,6 +283,19 @@ class DrowsyResourceTests(DrowsyTests):
         self.assertTrue(
             result["title"] == "TEST" and
             album.title == "TEST")
+
+    def test_patch_bad_ident_fail(self):
+        """Ensure a bad ident in patch causes failure."""
+        album = self.db_session.query(Album).filter(
+            Album.album_id == 1).all()[0]
+        album_resource = AlbumResource(session=self.db_session)
+        self.assertRaisesCode(
+            ResourceNotFoundError,
+            "resource_not_found",
+            album_resource.patch,
+            ("TEST", ),
+            {}
+        )
 
     def test_patch_empty(self):
         """Make sure that a obj update works with no update params."""
@@ -493,6 +555,29 @@ class DrowsyResourceTests(DrowsyTests):
             "resource_not_found",
             resource.get,
             "bad"
+        )
+
+    def test_get_bad_embed(self):
+        """Test get fails with a bad embed."""
+        resource = AlbumResource(session=self.db_session)
+        self.assertRaisesCode(
+            BadRequestError,
+            "invalid_embed",
+            resource.get,
+            1,
+            embeds=["test"],
+            strict=True
+        )
+
+    def test_make_schema_invalid_field(self):
+        """Test making a new schema fails with a bad field."""
+        resource = AlbumResource(session=self.db_session)
+        self.assertRaisesCode(
+            BadRequestError,
+            "invalid_field",
+            resource.make_schema,
+            fields=["test"],
+            strict=True
         )
 
     # GET COLLECTION TESTS

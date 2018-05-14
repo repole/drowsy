@@ -9,12 +9,12 @@
     :license: MIT - See LICENSE for more details.
 """
 from __future__ import unicode_literals
-import unittest
 import os
+import shutil
+import tempfile
+import unittest
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
-import tempfile
-import shutil
 
 
 class DrowsyTests(unittest.TestCase):
@@ -42,9 +42,14 @@ class DrowsyTests(unittest.TestCase):
         """Like assertRaises, but checks the exception for a code attr.
 
         :param expected_exception:
-        :param code:
-        :param args:
-        :param kwargs:
+        :param code: The expected value of the code attr on the
+            produced exception.
+        :param args: Position arguments, the first of which should
+            be a callable.
+        :param kwargs: Any key word arguments to be passed to the
+            callable.
+        :raise AssertionError: When the callable does not produce
+            the expected result.
         :return: None
 
         """

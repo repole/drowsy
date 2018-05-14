@@ -42,8 +42,7 @@ def get_error_message(error_messages, key, gettext=None, **kwargs):
     if isinstance(msg, basestring):
         if callable(gettext):
             return gettext(msg, **kwargs)
-        else:
-            return msg % kwargs
+        return msg % kwargs
     return msg
 
 
