@@ -585,22 +585,28 @@ class BaseResourceABC(SchemaResourceABC, NestableResourceABC):
         """
         split_keys = key.split(".")
         schema = self.schema_cls(**self._get_schema_kwargs(self.schema_cls))
-        for i, key in enumerate(split_keys):
+        while split_keys:
+            key = split_keys.pop(0)
             if key in schema.fields:
                 field = schema.fields[key]
                 if field.load_only:
                     return False
+                elif not split_keys:
+                    return True
                 elif isinstance(field, EmbeddableMixinABC):
                     schema.embed([key])
-                    if hasattr(field, "schema"):
+                if isinstance(field, NestedRelated):
+                    try:
+                        # try to use a subresource for whitelisting
+                        subresource = self.make_subresource(field.dump_to)
+                        if isinstance(subresource, BaseResourceABC):
+                            return subresource.whitelist(
+                                ".".join(split_keys))
+                        raise ValueError
+                    except ValueError:
+                        # if unable to do so, continue on iteratively
+                        # using this resource's whitelist rules
                         schema = field.schema
-                    else:
-                        return False
-                elif isinstance(field, NestedRelated):
-                    schema = field.schema
-                else:
-                    if i != (len(split_keys) - 1):
-                        return False
             else:
                 return False
         return True
@@ -614,21 +620,34 @@ class BaseResourceABC(SchemaResourceABC, NestableResourceABC):
             internally used form.
 
         """
-        # TODO - consider making this resource based
-        # calling child resource.convert_key_name
         schema = self.schema_cls(**self._get_schema_kwargs(self.schema_cls))
         split_keys = key.split(".")
         result_keys = []
-        for key in split_keys:
+        while split_keys:
+            key = split_keys.pop(0)
             field = get_field_by_dump_name(schema, key)
             if field is not None:
                 result_keys.append(field.name)
                 if isinstance(field, EmbeddableMixinABC):
                     schema.embed([key])
-                    if hasattr(field, "schema"):
+                if isinstance(field, NestedRelated):
+                    try:
+                        # try to use a subresource for converting
+                        subresource = self.make_subresource(field.dump_to)
+                        if isinstance(subresource, BaseResourceABC):
+                            result_keys += subresource.convert_key_name(
+                                ".".join(split_keys)
+                            ).split(".")
+                            return ".".join(result_keys)
+                        raise ValueError
+                    except ValueError:
+                        # if unable to do so, continue on iteratively
+                        # using this resource's convert rules
                         schema = field.schema
-                if hasattr(field, "schema"):
-                    schema = field.schema
+                elif not split_keys:
+                    return ".".join(result_keys)
+                else:
+                    return None
             else:
                 # Invalid key name, no matching field found.
                 return None
