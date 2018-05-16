@@ -356,7 +356,6 @@ class BaseResourceABC(SchemaResourceABC, NestableResourceABC):
 
         """
 
-    @abc.abstractmethod
     def __init__(self, context=None, page_max_size=None,
                  error_messages=None, *args, **kwargs):
         """Creates a new instance of the model.
