@@ -8,6 +8,7 @@
                 See AUTHORS for more details.
     :license: MIT - See LICENSE for more details.
 """
+import abc
 from marshmallow.compat import with_metaclass
 from mqlalchemy import InvalidMQLException
 from sqlalchemy.exc import SQLAlchemyError
@@ -205,9 +206,9 @@ class NestableResourceABC(ResourceABC):
         raise NotImplementedError
 
 
-class ModelResourceOpts(object):
+class ResourceOpts(object):
 
-    """Meta class options for use with a `ModelResource`.
+    """Meta class options for use with a `SchemaResource`.
 
     A ``schema_cls`` option must be provided.
 
@@ -245,7 +246,7 @@ class ModelResourceOpts(object):
         self.page_max_size = getattr(meta, "page_max_size", None)
 
 
-class ModelResourceMeta(type):
+class ResourceMeta(type):
 
     """Meta class inherited by `ModelResource`.
 
@@ -258,7 +259,7 @@ class ModelResourceMeta(type):
     def __new__(mcs, name, bases, attrs):
         """Sets up meta class options for a given ModelResource class.
 
-        :param mcs: This :class:`ModelResourceMeta` class.
+        :param mcs: This :class:`ResourceMeta` class.
         :param str name: Class name of the
             :class:`~drowsy.resource.ModelResource` that this meta
             class is attached to.
@@ -270,7 +271,7 @@ class ModelResourceMeta(type):
             __doc__ for the class.
 
         """
-        klass = super(ModelResourceMeta, mcs).__new__(mcs, name, bases, attrs)
+        klass = super(ResourceMeta, mcs).__new__(mcs, name, bases, attrs)
         meta = getattr(klass, 'Meta')
         klass.opts = klass.OPTIONS_CLASS(meta)
         return klass
@@ -278,7 +279,7 @@ class ModelResourceMeta(type):
     def __init__(cls, name, bases, attrs):
         """Initializes the meta class for a ``ModelResource`` class.
 
-        :param cls: This :class:`ModelResourceMeta` class.
+        :param cls: This :class:`ResourceMeta` class.
         :param name: Class name of the
             :class:`~drowsy.resource.ModelResource` that this meta
             class is attached to.
@@ -290,22 +291,20 @@ class ModelResourceMeta(type):
             __doc__ for the class.
 
         """
-        super(ModelResourceMeta, cls).__init__(name, bases, attrs)
+        super(ResourceMeta, cls).__init__(name, bases, attrs)
         resource_class_registry.register(name, cls)
 
 
-class BaseModelResource(SchemaResourceABC, NestableResourceABC):
+class BaseResourceABC(SchemaResourceABC, NestableResourceABC):
+    __metaclass__ = abc.ABCMeta
 
-    """Model API Resources should inherit from this object."""
-
-    OPTIONS_CLASS = ModelResourceOpts
+    OPTIONS_CLASS = ResourceOpts
     default_error_messages = {
         "validation_failure": "Unable to process entity.",
         "invalid_embed": "Invalid embed supplied: %(embed)s",
         "invalid_embeds": "Invalid embed supplied: %(embeds)s",
         "invalid_field": "Invalid field supplied: %(field)s",
         "invalid_fields": "Invalid fields supplied: %(fields)s",
-        # InvalidMQLException overrides this:
         "invalid_filters": "Invalid filters supplied.",
         "commit_failure": "Unable to save the provided data.",
         "invalid_collection_input": "The provided input must be a list.",
@@ -358,16 +357,12 @@ class BaseModelResource(SchemaResourceABC, NestableResourceABC):
           string or callable.
 
         """
-        pass
 
-    def __init__(self, session, context=None, page_max_size=None,
-                 error_messages=None):
+    @abc.abstractmethod
+    def __init__(self, context=None, page_max_size=None,
+                 error_messages=None, *args, **kwargs):
         """Creates a new instance of the model.
 
-        :param session: Database session to use for any resource
-            actions.
-        :type session: :class:`~sqlalchemy.orm.session.Session` or
-            callable
         :param context: Context used to alter the schema used for this
             resource. For example, may contain the current
             authorization status of the current request. If errors
@@ -391,7 +386,6 @@ class BaseModelResource(SchemaResourceABC, NestableResourceABC):
         if self._page_max_size is None and hasattr(self.opts, "page_max_size"):
             self._page_max_size = self.opts.page_max_size
         self._context = context
-        self._session = session
         # Set up error messages
         messages = {}
         for cls in reversed(self.__class__.__mro__):
@@ -401,14 +395,183 @@ class BaseModelResource(SchemaResourceABC, NestableResourceABC):
         messages.update(error_messages or {})
         self.error_messages = messages
 
-    @property
-    def model(self):
-        """Get the model class associated with this resource."""
-        return self.schema_cls.opts.model
+    def make_schema(self, fields=None, subfilters=None, embeds=None,
+                    partial=False, instance=None, strict=True):
+        """Used to generate a schema for this request.
+
+        :param fields: Names of fields to be included in the result.
+        :type fields: list or None
+        :param subfilters: Filters to be applied to children of this
+            resource. Each key in the dictionary should be a dot
+            notation key corresponding to a subfilter.
+        :type subfilters: dict or None
+        :param embeds: A list of relationship and relationship field
+            names to be included in the result.
+        :type embeds: list or None
+        :param bool partial: Whether partial deserialization is allowed.
+        :param instance: Object instance to associate with the schema.
+        :param bool strict: If ``True``, will raise an exception when
+            bad parameters are passed. If ``False``, will quietly ignore
+            any bad input and treat it as if none was provided.
+        :raise BadRequestError: Invalid fields or embeds will result
+            in a raised exception if strict is ``True``.
+        :return: A schema with the supplied fields and embeds included.
+        :rtype: :class:`~drowsy.schema.ResourceSchema`
+
+        """
+        # parse embed information
+        # combine subfilters with embeds to take care of implied embeds
+        if isinstance(embeds, list):
+            embeds_subfilters = [key for key in embeds]
+            if isinstance(subfilters, dict):
+                for key in subfilters:
+                    for embed in embeds:
+                        if key in embed:
+                            break
+                    else:
+                        embeds_subfilters.append(key)
+        elif isinstance(subfilters, dict):
+            embeds_subfilters = [key for key in subfilters]
+        else:
+            embeds_subfilters = None
+        converted_embeds, embed_name_mapping, embed_fields = (
+            self._get_embed_info(embeds=embeds_subfilters, strict=strict))
+        # fields
+        converted_fields = []
+        if fields:
+            for field in fields:
+                converted_field = self.convert_key_name(field)
+                if converted_field is None:
+                    if strict:
+                        self.fail("invalid_field", field=field)
+                elif converted_field:
+                    converted_fields.append(converted_field)
+        if converted_fields:
+            for embed_field in embed_fields:
+                if embed_field not in converted_fields:
+                    converted_fields.append(embed_field)
+            kwargs = self._get_schema_kwargs(self.schema_cls)
+            kwargs.update(
+                only=tuple(converted_fields),
+                partial=partial,
+                instance=instance
+            )
+            schema = self.schema_cls(**kwargs)
+        else:
+            kwargs = self._get_schema_kwargs(self.schema_cls)
+            kwargs.update(
+                partial=partial,
+                instance=instance
+            )
+            schema = self.schema_cls(**kwargs)
+        # actually attempt to embed now
+        for converted_embed in converted_embeds:
+            try:
+                schema.embed([converted_embed])
+            except AttributeError:
+                if strict:
+                    self.fail("invalid_embed",
+                              embed=embed_name_mapping[converted_embed])
+        return schema
+
+    def make_subresource(self, name):
+        """Given a subresource name, construct a subresource.
+
+        :param str name: Dumped name of field containing a subresource.
+        :raise ValueError: If the name given isn't a valid subresource.
+        :returns: A constructed :class:`~drowsy.resource.Resource`
+
+        """
+        # NOTE: No risk of BadRequestError here due to no embeds or
+        # fields being passed to make_schema
+        field = get_field_by_dump_name(self.make_schema(), dump_name=name)
+        if isinstance(field, NestedRelated):
+            return field.resource_cls(
+                **self._get_resource_kwargs(field.resource_cls)
+            )
+        raise ValueError("The provided name is not a valid subresource.")
+
+    def fail(self, key, errors=None, exc=None, **kwargs):
+        """Raises an exception based on the ``key`` provided.
+
+        :param str key: Failure type, used to choose an error message.
+        :param errors: May be used by the raised exception.
+        :type errors: dict or None
+        :param exc: If another exception triggered this failure, it may
+            be provided for a more informative failure.
+        :type exc: :exc:`Exception` or None
+        :param kwargs: Any additional arguments that may be used for
+            generating an error message.
+        :raise UnprocessableEntityError: If ``key`` is
+            ``"validation_failure"``. Note that in this case, errors
+            should preferably be provided.
+        :raise BadRequestError: The default error type raised in all
+            other cases.
+
+        """
+        unproccessable_errors = {"validation_failure", "commit_failure",
+                                 "invalid_collection_input"}
+        if key in unproccessable_errors:
+            raise UnprocessableEntityError(
+                code=key,
+                message=self._get_error_message(key, **kwargs),
+                errors=errors or {},
+                **kwargs)
+        elif key == "resource_not_found":
+            raise ResourceNotFoundError(
+                code=key,
+                message=self._get_error_message(key, **kwargs),
+                **kwargs
+            )
+        elif key == "method_not_allowed":
+            raise MethodNotAllowedError(
+                code=key,
+                message=self._get_error_message(key, **kwargs),
+                **kwargs)
+        else:
+            raise BadRequestError(
+                code=key,
+                message=self._get_error_message(key, **kwargs),
+                **kwargs)
+
+    def _get_error_message(self, key, **kwargs):
+        """Get an error message based on a key name.
+
+        If the error message is a callable, kwargs are passed
+        to that callable.
+
+        If ``self.context`` has a ``"gettext" key set to a callable,
+        that callable will be passed the resulting string and any
+        key word args for the sake of translation.
+
+        :param str key: Key used to access the error messages dict.
+        :param dict kwargs: Any additional arguments that may be passed
+            to a callable error message, or used to translate and/or
+            format an error message string.
+        :raise AssertionError: If ``key`` does not exist in the
+            error messages dict.
+        :return: An error message as a string.
+        :rtype: str
+
+        """
+        try:
+            return get_error_message(
+                error_messages=self.error_messages,
+                key=key,
+                gettext=self.context.get("gettext", None),
+                **kwargs)
+        except KeyError:
+            class_name = self.__class__.__name__
+            msg = MISSING_ERROR_MESSAGE.format(class_name=class_name, key=key)
+            raise AssertionError(msg)
 
     @property
     def schema_cls(self):
-        """Get the schema class associated with this resource."""
+        """Get the schema class associated with this resource.
+
+        :return: The class of the schema associated with this resource.
+
+        """
         return self.opts.schema_cls
 
     def whitelist(self, key):
@@ -450,6 +613,8 @@ class BaseModelResource(SchemaResourceABC, NestableResourceABC):
 
         :param str key: Name of the field as it was serialized, using
             dot notation for nested fields.
+        :return: The key converted from it's dump form to its
+            internally used form.
 
         """
         # TODO - consider making this resource based
@@ -473,6 +638,231 @@ class BaseModelResource(SchemaResourceABC, NestableResourceABC):
         return ".".join(result_keys)
 
     @property
+    def page_max_size(self):
+        """Get the max number of resources to return.
+
+        :return: The maximum number of resources to be
+            included in a result.
+        :rtype: int or None
+
+        """
+        if callable(self._page_max_size):
+            if sys.version_info.major == 2:  # pragma: no cover
+                func = self._page_max_size.__func__
+            else:
+                func = self._page_max_size
+            return func(self)
+        elif self._page_max_size is not None:
+            if self._page_max_size == 0:
+                return None
+            else:
+                return self._page_max_size
+
+    @property
+    def context(self):
+        """Return the schema context for this resource.
+
+        :return: A dictionary containing any context info used for this
+            resource.
+        :rtype: dict
+
+        """
+        if callable(self._context):
+            return self._context()
+        else:
+            if self._context is None:
+                self._context = {}
+            return self._context
+
+    @context.setter
+    def context(self, val):
+        """Set context to the provided value.
+
+        :param val: Used to set the current context value.
+        :type val: dict, callable, or None
+
+        """
+        self._context = val
+
+    def _get_schema_kwargs(self, schema_cls):
+        """Get default kwargs for any new schema creation.
+
+        :param schema_cls: The class of the schema being created.
+        :return: A dictionary of keyword arguments to be used when
+            creating new schema instances.
+        :rtype: dict
+
+        """
+        return {
+            "context": self.context
+        }
+
+    def _get_resource_kwargs(self, resource_cls):
+        """Get default kwargs for any new sub resource creation.
+
+        :param resource_cls: The class of the resource being created.
+        :return: A dictionary of keyword arguments to be used when
+            creating child resources.
+        :rtype: dict
+
+        """
+        return {
+            "context": self.context
+        }
+
+    def _get_embed_info(self, embeds=None, strict=True):
+        """Helper function that handles the supplied embeds.
+
+        :param embeds: A list of relationship and relationship field
+            names to be included in the result.
+        :type embeds: list or None
+        :param bool strict: If ``True``, will raise an exception when
+            bad parameters are passed. If ``False``, will quietly ignore
+            any bad input and treat it as if none was provided.
+        :raise BadRequestError: If ``strict`` is ``True`` and ``embeds``
+            are not valid.
+        :return: A list of converted embed field names, a dict mapping
+            their original name to their converted name, and a list of
+            the top level embed fields to be included.
+        :rtype: tuple
+
+        """
+        # embed converting
+        # name mapping used purely for error purposes
+        # key is converted name, value is orig attr name
+        embed_name_mapping = {}
+        converted_embeds = []
+        embed_fields = set()
+        if embeds is None:
+            embeds = []
+        for embed in embeds:
+            converted_embed = self.convert_key_name(embed)
+            embed_name_mapping[converted_embed] = embed
+            if converted_embed is None:
+                if strict:
+                    self.fail("invalid_embed", embed=embed)
+            elif converted_embed:
+                # used so if a fields param is provided, embeds are
+                # still included.
+                # e.g. albums?fields=album_id,tracks.track_id
+                #             &embeds=tracks.title
+                # tracks.title will get added to fields to include.
+                embed_fields.add(converted_embed.split(".")[0])
+            converted_embeds.append(converted_embed)
+        return converted_embeds, embed_name_mapping, embed_fields
+
+
+class BaseModelResource(BaseResourceABC):
+
+    """Model API Resources should inherit from this object."""
+
+    def __init__(self, session, context=None, page_max_size=None,
+                 error_messages=None):
+        """Creates a new instance of the model.
+
+        :param session: Database session to use for any resource
+            actions.
+        :type session: :class:`~sqlalchemy.orm.session.Session` or
+            callable
+        :param context: Context used to alter the schema used for this
+            resource. For example, may contain the current
+            authorization status of the current request. If errors
+            should be translated, context should include a ``"gettext"``
+            key referencing a callable that takes in a string and any
+            keyword args.
+        :type context: dict, callable, or None
+        :param page_max_size: Used to determine the maximum number of
+            results to return by :meth:`get_collection`. Defaults to
+            the ``page_max_size`` from the resource's ``opts`` if
+            ``None`` is passed in. To explicitly allow no limit,
+            pass in ``0``. If given a ``callable``, it should accept
+            the resource itself as its first and only argument.
+        :type page_max_size: int, callable, or None
+        :param error_messages: May optionally be provided to override
+            the default error messages for this resource.
+        :type error_messages: dict or None
+
+        """
+        super(BaseModelResource, self).__init__(
+            context=context,
+            page_max_size=page_max_size,
+            error_messages=error_messages)
+        self._session = session
+
+    def _get_schema_kwargs(self, schema_cls):
+        """Get default kwargs for any new schema creation.
+
+        :param schema_cls: The class of the schema being created.
+        :return: A dictionary of keyword arguments to be used when
+            creating new schema instances.
+        :rtype: dict
+
+        """
+        result = super(BaseModelResource, self)._get_schema_kwargs(schema_cls)
+        result["session"] = self.session
+        return result
+
+    def _get_resource_kwargs(self, resource_cls):
+        """Get default kwargs for any new sub resource creation.
+
+        :param resource_cls: The class of the resource being created.
+        :return: A dictionary of keyword arguments to be used when
+            creating child resources.
+        :rtype: dict
+
+        """
+        result = super(BaseModelResource, self)._get_resource_kwargs(
+            resource_cls
+        )
+        result["session"] = self.session
+        return result
+
+    def fail(self, key, errors=None, exc=None, **kwargs):
+        """Raises an exception based on the ``key`` provided.
+
+        :param str key: Failure type, used to choose an error message.
+        :param errors: May be used by the raised exception.
+        :type errors: dict or None
+        :param exc: If another exception triggered this failure, it may
+            be provided for a more informative failure. In the case of
+            an ``InvalidMQLException`` being provided when ``key`` is
+            ``"invalid_filters"``, that error message will override
+            ``self.error_messages["invalid_filters"]``.
+        :type exc: :exc:`Exception` or None
+        :param kwargs: Any additional arguments that may be used for
+            generating an error message.
+        :raise UnprocessableEntityError: If ``key`` is
+            ``"validation_failure"``. Note that in this case, errors
+            should preferably be provided.
+        :raise BadRequestError: The default error type raised in all
+            other cases.
+
+        """
+        if key == "invalid_filters" or key == "invalid_subresource_filters":
+            if isinstance(exc, InvalidMQLException):
+                if "subquery_key" in kwargs:
+                    message = kwargs["subquery_key"] + ": " + str(exc)
+                else:
+                    message = str(exc)
+            else:
+                message = self._get_error_message(key, **kwargs)
+            raise BadRequestError(
+                code=key,
+                message=message,
+                **kwargs)
+        return super(BaseModelResource, self).fail(
+            key=key,
+            errors=errors,
+            exc=exc,
+            **kwargs
+        )
+
+    @property
+    def model(self):
+        """Get the model class associated with this resource."""
+        return self.schema_cls.opts.model
+
+    @property
     def session(self):
         """Get a db session to use for this request."""
         if callable(self._session):
@@ -491,41 +881,6 @@ class BaseModelResource(SchemaResourceABC, NestableResourceABC):
         self._session = val
 
     @property
-    def page_max_size(self):
-        """Get the max number of resources to return."""
-        if callable(self._page_max_size):
-            if sys.version_info.major == 2:  # pragma: no cover
-                func = self._page_max_size.__func__
-            else:
-                func = self._page_max_size
-            return func(self)
-        elif self._page_max_size is not None:
-            if self._page_max_size == 0:
-                return None
-            else:
-                return self._page_max_size
-
-    @property
-    def context(self):
-        """Return the schema context for this resource."""
-        if callable(self._context):
-            return self._context()
-        else:
-            if self._context is None:
-                self._context = {}
-            return self._context
-
-    @context.setter
-    def context(self, val):
-        """Set context to the provided value.
-
-        :param val: Used to set the current context value.
-        :type val: dict, callable, or None
-
-        """
-        self._context = val
-
-    @property
     def query_builder(self):
         """Returns a QueryBuilder object.
 
@@ -533,17 +888,6 @@ class BaseModelResource(SchemaResourceABC, NestableResourceABC):
 
         """
         return QueryBuilder()
-
-    def _get_schema_kwargs(self, schema_cls):
-        """Get default kwargs for any new schema creation.
-
-        :param schema_cls: The class of the schema being created.
-
-        """
-        return {
-            "context": self.context,
-            "session": self.session
-        }
 
     def _get_ident_filters(self, ident):
         """Generate MQLAlchemy filters using a resource identity.
@@ -591,46 +935,6 @@ class BaseModelResource(SchemaResourceABC, NestableResourceABC):
         except (TypeError, ValueError, InvalidMQLException):
             self.fail("resource_not_found", ident=ident)
         return query.first()
-
-    def _get_embed_info(self, embeds=None, strict=True):
-        """Helper function that handles the supplied embeds.
-
-        :param embeds: A list of relationship and relationship field
-            names to be included in the result.
-        :type embeds: list or None
-        :param bool strict: If ``True``, will raise an exception when
-            bad parameters are passed. If ``False``, will quietly ignore
-            any bad input and treat it as if none was provided.
-        :raise BadRequestError: If ``strict`` is ``True`` and ``embeds``
-            are not valid.
-        :return: A list of converted embed field names, a dict mapping
-            their original name to their converted name, and a list of
-            the top level embed fields to be included.
-
-        """
-        # embed converting
-        # name mapping used purely for error purposes
-        # key is converted name, value is orig attr name
-        embed_name_mapping = {}
-        converted_embeds = []
-        embed_fields = set()
-        if embeds is None:
-            embeds = []
-        for embed in embeds:
-            converted_embed = self.convert_key_name(embed)
-            embed_name_mapping[converted_embed] = embed
-            if converted_embed is None:
-                if strict:
-                    self.fail("invalid_embed", embed=embed)
-            elif converted_embed:
-                # used so if a fields param is provided, embeds are
-                # still included.
-                # e.g. albums?fields=album_id,tracks.track_id
-                #             &embeds=tracks.title
-                # tracks.title will get added to fields to include.
-                embed_fields.add(converted_embed.split(".")[0])
-            converted_embeds.append(converted_embed)
-        return converted_embeds, embed_name_mapping, embed_fields
 
     def apply_required_filters(self, query, alias=None):
         """Apply required filters on this query.
@@ -708,192 +1012,6 @@ class BaseModelResource(SchemaResourceABC, NestableResourceABC):
             )
         query = self.apply_required_filters(query)
         return query
-
-    def make_schema(self, fields=None, subfilters=None, embeds=None,
-                    partial=False, instance=None, strict=True):
-        """Used to generate a schema for this request.
-
-        :param subfilters: MQLAlchemy filters to be applied to child
-            objects of this query. Each key in the dictionary should
-            be a dot notation key corresponding to a subfilter.
-        :type subfilters: dict or None
-        :param fields: Names of fields to be included in the result.
-        :type fields: list or None
-        :param embeds: A list of relationship and relationship field
-            names to be included in the result.
-        :type embeds: list or None
-        :param bool partial: Whether partial deserialization is allowed.
-        :param instance: SQLAlchemy object to associate with the schema.
-        :param bool strict: If ``True``, will raise an exception when
-            bad parameters are passed. If ``False``, will quietly ignore
-            any bad input and treat it as if none was provided.
-        :raise BadRequestError: Invalid fields or embeds will result
-            in a raised exception if strict is ``True``.
-        :return: A schema with the supplied fields and embeds included.
-        :rtype: :class:`~drowsy.schema.ModelResourceSchema`
-
-        """
-        # parse embed information
-        # combine subfilters with embeds to take care of implied embeds
-        if isinstance(embeds, list):
-            embeds_subfilters = [key for key in embeds]
-            if isinstance(subfilters, dict):
-                for key in subfilters:
-                    for embed in embeds:
-                        if key in embed:
-                            break
-                    else:
-                        embeds_subfilters.append(key)
-        elif isinstance(subfilters, dict):
-            embeds_subfilters = [key for key in subfilters]
-        else:
-            embeds_subfilters = None
-        converted_embeds, embed_name_mapping, embed_fields = (
-            self._get_embed_info(embeds=embeds_subfilters, strict=strict))
-        # fields
-        converted_fields = []
-        if fields:
-            for field in fields:
-                converted_field = self.convert_key_name(field)
-                if converted_field is None:
-                    if strict:
-                        self.fail("invalid_field", field=field)
-                elif converted_field:
-                    converted_fields.append(converted_field)
-        if converted_fields:
-            for embed_field in embed_fields:
-                if embed_field not in converted_fields:
-                    converted_fields.append(embed_field)
-            kwargs = self._get_schema_kwargs(self.schema_cls)
-            kwargs.update(
-                only=tuple(converted_fields),
-                partial=partial,
-                instance=instance
-            )
-            schema = self.schema_cls(**kwargs)
-        else:
-            kwargs = self._get_schema_kwargs(self.schema_cls)
-            kwargs.update(
-                partial=partial,
-                instance=instance
-            )
-            schema = self.schema_cls(**kwargs)
-        # actually attempt to embed now
-        for converted_embed in converted_embeds:
-            try:
-                schema.embed([converted_embed])
-            except AttributeError:
-                if strict:
-                    self.fail("invalid_embed",
-                              embed=embed_name_mapping[converted_embed])
-        return schema
-
-    def make_subresource(self, name):
-        """Given a subresource name, construct a subresource.
-
-        :param str name: Dumped name of field containing a subresource.
-        :raise ValueError: If the name given isn't a valid subresource.
-        :returns: A constructed :class:`~drowsy.resource.Resource`
-
-        """
-        # NOTE: No risk of BadRequestError here due to no embeds or
-        # fields being passed to make_schema
-        field = get_field_by_dump_name(self.make_schema(), dump_name=name)
-        if isinstance(field, NestedRelated):
-            return field.resource_cls(
-                context=self.context,
-                session=self.session
-            )
-        raise ValueError("The provided name is not a valid subresource.")
-
-    def fail(self, key, errors=None, exc=None, **kwargs):
-        """Raises an exception based on the ``key`` provided.
-
-        :param str key: Failure type, used to choose an error message.
-        :param errors: May be used by the raised exception.
-        :type errors: dict or None
-        :param exc: If another exception triggered this failure, it may
-            be provided for a more informative failure. In the case of
-            an ``InvalidMQLException`` being provided when ``key`` is
-            ``"invalid_filters"``, that error message will override
-            ``self.error_messages["invalid_filters"]``.
-        :type exc: :exc:`Exception` or None
-        :param kwargs: Any additional arguments that may be used for
-            generating an error message.
-        :raise UnprocessableEntityError: If ``key`` is
-            ``"validation_failure"``. Note that in this case, errors
-            should preferably be provided.
-        :raise BadRequestError: The default error type raised in all
-            other cases.
-
-        """
-        unproccessable_errors = {"validation_failure", "commit_failure",
-                                 "invalid_collection_input"}
-        if key in unproccessable_errors:
-            raise UnprocessableEntityError(
-                code=key,
-                message=self._get_error_message(key, **kwargs),
-                errors=errors or {},
-                **kwargs)
-        elif key == "resource_not_found":
-            raise ResourceNotFoundError(
-                code=key,
-                message=self._get_error_message(key, **kwargs),
-                **kwargs
-            )
-        elif key == "invalid_filters" or key == "invalid_subresource_filters":
-            if isinstance(exc, InvalidMQLException):
-                if "subquery_key" in kwargs:
-                    message = kwargs["subquery_key"] + ": " + str(exc)
-                else:
-                    message = str(exc)
-            else:
-                message = self._get_error_message(key, **kwargs)
-            raise BadRequestError(
-                code=key,
-                message=message,
-                **kwargs)
-        elif key == "method_not_allowed":
-            raise MethodNotAllowedError(
-                code=key,
-                message=self._get_error_message(key, **kwargs),
-                **kwargs)
-        else:
-            raise BadRequestError(
-                code=key,
-                message=self._get_error_message(key, **kwargs),
-                **kwargs)
-
-    def _get_error_message(self, key, **kwargs):
-        """Get an error message based on a key name.
-
-        If the error message is a callable, kwargs are passed
-        to that callable.
-
-        If ``self.context`` has a ``"gettext" key set to a callable,
-        that callable will be passed the resulting string and any
-        key word args for the sake of translation.
-
-        :param str key: Key used to access the error messages dict.
-        :param dict kwargs: Any additional arguments that may be passed
-            to a callable error message, or used to translate and/or
-            format an error message string.
-        :raise AssertionError: If ``key`` does not exist in the
-            error messages dict.
-        return: An error message as a string.
-        :rtype: str
-
-        """
-        try:
-            return get_error_message(
-                error_messages=self.error_messages,
-                key=key,
-                gettext=self.context.get("gettext", None),
-                **kwargs)
-        except KeyError:
-            class_name = self.__class__.__name__
-            msg = MISSING_ERROR_MESSAGE.format(class_name=class_name, key=key)
-            raise AssertionError(msg)
 
     def get(self, ident, subfilters=None, fields=None, embeds=None,
             session=None, strict=True):
@@ -1280,5 +1398,5 @@ class BaseModelResource(SchemaResourceABC, NestableResourceABC):
             self.fail("commit_failure")
 
 
-class ModelResource(with_metaclass(ModelResourceMeta, BaseModelResource)):
+class ModelResource(with_metaclass(ResourceMeta, BaseModelResource)):
     __doc__ = BaseModelResource.__doc__

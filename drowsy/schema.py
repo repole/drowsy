@@ -221,18 +221,17 @@ class ResourceSchema(Schema):
         """
         for item in items:
             split_names = item.split(".")
-            # for split_name in split_names:
             if split_names:
                 split_name = split_names.pop(0)
                 if isinstance(self.fields.get(split_name, None),
                               EmbeddableMixinABC):
                     field = self.fields[split_name]
                     field.embedded = True
-                    if hasattr(field, "schema"):
-                        if hasattr(field.schema, "process_context"):
-                            field.schema.process_context()
-                            if isinstance(field.schema, ResourceSchema):
-                                field.schema.embed([".".join(split_names)])
+                    if (hasattr(field, "schema") and
+                            isinstance(field.schema, ResourceSchema) and
+                            split_names):
+                        field.schema.process_context()
+                        field.schema.embed([".".join(split_names)])
                 else:
                     if split_name in self.fields:
                         self.exclude = tuple()
@@ -388,8 +387,8 @@ class ModelResourceSchema(ResourceSchema, ModelSchema):
         # Though ModelSchema init does get called,
         # the session portion of things doesn't make
         # it through to that point, so we set it here.
-        # If Marshmallow's Schema object played nice with
-        # args and kwargs, this wouldn't be needed.
+        # If Marshmallow's Schema class played nice with
+        # super and args+kwargs, this wouldn't be needed.
         self.session = session or self.opts.sqla_session
 
     def get_instance(self, data):
@@ -425,7 +424,7 @@ class ModelResourceSchema(ResourceSchema, ModelSchema):
         result = super(ModelResourceSchema, self).id_keys
         if not result:
             return [col.key for col in get_primary_keys(self.opts.model)]
-        return None
+        return result
 
     def load(self, data, session=None, instance=None, *args, **kwargs):
         """Deserialize the provided data into a SQLAlchemy object.
