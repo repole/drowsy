@@ -8,7 +8,6 @@
                 See AUTHORS for more details.
     :license: MIT - See LICENSE for more details.
 """
-import abc
 from marshmallow.compat import with_metaclass
 from mqlalchemy import InvalidMQLException
 from sqlalchemy.exc import SQLAlchemyError
@@ -296,7 +295,6 @@ class ResourceMeta(type):
 
 
 class BaseResourceABC(SchemaResourceABC, NestableResourceABC):
-    __metaclass__ = abc.ABCMeta
 
     OPTIONS_CLASS = ResourceOpts
     default_error_messages = {
