@@ -19,7 +19,8 @@ from drowsy.resource import (
 from drowsy.tests.base import DrowsyTests
 from drowsy.tests.models import Album, Artist, Playlist, Track
 from drowsy.tests.resources import (
-    AlbumResource, PlaylistResource, TrackResource, EmployeeResource)
+    AlbumResource, CustomerResource, PlaylistResource, TrackResource,
+    EmployeeResource, InvoiceResource)
 
 
 class DrowsyResourceTests(DrowsyTests):
@@ -259,8 +260,33 @@ class DrowsyResourceTests(DrowsyTests):
 
     def test_resource_whitelist(self):
         """Test that a multi level whitelist check works."""
-        resource = AlbumResource(session=self.db_session, context={"hey": "Hi"})
+        resource = AlbumResource(session=self.db_session)
         self.assertTrue(resource.whitelist("tracks.playlists.playlist_id"))
+
+    def test_resource_whitelist_empty(self):
+        """Test whitelist with an empty string returns True."""
+        resource = AlbumResource(session=self.db_session)
+        self.assertTrue(resource.whitelist(""))
+
+    def test_resource_whitelist_non_nested_resource(self):
+        """Test whitelist using a nested field without a resource."""
+        resource = InvoiceResource(session=self.db_session)
+        self.assertTrue(resource.whitelist("invoice_lines.unit_price"))
+
+    def test_resource_whitelist_fail(self):
+        """Test that a single level whitelist check properly fails."""
+        resource = CustomerResource(session=self.db_session)
+        self.assertFalse(resource.whitelist("phone"))
+
+    def test_resource_whitelist_nested_fail(self):
+        """Test that a multi level whitelist check properly fails."""
+        resource = EmployeeResource(session=self.db_session)
+        self.assertFalse(resource.whitelist("parent.customers.phone"))
+
+    def test_resource_whitelist_bad_key_fail(self):
+        """Test bad attribute names properly fail whitelist check."""
+        resource = CustomerResource(session=self.db_session)
+        self.assertFalse(resource.whitelist("test"))
 
     # PATCH TESTS
 

@@ -65,7 +65,7 @@ class Customer(Base):
     support_rep_id = Column(
         "SupportRepId", ForeignKey('Employee.EmployeeId'), index=True)
 
-    employee = orm.relationship('Employee')
+    employee = orm.relationship('Employee', backref="customers")
 
 
 class Employee(Base):
@@ -141,7 +141,7 @@ class InvoiceLine(Base):
     unit_price = Column("UnitPrice", Float, nullable=False)
     quantity = Column("Quantity", Integer, nullable=False)
 
-    invoice = orm.relationship('Invoice')
+    invoice = orm.relationship('Invoice', backref="invoice_lines")
     track = orm.relationship('Track')
 
 

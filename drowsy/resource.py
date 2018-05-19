@@ -598,12 +598,13 @@ class BaseResourceABC(SchemaResourceABC, NestableResourceABC):
                 if isinstance(field, NestedRelated):
                     try:
                         # try to use a subresource for whitelisting
-                        subresource = self.make_subresource(field.dump_to)
+                        subresource = self.make_subresource(
+                            field.dump_to or field.name)
                         if isinstance(subresource, BaseResourceABC):
                             return subresource.whitelist(
                                 ".".join(split_keys))
                         raise ValueError
-                    except ValueError:
+                    except (ValueError, TypeError):
                         # if unable to do so, continue on iteratively
                         # using this resource's whitelist rules
                         schema = field.schema
