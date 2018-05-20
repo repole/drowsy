@@ -8,5 +8,5 @@
                 See AUTHORS for more details.
     :license: MIT - See LICENSE for more details.
 """
-
 __version__ = "0.0.1dev"
+

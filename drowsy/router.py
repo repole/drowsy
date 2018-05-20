@@ -21,6 +21,7 @@ from drowsy.exc import (
 import drowsy.resource_class_registry as class_registry
 from drowsy.utils import get_error_message
 from drowsy.resource import BaseModelResource
+from drowsy.base import NestedPermissibleABC
 from marshmallow_sqlalchemy.schema import ModelSchema
 
 
@@ -185,12 +186,10 @@ class ResourceRouterABC(object):
                 schema = schema_cls(**self._get_schema_kwargs(schema_cls))
                 field = schema.fields.get(attr_name)
                 if field is not None:
-                    if hasattr(field, "resource_cls"):
+                    if isinstance(field, NestedPermissibleABC):
                         # this is a relationship
                         # get the sub-resource
-                        resource = field.resource_cls(
-                            **self._get_resource_kwargs(
-                                field.resource_cls))
+                        resource = field.resource
                         result.append(field)
                         if hasattr(field, "many") and not field.many:
                             continue
@@ -512,12 +511,10 @@ class ModelResourceRouter(ResourceRouterABC):
             if isinstance(path_part, BaseModelResource):
                 resource = path_part
                 query_session = resource.session.query(resource.model)
-            elif isinstance(path_part, Field) and hasattr(
-                    path_part, "resource_cls"):
+            elif isinstance(path_part, NestedPermissibleABC):
                 # subresource
                 parent_resource = resource
-                resource = path_part.resource_cls(
-                    **self._get_resource_kwargs(path_part.resource_cls))
+                resource = path_part.resource
                 query_session = resource.session.query(
                     resource.model).with_parent(
                     instance, path_part.name)
@@ -532,8 +529,8 @@ class ModelResourceRouter(ResourceRouterABC):
                 # resource instance
                 ident = path_part
                 only_field_left = len(path_parts) == 1 and (
-                    isinstance(path_parts[0], Field) and not hasattr(
-                        path_parts[0], "resource_cls"))
+                    isinstance(path_parts[0], Field) and not isinstance(
+                        path_parts[0], NestedPermissibleABC))
                 if path_parts and not only_field_left:
                     id_keys = resource.schema_cls(
                         **self._get_resource_kwargs(
@@ -573,8 +570,7 @@ class ModelResourceRouter(ResourceRouterABC):
         :return:
 
         """
-        if isinstance(path_part, Field) and hasattr(
-                    path_part, "resource_cls"):
+        if isinstance(path_part, NestedPermissibleABC):
             relation_name = path_part.load_from or path_part.name
             if isinstance(data, list):
                 # Will attempt to add multiple items to the relation
@@ -836,8 +832,8 @@ class ModelResourceRouter(ResourceRouterABC):
         fields = parser.parse_fields()
         embeds = parser.parse_embeds()
         # last path_part determines what type of request this is
-        if isinstance(path_part, Field) and not hasattr(
-                path_part, "resource_cls"):
+        if isinstance(path_part, Field) and not isinstance(
+                path_part, NestedPermissibleABC):
             # Simple property, such as album_id
             # return only the value
             field_name = path_part.load_from or path_part.name
@@ -929,8 +925,8 @@ class ModelResourceRouter(ResourceRouterABC):
             self.fail("resource_not_found", path=path)
         parser = ModelQueryParamParser(query_params, context=self.context)
         # last path_part determines what type of request this is
-        if isinstance(path_part, Field) and not hasattr(
-                path_part, "resource_cls"):
+        if isinstance(path_part, Field) and not isinstance(
+                path_part, NestedPermissibleABC):
             # Simple property, such as album_id
             # return only the value
             field_name = path_part.load_from or path_part.name

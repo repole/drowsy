@@ -174,10 +174,7 @@ class ResourceSchema(Schema):
             self._fields_by_load_from = {}
             for key in self.fields:
                 field = self.fields[key]
-                if field.load_from:
-                    self._fields_by_load_from[field.load_from] = field
-                else:
-                    self._fields_by_load_from[field.name] = field
+                self._fields_by_load_from[field.load_from or key] = field
         return self._fields_by_load_from
 
     @property
@@ -194,10 +191,7 @@ class ResourceSchema(Schema):
             self._fields_by_dump_to = {}
             for key in self.fields:
                 field = self.fields[key]
-                if field.dump_to:
-                    self._fields_by_dump_to[field.dump_to] = field
-                else:
-                    self._fields_by_dump_to[field.name] = field
+                self._fields_by_dump_to[field.dump_to or key] = field
         return self._fields_by_dump_to
 
     def get_instance(self, data):

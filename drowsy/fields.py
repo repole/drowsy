@@ -9,44 +9,29 @@
     :license: MIT - See LICENSE for more details.
 """
 from marshmallow.compat import basestring
-from marshmallow.fields import Field, Nested, missing_
-from marshmallow.utils import is_collection, get_value
-from marshmallow.validate import ValidationError
+from marshmallow.fields import Field, missing_
+from marshmallow.utils import get_value
 from marshmallow_sqlalchemy.fields import Related, ensure_list
 from sqlalchemy.inspection import inspect
-from drowsy import resource_class_registry
-from drowsy.permissions import AllowAllOpPermissions
+from drowsy.base import EmbeddableMixinABC, NestedPermissibleABC
 
 
-class EmbeddableMixinABC(Field):
+class EmbeddableRelationshipMixin(EmbeddableMixinABC):
 
-    """Mixin to make a field embeddable.
+    """Defaults to returning a relationship's URL if not embedded."""
 
-    Should subclass this and override :meth:`_serialize_unembedded` and
-    :meth:`_deserialize_unembedded` to handle both situations for when
-    the field isn't embedded.
+    def get_url(self, obj):
+        """Get the URL for this relationship.
 
-    """
-
-    def __init__(self, *args, **kwargs):
-        """Defaults to setting ``embedded`` to ``False``."""
-        self._embedded = False
-        super(EmbeddableMixinABC, self).__init__(*args, **kwargs)
-
-    @property
-    def embedded(self):
-        """Return ``True`` if the embedded field is currently active."""
-        return self._embedded
-
-    @embedded.setter
-    def embedded(self, value):
-        """Set the embedded property.
-
-        :param bool value: If ``True``, the field will be included in
-            the serialized output.
+        :param obj: TODO
 
         """
-        self._embedded = value
+        url = ""
+        if self.parent and "self" in self.parent.fields:
+            url += self.parent.fields["self"].serialize("self", obj)
+        relationship_name = self.dump_to or self.name
+        url += "/" + relationship_name
+        return url
 
     def _deserialize_unembedded(self, value, *args, **kwargs):
         """Determine how to deserialize when the field isn't embedded.
@@ -56,10 +41,10 @@ class EmbeddableMixinABC(Field):
             the deserializer method.
         :param kwargs: Any keyword arguments that were passed to
             the deserializer method.
-        :return: A deserialized value for the field when not embedded.
+        :return: The attr of the parent instance unmodified.
 
         """
-        raise NotImplementedError
+        return getattr(self.parent.instance, self.name)
 
     def _serialize_unembedded(self, attr, obj, *args, **kwargs):
         """Determine how to serialize when the field isn't embedded.
@@ -70,413 +55,29 @@ class EmbeddableMixinABC(Field):
             the serializer method.
         :param kwargs: Any keyword arguments that were passed to
             the serializer method.
-        :return: A serialized value for the field when not embedded.
+        :return: The url for this relationship.
 
         """
-        raise NotImplementedError
+        return self.get_url(obj)
 
     def deserialize(self, value, *args, **kwargs):
-        """Deserialize the provided value.
+        """Return the field's deserialized value.
 
-        Must be overridden in a full implementation of this class.
-
-        :param value: The value to be deserialized.
-        :param args: Any positional arguments to potentially be passed
-            to the field's deserialization method.
-        :param kwargs: Any keyword arguments to potentially be passed
-            to the field's deserialization method.
-        :raise ValidationError: If an invalid value is passed.
-        :return: The deserialized value if embedded, otherwise
-            a predetermined value for an unembedded case.
+        :param value: The value provided by the user for this field.
+            If it's the field's URL, the value is essentially ignored.
 
         """
-        if not self.embedded:
-            return self._deserialize_unembedded(value, *args, **kwargs)
-        return super(EmbeddableMixinABC, self).deserialize(
+        # This isn't exactly perfect, seeing as someone could
+        # POST/PATCH/PUT with a string that isn't a valid url,
+        # and it would simply be ignored rather than raising
+        # an error.
+        if self.required and not self.parent.partial:
+            self.embedded = True
+        elif isinstance(value, basestring):
+            self.embedded = False
+        return super(EmbeddableRelationshipMixin, self).deserialize(
             value, *args, **kwargs
         )
-
-    def serialize(self, attr, obj, *args, **kwargs):
-        """Return the field's serialized value if embedded.
-
-        :param str attr: The attribute or key to get from the object.
-        :param str obj: The object to pull the key from.
-        :param args: Any positional arguments to potentially be passed
-            to the field's serialization method.
-        :param kwargs: Any keyword arguments to potentially be passed
-            to the field's serialization method.
-        :raise ValidationError: In case of formatting error.
-        :return: The serialized value of the field if embedded,
-            otherwise a predetermined value for an unembedded case.
-
-        """
-        if self.embedded:
-            return super(EmbeddableMixinABC, self).serialize(
-                attr, obj, *args, **kwargs)
-        return self._serialize_unembedded(attr, obj, *args, **kwargs)
-
-
-class NestedPermissibleABC(Nested):
-
-    """Abstract base class for a nested permissible field.
-
-    Provided to make subclassing permissibles and nestables
-    easier without being tied to SQLAlchemy.
-
-    """
-
-    default_error_messages = {
-        "invalid_operation": "Unable to process entity.",
-        "permission_denied": ("You do not have the appropriate permissions "
-                              "to perform this action."),
-        "invalid_remove": "Object not found in list; unable to be removed.",
-        "invalid_add": "Object already in list; unable to add it again."
-    }
-
-    def __init__(self, nested, default=missing_, exclude=tuple(), only=None,
-                 many=False, resource_cls=None,
-                 permissions_cls=None, **kwargs):
-        """Initialize a nested field with permissions.
-
-        :param nested: The Schema class or class name (string) to nest,
-            or ``"self"`` to nest a :class:`~marshmallow.schema.Schema`
-            within itself.
-        :param default: Default value to use if attribute is missing.
-        :param exclude: Fields to exclude.
-        :type exclude: list, tuple, or None
-        :param only: A tuple or string of the field(s) to marshal. If
-            ``None``, all fields will be marshalled. If a field name
-            (string) is given, only a single value will be returned as
-            output instead of a dictionary. This parameter takes
-            precedence over ``exclude``.
-        :type only: tuple, str, or None
-        :param bool many: Whether the field is a collection of objects.
-        :param resource_cls: Either the class or the name of the
-            resource class associated with this nested field. Useful for
-            dynamic nested routing.
-        :param permissions_cls: The class of permissions to apply to
-            this nested field. Defaults to allowing all nested
-            operations.
-        :param kwargs: The same keyword arguments that
-            :class:`~marshmallow.fields.Field` receives.
-
-        """
-        super(NestedPermissibleABC, self).__init__(
-            nested=nested,
-            default=default,
-            exclude=exclude,
-            only=only,
-            many=many,
-            **kwargs)
-        self._resource_cls = resource_cls
-        self.permissions_cls = permissions_cls or AllowAllOpPermissions
-
-    @property
-    def resource_cls(self):
-        """Get the nested resource class."""
-        if isinstance(self._resource_cls, basestring):
-            return resource_class_registry.get_class(self._resource_cls)
-        return self._resource_cls
-
-    @property
-    def schema(self):
-        """The schema corresponding to this nested collection."""
-        result = super(NestedPermissibleABC, self).schema
-        # TODO - self.root?
-        # NOTE - root and parent were removed from schemas in
-        # marshmallow. May want to rethink this.
-        result.root = self.root
-        result.parent = self
-        return result
-
-    def _permissible(self, permissions, operation, obj_data, instance,
-                     errors, index, strict):
-        """Returns true of the operation being taken is allowed.
-
-        :param permissions: An instance of a permissions object.
-        :type permissions: :class:`~drowsy.permissions.OpPermissionsABC`
-        :param str operation: The type of operation to check permissions
-            on.
-        :param dict obj_data: The user submitted data for the individual
-            object.
-        param instance: An instance of the object with data already
-            loaded into it.
-        :param index: index at which to insert the error messages
-            into the errors dict. ``None`` if the operation is on
-            a non list nested value or sub-object.
-        :type index: int or None
-        :param dict errors: The error dictionary to be modified.
-        :param bool strict: ``True`` if an error should be raised.
-        :raise ValidationError: When in strict mode if not
-            permissible.
-        :return: ``True`` if permissible, ``False`` otherwise.
-        :rtype: bool
-
-        """
-        permissible = permissions.check(
-            operation=operation,
-            obj_data=obj_data,
-            instance=instance,
-            context=self.context)
-        if not permissible:
-            key = "permission_denied"
-            detailed_key = key + "_" + operation
-            if detailed_key in self.error_messages:
-                key = detailed_key
-            self._handle_op_failure(
-                key=key,
-                errors=errors,
-                index=index,
-                strict=strict,
-                operation=operation
-            )
-        return permissible
-
-    def _parent_contains_child(self, parent, instance):
-        """Checks if the parent already contains the given instance.
-
-        Only the attr this field is related to is checked.
-
-        :param parent: An object whose attr for this field may
-            contain this instance as a child object.
-        :param instance: A potential child object of the parent.
-        :return: ``True`` if the parent attr already contains the
-            instance, ``False`` otherwise.
-        :rtype: bool
-
-        """
-        raise NotImplementedError
-
-    def _has_identifier(self, obj_data):
-        """Determine if the provided data has a unique identifier.
-
-        :param obj_data: Likely a dict, but could be any user provided
-            data.
-        :return: ``True`` or ``False``.
-        :rtype: bool
-
-        """
-        raise NotImplementedError
-
-    def _get_identified_instance(self, obj_data):
-        """Get a formed instance using the unique identifier of the obj.
-
-        :param obj_data: Likely a dict, but could be any user provided
-            data.
-        :return: An instance based on the identifier contained in the
-            user supplied data.
-
-        """
-        raise NotImplementedError
-
-    def _perform_operation(self, operation, parent, instance, errors, index,
-                           strict=True):
-        """Perform an operation on the parent with a supplied instance.
-
-        Example:
-        If this field corresponds to the `tracks` collection of a parent
-        `album` object, then the provided instance should be a `track`
-        object, and the action might be to `"add"` or `"remove"` the
-        provided `track` instance from the parent `album`.
-
-        :param str operation:`"add"` or `"remove"` for collections, or
-            `"set"` for one to one relations. May also be any custom
-            operations manually defined.
-        :param parent: Object containing the attribute the operation
-            is being performed on.
-        :param instance: A potential child object of the parent.
-        :param index: If the relationship is of the many variety, the
-            index at which this child was in the input.
-        :type index: int or None
-        :param dict errors: Dict of errors for this field. Any issue
-            that arises while performing the intended operation will
-            be added to this dict (at the provided index if supplied).
-        :param bool strict: If ``True``, an exception will be raised for
-            an encountered error. Otherwise, the error will simply be
-            included in the provided `error` dict and things will
-            proceed as normal.
-        :raise ValidationError: If there's an error when in strict mode.
-        :return: The corresponding attr for this field with the provided
-            operation performed on it.
-
-        """
-        raise NotImplementedError
-
-    def _load_existing_instance(self, obj_data, instance):
-        """Deserialize the provided data into an existing instance.
-
-        :param obj_data: Likely a dict, but could be any user provided
-            data.
-        :param instance: An instance perhaps fetched from a database.
-            The data provided will be loaded into this instance.
-        :return: Any errors that came up, and the instance.
-
-        """
-        raise NotImplementedError
-
-    def _load_new_instance(self, obj_data):
-        """Deserialize the provided data into a new instance.
-
-        :param obj_data: Likely a dict, but could be any user provided
-            data.
-        :return: Any errors that came up, and the instance.
-
-        """
-        raise NotImplementedError
-
-    def _get_permission_cls_kwargs(self):
-        """Get any kwargs for initializing the permissions cls.
-
-        May want to override this to provide more info to a custom
-        permissions class.
-
-        :return: A dictionary of key word arguments.
-        :rtype: dict
-
-        """
-        return {}
-
-    def _handle_op_failure(self, key, errors, index=None,
-                           strict=True, **kwargs):
-        """Generate a proper error for nested operations.
-
-        :param str key: The error message key to use for failure.
-        :param dict errors: The error dictionary to be modified.
-        :param index: index at which to insert the error messages
-            into the errors dict. ``None`` if the operation is on
-            a non list nested field or sub-object.
-        :type index: int or None
-        :param bool strict: ``True`` if an error should be raised.
-        :param kwargs: Any additional arguments to pass to
-            :meth:`fail` when generating the error message.
-        :raise ValidationError: When in strict mode.
-        :return: ``None``
-
-        """
-        try:
-            self.fail(key, **kwargs)
-        except ValidationError as exc:
-            if index is not None:
-                errors[index] = {"$op": exc.messages}
-            else:
-                errors["$op"] = exc.messages
-            if strict:
-                raise ValidationError(errors)
-
-    def _deserialize(self, value, *args, **kwargs):
-        """Deserialize data into a nested attribute.
-
-        In the case of a nested field with many items, the behavior of
-        this field varies in a few key ways depending on whether the
-        parent form has ``partial`` set to ``True`` or ``False``.
-        If ``True``, items can be explicitly added or removed from a
-        collection, but the rest of the collection will remain
-        intact.
-        If ``False``, the collection will be set to an empty list, and
-        only items included in the supplied data will in the
-        collection.
-        Important to note also that updates to items contained in this
-        collection will be done so using ``partial=True``, regardless
-        or what the value of the parent schema's ``partial`` attribute
-        is. The only exception to this is in the creation of a new item
-        to be placed in the nested collection, in which case
-        ``partial=False`` is always used.
-
-        :param value: Data for this field.
-        :type value: list of dict or dict
-        :return: The deserialized form of this nested field. In the
-            case of a value that doesn't use a list, this is
-            a single object (or ``None``). Otherwise a list of objects
-            is returned.
-
-        """
-        permissions = self.permissions_cls(**self._get_permission_cls_kwargs())
-        strict = self.parent.strict
-        result = None
-        parent = self.parent.instance
-        if self.many:
-            obj_datum = value
-            if not is_collection(value):
-                self.fail('type', input=value, type=value.__class__.__name__)
-            else:
-                if not self.parent.partial:
-                    setattr(parent, self.name, [])
-        else:
-            # Treat this like a list until it comes time to actually
-            # to actually modify the value.
-            obj_datum = [value]
-        errors = {}
-        # each item in value is a sub instance
-        for i, obj_data in enumerate(obj_datum):
-            if not isinstance(obj_data, dict):
-                self.fail('type', input=obj_data, type=obj_data.__class__.__name__)
-            # check if there's an explicit operation included
-            loaded_instance = None
-            if hasattr(obj_data, "pop"):
-                operation = obj_data.pop("$op", None)
-            else:
-                operation = None
-            is_new_obj = False
-            # check whether this data has value(s) for
-            # the indentifier columns.
-            try:
-                if self._has_identifier(obj_data):
-                    instance = self._get_identified_instance(obj_data)
-                else:
-                    instance = None
-            except TypeError:
-                # Upon deserialization, UnprocessableEntity will get
-                # raised.
-                # TODO - Should sure this up.
-                instance = None
-            if instance is None:
-                is_new_obj = True
-            if operation is None:
-                if self.many:
-                    operation = "add"
-                else:
-                    operation = "set"
-            if self._permissible(permissions=permissions,
-                                 obj_data=obj_data,
-                                 operation=operation,
-                                 index=i,
-                                 errors=errors,
-                                 strict=strict,
-                                 instance=instance):
-                if is_new_obj:
-                    loaded_instance, sub_errors = self._load_new_instance(
-                        obj_data)
-                    instance = loaded_instance
-                else:
-                    loaded_instance, sub_errors = self._load_existing_instance(
-                        obj_data, instance)
-                if sub_errors:
-                    if self.many:
-                        errors[i] = sub_errors
-                    else:
-                        errors = sub_errors
-                    if strict:
-                        raise ValidationError(errors)
-                    else:
-                        continue
-            # TODO - not sure if this is appropriate error handling
-            if (instance is None and self.many) or instance != loaded_instance:
-                try:
-                    self.fail("invalid_operation", **kwargs)
-                except ValidationError as e:
-                    errors[i] = e.messages
-                    if strict:
-                        raise ValidationError(errors)
-            result = self._perform_operation(
-                operation=operation,
-                parent=parent,
-                instance=loaded_instance,
-                index=i,
-                errors=errors,
-                strict=strict)
-        if errors:
-            raise ValidationError(errors)
-        return result
 
 
 class NestedRelated(NestedPermissibleABC, Related):
@@ -556,6 +157,18 @@ class NestedRelated(NestedPermissibleABC, Related):
                 for column in columns
             ]
         return super(NestedRelated, self).related_keys
+
+    def _get_resource_kwargs(self):
+        """Get kwargs for creating a resource for this instance.
+
+        :return: Dictionary of keyword argument to be passed
+            to a resource initializer.
+        :rtype: dict
+
+        """
+        result = super(NestedRelated, self)._get_resource_kwargs()
+        result["session"] = self.session
+        return result
 
     def _parent_contains_child(self, parent, instance, relationship_name):
         """Checks if the parent relation contains the given instance.
@@ -744,70 +357,6 @@ class NestedRelated(NestedPermissibleABC, Related):
             instance=self.related_model(),
             partial=False,
             many=False)
-
-
-class EmbeddableRelationshipMixin(EmbeddableMixinABC):
-
-    """Defaults to returning a relationship's URL if not embedded."""
-
-    def get_url(self, obj):
-        """Get the URL for this relationship.
-
-        :param obj: TODO
-
-        """
-        url = ""
-        if self.parent and "self" in self.parent.fields:
-            url += self.parent.fields["self"].serialize("self", obj)
-        relationship_name = self.dump_to or self.name
-        url += "/" + relationship_name
-        return url
-
-    def _deserialize_unembedded(self, value, *args, **kwargs):
-        """Determine how to deserialize when the field isn't embedded.
-
-        :param value: The value being deserialized.
-        :param args: Any positional arguments that were passed to
-            the deserializer method.
-        :param kwargs: Any keyword arguments that were passed to
-            the deserializer method.
-        :return: The attr of the parent instance unmodified.
-
-        """
-        return getattr(self.parent.instance, self.name)
-
-    def _serialize_unembedded(self, attr, obj, *args, **kwargs):
-        """Determine how to serialize when the field isn't embedded.
-
-        :param str attr: The attibute or key to get from the object.
-        :param str obj: The object to pull the key from.
-        :param args: Any positional arguments that were passed to
-            the serializer method.
-        :param kwargs: Any keyword arguments that were passed to
-            the serializer method.
-        :return: The url for this relationship.
-
-        """
-        return self.get_url(obj)
-
-    def deserialize(self, value, *args, **kwargs):
-        """Return the field's deserialized value.
-
-        :param value: The value provided by the user for this field.
-            If it's the field's URL, the value is essentially ignored.
-
-        """
-        # This isn't exactly perfect, seeing as someone could
-        # POST/PATCH/PUT with a string that isn't a valid url,
-        # and it would simply be ignored rather than raising
-        # an error.
-        if self.required and not self.parent.partial:
-            self.embedded = True
-        elif isinstance(value, basestring):
-            self.embedded = False
-        return super(EmbeddableRelationshipMixin, self).deserialize(
-            value, *args, **kwargs
-        )
 
 
 class Relationship(EmbeddableRelationshipMixin, NestedRelated):

@@ -9,13 +9,12 @@
     :license: MIT - See LICENSE for more details.
 """
 from __future__ import unicode_literals
-import json
 from drowsy.exc import (
     UnprocessableEntityError, BadRequestError, MethodNotAllowedError,
     ResourceNotFoundError)
 from drowsy.parser import SubfilterInfo, SortInfo
-from drowsy.resource import (
-    ResourceABC, NestableResourceABC, SchemaResourceABC, ResourceCollection)
+from drowsy.base import ResourceABC, NestableResourceABC, SchemaResourceABC
+from drowsy.resource import ResourceCollection
 from drowsy.tests.base import DrowsyTests
 from drowsy.tests.models import Album, Artist, Playlist, Track
 from drowsy.tests.resources import (

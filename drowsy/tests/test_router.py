@@ -10,6 +10,7 @@
 """
 from __future__ import unicode_literals
 import json
+import drowsy.tests.resources
 from drowsy.exc import (
     UnprocessableEntityError, MethodNotAllowedError, BadRequestError,
     ResourceNotFoundError)

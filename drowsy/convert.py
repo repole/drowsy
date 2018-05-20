@@ -80,8 +80,7 @@ class ModelResourceConverter(ModelConverter):
                             required = True
                 break
         kwargs.update({
-            "nested": prop.mapper.class_.__name__ + 'Schema',
-            "resource_cls": prop.mapper.class_.__name__ + 'Resource',
+            "nested": prop.mapper.class_.__name__ + 'Resource',
             "allow_none": nullable,
             "required": required,
             "many": prop.uselist

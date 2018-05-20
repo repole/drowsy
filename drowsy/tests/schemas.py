@@ -8,7 +8,6 @@
                 See AUTHORS for more details.
     :license: MIT - See LICENSE for more details.
 """
-from drowsy.fields import NestedRelated
 from drowsy.schema import ModelResourceSchema
 from drowsy.tests.models import (
     Album, Artist, CompositeNode, Customer, Employee,
@@ -26,8 +25,6 @@ class InvoiceLineSchema(ModelResourceSchema):
 class InvoiceSchema(ModelResourceSchema):
     class Meta:
         model = Invoice
-    # Note that the below resource_cls is intentionally invalid
-    invoice_lines = NestedRelated(InvoiceLineSchema, resource_cls=dict)
 
 
 class EmployeeSchema(ModelResourceSchema):
