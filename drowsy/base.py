@@ -200,6 +200,10 @@ class NestedPermissibleABC(Nested):
                 else:
                     raise ValueError
                 self._resource = resource_cls(**self._get_resource_kwargs())
+            if not isinstance(self._resource, BaseResourceABC):
+                raise ValueError(
+                    "Nested fields must be passed a subclass of "
+                    "BaseResourceABC.")
         return self._resource
 
     @property
@@ -839,9 +843,10 @@ class BaseResourceABC(SchemaResourceABC, NestableResourceABC):
                 elif converted_field:
                     converted_fields.append(converted_field)
         if converted_fields:
-            for embed_field in embed_fields:
-                if embed_field not in converted_fields:
-                    converted_fields.append(embed_field)
+            for embed_field in converted_embeds:
+                embed = embed_field.split(".")[0]
+                if embed not in converted_fields:
+                    converted_fields.append(embed)
             kwargs = self._get_schema_kwargs(self.schema_cls)
             kwargs.update(
                 only=tuple(converted_fields),
@@ -860,7 +865,9 @@ class BaseResourceABC(SchemaResourceABC, NestableResourceABC):
         for converted_embed in converted_embeds:
             try:
                 schema.embed([converted_embed])
-            except AttributeError:
+            except AttributeError:  # pragma: no cover
+                # _get_embed_info should catch this
+                # keeping here as a safeguard
                 if strict:
                     self.fail("invalid_embed",
                               embed=embed_name_mapping[converted_embed])
@@ -991,19 +998,16 @@ class BaseResourceABC(SchemaResourceABC, NestableResourceABC):
                     return True
                 elif isinstance(field, EmbeddableMixinABC):
                     schema.embed([key])
-                if isinstance(field, NestedPermissibleABC):  # todo
-                    try:
-                        # try to use a subresource for whitelisting
-                        subresource = self.make_subresource(
-                            field.dump_to or key)
-                        if isinstance(subresource, BaseResourceABC):
-                            return subresource.whitelist(
-                                ".".join(split_keys))
-                        raise ValueError
-                    except (ValueError, TypeError):
-                        # if unable to do so, continue on iteratively
-                        # using this resource's whitelist rules
-                        schema = field.schema
+                if isinstance(field, Nested):
+                    if isinstance(field, NestedPermissibleABC):
+                        from drowsy.compat import suppress
+                        with suppress(ValueError, TypeError):
+                            subresource = self.make_subresource(
+                                field.dump_to or key)
+                            return subresource.whitelist(".".join(split_keys))
+                    # attempting to use the subresource didn't work
+                    # fall back to simply using the field's schema
+                    schema = field.schema
             else:
                 return False
         return True  # pragma no cover
@@ -1029,27 +1033,26 @@ class BaseResourceABC(SchemaResourceABC, NestableResourceABC):
                     return ".".join(result_keys)
                 if isinstance(field, EmbeddableMixinABC):
                     schema.embed([key])
-                if isinstance(field, NestedPermissibleABC):
-                    try:
-                        # try to use a subresource for converting
-                        subresource = self.make_subresource(
-                            field.dump_to or key)
-                        if isinstance(subresource, BaseResourceABC):
+                if isinstance(field, Nested):
+                    if isinstance(field, NestedPermissibleABC):
+                        from drowsy.compat import suppress
+                        with suppress(ValueError, TypeError):
+                            subresource = self.make_subresource(
+                                field.dump_to or key)
                             result_keys += subresource.convert_key_name(
                                 ".".join(split_keys)
                             ).split(".")
                             return ".".join(result_keys)
-                        raise ValueError
-                    except ValueError:
-                        # if unable to do so, continue on iteratively
-                        # using this resource's convert rules
-                        schema = field.schema
+                    # attempting to use the subresource didn't work
+                    # fall back to simply using the field's schema
+                    schema = field.schema
                 else:
                     return None
             else:
                 # Invalid key name, no matching field found.
                 return None
-        return ".".join(result_keys)
+        # failsafe: should never reach this point
+        return ".".join(result_keys)  # pragma: no cover
 
     @property
     def page_max_size(self):

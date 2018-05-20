@@ -184,21 +184,6 @@ class BaseModelResource(BaseResourceABC):
         result["session"] = self.session
         return result
 
-    def _get_resource_kwargs(self, resource_cls):
-        """Get default kwargs for any new sub resource creation.
-
-        :param resource_cls: The class of the resource being created.
-        :return: A dictionary of keyword arguments to be used when
-            creating child resources.
-        :rtype: dict
-
-        """
-        result = super(BaseModelResource, self)._get_resource_kwargs(
-            resource_cls
-        )
-        result["session"] = self.session
-        return result
-
     def fail(self, key, errors=None, exc=None, **kwargs):
         """Raises an exception based on the ``key`` provided.
 
@@ -222,8 +207,8 @@ class BaseModelResource(BaseResourceABC):
         """
         if key == "invalid_filters" or key == "invalid_subresource_filters":
             if isinstance(exc, InvalidMQLException):
-                if "subquery_key" in kwargs:
-                    message = kwargs["subquery_key"] + ": " + str(exc)
+                if "subresource_key" in kwargs:
+                    message = kwargs["subresource_key"] + ": " + str(exc)
                 else:
                     message = str(exc)
             else:

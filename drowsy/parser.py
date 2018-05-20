@@ -33,7 +33,7 @@ class SortInfo(object):
         if not isinstance(attr, basestring):
             raise TypeError("attr must be a string.")
         if not isinstance(direction, basestring):
-            raise TypeError("direction must be ASC or DESC.")
+            raise TypeError("direction must be a string.")
         if direction != "DESC" and direction != "ASC":
             raise ValueError("direction must be ASC or DESC.")
         self.attr = attr
@@ -245,9 +245,7 @@ class QueryParamParser(object):
         :type context: dict, callable, or None
 
         """
-        self.query_params = query_params
-        if self.query_params is None:
-            self.query_params = {}
+        self.query_params = query_params or {}
         self._context = context
         # Set up error messages
         messages = {}

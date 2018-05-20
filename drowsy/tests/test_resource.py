@@ -9,6 +9,8 @@
     :license: MIT - See LICENSE for more details.
 """
 from __future__ import unicode_literals
+from marshmallow.exceptions import RegistryError
+import drowsy.resource_class_registry as registry
 from drowsy.exc import (
     UnprocessableEntityError, BadRequestError, MethodNotAllowedError,
     ResourceNotFoundError)
@@ -18,8 +20,8 @@ from drowsy.resource import ResourceCollection
 from drowsy.tests.base import DrowsyTests
 from drowsy.tests.models import Album, Artist, Playlist, Track
 from drowsy.tests.resources import (
-    AlbumResource, CustomerResource, PlaylistResource, TrackResource,
-    EmployeeResource, InvoiceResource)
+    AlbumResource, AlbumCamelResource, CustomerResource, EmployeeResource,
+    InvoiceResource, InvoiceCamelResource, PlaylistResource, TrackResource)
 
 
 class DrowsyResourceTests(DrowsyTests):
@@ -130,6 +132,51 @@ class DrowsyResourceTests(DrowsyTests):
             getattr(SchemaResourceABC(), "_get_schema_kwargs"),
             "test"
         )
+
+    def test_schema_resource_abc_schema(self):
+        """SchemaResourceABC raises exception on `session`."""
+        self.assertRaises(
+            NotImplementedError,
+            getattr,
+            SchemaResourceABC(),
+            "schema",
+        )
+
+    def test_schema_resource_abc_context(self):
+        """SchemaResourceABC raises exception on `context`."""
+        self.assertRaises(
+            NotImplementedError,
+            getattr,
+            SchemaResourceABC(),
+            "context",
+        )
+
+    # REGISTRY TESTS
+    def test_registry_find_class(self):
+        """Test the registry finds a class."""
+        self.assertTrue(
+            registry.get_class("AlbumResource", all=True) == AlbumResource)
+
+    def test_registry_duplicate_class(self):
+        """Test that multiple registrations under the same name work."""
+        registry.register("AlbumResource", dict)
+        self.assertRaises(
+            RegistryError,
+            registry.get_class,
+            "AlbumResource",
+            all=False)
+        self.assertTrue(
+            len(registry.get_class("AlbumResource", all=True)) == 2)
+        # clean up the mess we just made in the registry
+        registry._registry["AlbumResource"].remove(dict)
+
+    def test_registry_class_not_found(self):
+        """Test the registry acts as expected when no class is found."""
+        self.assertRaises(
+            RegistryError,
+            registry.get_class,
+            "Test",
+            all=False)
 
     # RESOURCECOLLECTION TESTS
 
@@ -257,6 +304,16 @@ class DrowsyResourceTests(DrowsyTests):
             key="test"
         )
 
+    def test_resource_fail_invalid_filters(self):
+        """Test resource failure with invalid_filters and no exc."""
+        resource = EmployeeResource(session=self.db_session)
+        self.assertRaisesCode(
+            BadRequestError,
+            "invalid_filters",
+            resource.fail,
+            key="invalid_filters"
+        )
+
     def test_resource_whitelist(self):
         """Test that a multi level whitelist check works."""
         resource = AlbumResource(session=self.db_session)
@@ -286,6 +343,47 @@ class DrowsyResourceTests(DrowsyTests):
         """Test bad attribute names properly fail whitelist check."""
         resource = CustomerResource(session=self.db_session)
         self.assertFalse(resource.whitelist("test"))
+
+    def test_resource_convert_non_nested_resource(self):
+        """Test converting using a nested field without a resource."""
+        resource = InvoiceCamelResource(session=self.db_session)
+        self.assertTrue(
+            "invoice_lines.unit_price" == resource.convert_key_name(
+                "invoiceLines.unitPrice"))
+
+    def test_resource_convert_bad_key_fail(self):
+        """Test converting with a bad nested key."""
+        resource = AlbumCamelResource(session=self.db_session)
+        self.assertIsNone(resource.convert_key_name("albumId.test"))
+
+    def test_resource_make_schema_embeds_subfilters(self):
+        """Test supplying conflicting embeds and subfilters works."""
+        resource = AlbumResource(session=self.db_session)
+        result = resource.make_schema(
+            embeds=["tracks.track_id"],
+            subfilters={"tracks": {}}
+        )
+        self.assertTrue(result.fields["tracks"].embedded)
+
+    def test_resource_make_schema_embeds_fields(self):
+        """Test supplying embeds and fields together works."""
+        resource = AlbumResource(session=self.db_session)
+        result = resource.make_schema(
+            embeds=["tracks.track_id"],
+            fields=["album_id"]
+        )
+        self.assertTrue(result.fields["tracks"].embedded)
+
+    def test_resource_make_schema_embeds_fail(self):
+        """Test supplying bad embeds fails."""
+        resource = AlbumResource(session=self.db_session)
+        self.assertRaisesCode(
+            BadRequestError,
+            "invalid_embed",
+            resource.make_schema,
+            embeds=["album"]
+        )
+
 
     # PATCH TESTS
 
@@ -695,6 +793,18 @@ class DrowsyResourceTests(DrowsyTests):
                 self.assertTrue(
                     track["track_id"] == 1
                 )
+
+    def test_get_collection_subresource_fail(self):
+        """Test a subresource query fails with bad filters."""
+        album_resource = AlbumResource(session=self.db_session)
+        self.assertRaisesCode(
+            BadRequestError,
+            "invalid_subresource_filters",
+            album_resource.get_collection,
+            subfilters={"tracks": SubfilterInfo(
+                filters={'track_id': {"$bad": 5}}
+            )}
+        )
 
     def test_get_collection_simple(self):
         """Test getting all objects with an empty dict of params."""

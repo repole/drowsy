@@ -21,6 +21,7 @@ from drowsy.exc import (
 import drowsy.resource_class_registry as class_registry
 from drowsy.utils import get_error_message
 from drowsy.resource import BaseModelResource
+from drowsy.fields import Relationship
 from drowsy.base import NestedPermissibleABC
 from marshmallow_sqlalchemy.schema import ModelSchema
 
@@ -508,23 +509,24 @@ class ModelResourceRouter(ResourceRouterABC):
         ident = None
         while path_parts:
             path_part = path_parts.pop(0)
-            if isinstance(path_part, BaseModelResource):
+            if isinstance(path_part, Field):
+                if isinstance(path_part, NestedPermissibleABC):
+                    # subresource
+                    parent_resource = resource
+                    resource = path_part.resource
+                    query_session = resource.session.query(
+                        resource.model).with_parent(
+                            instance, path_part.name)
+                    if hasattr(path_part, "many") and not path_part.many:
+                        instance = query_session.first()
+                else:
+                    # resource property
+                    if len(path_parts):
+                        self.fail("resource_not_found", path=path)
+                    field = path_part
+            elif isinstance(path_part, BaseModelResource):
                 resource = path_part
                 query_session = resource.session.query(resource.model)
-            elif isinstance(path_part, NestedPermissibleABC):
-                # subresource
-                parent_resource = resource
-                resource = path_part.resource
-                query_session = resource.session.query(
-                    resource.model).with_parent(
-                    instance, path_part.name)
-                if hasattr(path_part, "many") and not path_part.many:
-                    instance = query_session.first()
-            elif isinstance(path_part, Field):
-                # resource property
-                if len(path_parts):
-                    self.fail("resource_not_found", path=path)
-                field = path_part
             elif isinstance(path_part, tuple):
                 # resource instance
                 ident = path_part

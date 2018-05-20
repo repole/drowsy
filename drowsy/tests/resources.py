@@ -8,11 +8,16 @@
                 See AUTHORS for more details.
     :license: MIT - See LICENSE for more details.
 """
+from marshmallow.fields import Nested
 from drowsy.resource import ModelResource
 from drowsy.tests.schemas import (
-    AlbumSchema, ArtistSchema, CompositeNodeSchema, CustomerSchema,
-    EmployeeSchema, GenreSchema, InvoiceLineSchema, InvoiceSchema,
-    MediaTypeSchema, NodeSchema, PlaylistSchema, TrackSchema
+    AlbumCamelSchema, AlbumSchema, ArtistCamelSchema, ArtistSchema,
+    CompositeNodeCamelSchema, CompositeNodeSchema, CustomerCamelSchema,
+    CustomerSchema, EmployeeCamelSchema, EmployeeSchema, GenreCamelSchema,
+    GenreSchema, InvoiceLineCamelSchema, InvoiceLineSchema, InvoiceCamelSchema,
+    InvoiceSchema, MediaTypeCamelSchema, MediaTypeSchema, NodeCamelSchema,
+    NodeSchema, PlaylistCamelSchema, PlaylistSchema, TrackCamelSchema,
+    TrackSchema
 )
 
 
@@ -84,3 +89,67 @@ class NodeResource(ModelResource):
 class CompositeNodeResource(ModelResource):
     class Meta:
         schema_cls = CompositeNodeSchema
+
+
+class AlbumCamelResource(ModelResource):
+    class Meta:
+        schema_cls = AlbumCamelSchema
+
+
+class InvoiceLineCamelResource(ModelResource):
+    class Meta:
+        schema_cls = InvoiceLineCamelSchema
+
+
+class InvoiceCamelResource(ModelResource):
+    class Meta:
+        schema_cls = InvoiceCamelSchema
+        page_max_size = page_max_100
+
+
+class EmployeeCamelResource(ModelResource):
+    class Meta:
+        schema_cls = EmployeeCamelSchema
+        error_messages = {
+            "invalid_field": "Test invalid_field message."
+        }
+
+
+class CustomerCamelResource(ModelResource):
+    class Meta:
+        schema_cls = CustomerCamelSchema
+
+
+class PlaylistCamelResource(ModelResource):
+    class Meta:
+        schema_cls = PlaylistCamelSchema
+
+
+class MediaTypeCamelResource(ModelResource):
+    class Meta:
+        schema_cls = MediaTypeCamelSchema
+
+
+class GenreCamelResource(ModelResource):
+    class Meta:
+        schema_cls = GenreCamelSchema
+
+
+class TrackCamelResource(ModelResource):
+    class Meta:
+        schema_cls = TrackCamelSchema
+
+
+class ArtistCamelResource(ModelResource):
+    class Meta:
+        schema_cls = ArtistCamelSchema
+
+
+class NodeCamelResource(ModelResource):
+    class Meta:
+        schema_cls = NodeCamelSchema
+
+
+class CompositeNodeCamelResource(ModelResource):
+    class Meta:
+        schema_cls = CompositeNodeCamelSchema

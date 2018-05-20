@@ -48,6 +48,15 @@ class DrowsyParserTests(DrowsyTests):
             direction="ASCdsfa"
         )
 
+    def test_sortinfo_bad_direction_type_fail(self):
+        """Test SortInfo fails when given a bad direction type."""
+        self.assertRaises(
+            TypeError,
+            SortInfo,
+            attr="test",
+            direction=4
+        )
+
     def test_subfilterinfo_valid(self):
         """Test SubfilterInfo works with valid input."""
         sub_info = SubfilterInfo(
@@ -89,6 +98,15 @@ class DrowsyParserTests(DrowsyTests):
     def test_offsetlimitinfo_bad_offset_fail(self):
         """Test that OffsetLimitInfo fails when given a bad offset."""
         self.assertRaises(
+            ValueError,
+            OffsetLimitInfo,
+            offset=-1,
+            limit=1
+        )
+
+    def test_offsetlimitinfo_bad_offset_type_fail(self):
+        """Test OffsetLimitInfo fails when given a bad offset type."""
+        self.assertRaises(
             TypeError,
             OffsetLimitInfo,
             offset="test",
@@ -97,6 +115,15 @@ class DrowsyParserTests(DrowsyTests):
 
     def test_offsetlimitinfo_bad_limit_fail(self):
         """Test that OffsetLimitInfo fails when given a bad limit."""
+        self.assertRaises(
+            ValueError,
+            OffsetLimitInfo,
+            offset=1,
+            limit=-1
+        )
+
+    def test_offsetlimitinfo_bad_limit_type_fail(self):
+        """Test that OffsetLimitInfo fails when given a bad limit type."""
         self.assertRaises(
             TypeError,
             OffsetLimitInfo,
@@ -149,7 +176,7 @@ class DrowsyParserTests(DrowsyTests):
         self.assertTrue(fields[1] == "b")
         self.assertTrue(fields[2] == "c")
 
-    def test_page_invalid_type(self):
+    def test_parser_page_invalid_type(self):
         """Providing a non integer page should fail."""
         query_params = {"page": "test"}
         parser = QueryParamParser(query_params)
@@ -158,46 +185,71 @@ class DrowsyParserTests(DrowsyTests):
             "invalid_page_value",
             parser.parse_offset_limit)
 
-    def test_no_page_max_size_fail(self):
+    def test_parser_no_page_max_size_fail(self):
         """Not providing a max page size with page > 1 should fail."""
         query_params = {"page": "2"}
         parser = QueryParamParser(query_params)
-        self.assertRaises(
+        self.assertRaisesCode(
             OffsetLimitParseError,
+            "page_no_max",
             parser.parse_offset_limit)
 
-    def test_bad_page_num(self):
+    def test_parser_bad_page_num(self):
         """Test that providing a negative page number fails."""
         query_params = {"page": "-1"}
         parser = QueryParamParser(query_params)
-        self.assertRaises(
+        self.assertRaisesCode(
             OffsetLimitParseError,
+            "invalid_page_value",
             parser.parse_offset_limit)
 
-    def test_offset_fail(self):
+    def test_parser_offset_fail(self):
         """Make sure providing a bad offset query_param fails."""
         query_params = {"offset": "test"}
         parser = QueryParamParser(query_params)
-        self.assertRaises(
+        self.assertRaisesCode(
             OffsetLimitParseError,
+            "invalid_offset_value",
             parser.parse_offset_limit
         )
 
-    def test_limit_fail(self):
-        """Make sure providing a bad limit query_param is ignored."""
+    def test_parser_offset_negative_fail(self):
+        """Make sure providing a negative offset fails."""
+        query_params = {"offset": "-1"}
+        parser = QueryParamParser(query_params)
+        self.assertRaisesCode(
+            OffsetLimitParseError,
+            "invalid_offset_value",
+            parser.parse_offset_limit
+        )
+
+    def test_parser_limit_fail(self):
+        """Make sure providing a bad limit fails."""
         query_params = {"limit": "test"}
         parser = QueryParamParser(query_params)
-        self.assertRaises(
+        self.assertRaisesCode(
             OffsetLimitParseError,
+            "invalid_limit_value",
             parser.parse_offset_limit
         )
 
-    def test_limit_override(self):
+    def test_parser_limit_negative_fail(self):
+        """Make sure providing a negative limit fails."""
+        query_params = {"limit": "-1"}
+        parser = QueryParamParser(query_params)
+        self.assertRaisesCode(
+            OffsetLimitParseError,
+            "invalid_limit_value",
+            parser.parse_offset_limit
+        )
+
+    def test_parser_limit_override(self):
         """Ensure providing a page_max_size overrides a high limit."""
         query_params = {"limit": "1000"}
         parser = QueryParamParser(query_params)
-        self.assertRaises(
+        self.assertRaisesCode(
             OffsetLimitParseError,
+            "limit_too_high",
             parser.parse_offset_limit,
             30
         )
