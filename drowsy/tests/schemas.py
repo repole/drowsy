@@ -63,6 +63,7 @@ class TrackSchema(ModelResourceSchema):
 class AlbumSchema(ModelResourceSchema):
     class Meta:
         model = Album
+        id_keys = ["album_id"]
 
 
 class ArtistSchema(ModelResourceSchema):
@@ -173,6 +174,7 @@ class AlbumCamelSchema(ModelResourceSchema):
     class Meta:
         model = Album
         model_converter = TestCamelModelResourceConverter
+        id_keys = ["album_id"]
 
 
 class ArtistCamelSchema(ModelResourceSchema):

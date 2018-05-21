@@ -9,6 +9,7 @@
     :license: MIT - See LICENSE for more details.
 """
 from marshmallow.base import FieldABC, SchemaABC
+from marshmallow.compat import basestring
 from marshmallow.decorators import post_load
 from marshmallow.schema import Schema, SchemaOpts
 from marshmallow_sqlalchemy.fields import get_primary_keys
@@ -209,10 +210,17 @@ class ResourceSchema(Schema):
     def embed(self, items):
         """Embed the list of field names provided.
 
-        :param list items: A list of embeddable sub resources or
-            sub resource fields.
+        :param items: A list or single instance of embeddable
+            sub resources or sub resource fields.
+        :type items: list or str
+        :return: None
+        :rtype: None
+        :raise AttributeError: If the schema does not contain
+            the specified field to embed.
 
         """
+        if isinstance(items, basestring):
+            items = [items]
         for item in items:
             split_names = item.split(".")
             if split_names:
@@ -227,13 +235,17 @@ class ResourceSchema(Schema):
                         field.schema.process_context()
                         field.schema.embed([".".join(split_names)])
                 else:
+                    # NOTE: Since we have no way of telling how far
+                    # down the chain we are, a top level attr could
+                    # be passed, causing it to be treated like only.
                     if split_name in self.fields:
                         self.exclude = tuple()
-                        if self.only is None:
-                            self.only = tuple()
-                        self.only = self.only + tuple([split_name])
+                        self.only = self.only or tuple()
+                        self.only += tuple([split_name])
                     else:
-                        break
+                        raise AttributeError(
+                            "'{}' schema has no field '{}'".format(
+                                self, split_name))
 
     @property
     def id_keys(self):
@@ -295,26 +307,6 @@ class ResourceSchema(Schema):
     def process_context(self):
         """Override to modify a schema based on context."""
         pass
-
-    def translate_error(self, value, **variables):
-        """Override to modify a schema based on context.
-
-        :param value: An error string to be translated.
-        :return: A translated string.
-        :rtype: str
-
-        """
-        if self.context.get("gettext", None) is None:
-            parent = self.root
-            if isinstance(parent, FieldABC):
-                if hasattr(parent, "root"):
-                    parent = parent.root
-            if isinstance(parent, SchemaABC):
-                if hasattr(parent, "translate_error"):
-                    return parent.translate_error(value, **variables)
-        elif callable(self.context.get("gettext", None)):
-            return self.context["gettext"](value, **variables)
-        return dummy_gettext(value, **variables)
 
 
 class ModelResourceSchema(ResourceSchema, ModelSchema):

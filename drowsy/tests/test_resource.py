@@ -550,27 +550,6 @@ class DrowsyResourceTests(DrowsyTests):
             (album.album_id, ),
             {"tracks": [{"bytes": "TEST"}]})
 
-    # def test_error_translation(self):
-    #     """Ensure error message translation works."""
-    #     def get_excited(value, **variables):
-    #         """Append an exclamation point to any string.
-    #
-    #         :param str value: String to be translated.
-    #
-    #         """
-    #         return dummy_gettext(value, **variables) + "!"
-    #     album = self.db_session.query(Album).filter(
-    #         Album.album_id == 1).all()[0]
-    #     album_resource = AlbumResource(session=self.db_session,
-    #                                    context={"gettext": get_excited})
-    #     try:
-    #         album_resource.patch(
-    #             (album.album_id, ), {"tracks": [{"bytes": 5}]})
-    #         # should raise an exception...
-    #         self.assertTrue(False)
-    #     except UnprocessableEntityError as e:
-    #         self.assertTrue(e.errors['tracks'][0]['name'][0].endswith("!"))
-
     def test_set_single_relation_item(self):
         """Make sure that a non-list relation can be set."""
         album = self.db_session.query(Album).filter(
