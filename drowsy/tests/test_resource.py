@@ -921,6 +921,30 @@ class DrowsyResourceTests(DrowsyTests):
         self.assertTrue(len(playlists[0].tracks) == 1)
         self.assertTrue(result is None)
 
+    def test_patch_collection_set_child(self):
+        """Test setting a non list relationship via patch works."""
+        update_data = [
+            {
+                "$op": "add",
+                "track_id": 9999,
+                "name": "New TestTrack",
+                "album": {
+                    "album_id": "347",
+                },
+                "media_type": {
+                    "media_type_id": 1
+                },
+                "milliseconds": 1,
+                "unit_price": 1.0
+            }
+        ]
+        track_resource = TrackResource(session=self.db_session)
+        result = track_resource.patch_collection(update_data)
+        tracks = self.db_session.query(Track).filter(
+            Track.track_id == 9999).all()
+        self.assertTrue(len(tracks) == 1)
+        self.assertTrue(result is None)
+
     def test_patch_collection_remove(self):
         """Test removing from a collection via patch works."""
         update_data = [

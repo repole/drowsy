@@ -12,12 +12,13 @@ from marshmallow.fields import Nested
 from drowsy.resource import ModelResource
 from drowsy.tests.schemas import (
     AlbumCamelSchema, AlbumSchema, ArtistCamelSchema, ArtistSchema,
-    CompositeNodeCamelSchema, CompositeNodeSchema, CustomerCamelSchema,
-    CustomerSchema, EmployeeCamelSchema, EmployeeSchema, GenreCamelSchema,
-    GenreSchema, InvoiceLineCamelSchema, InvoiceLineSchema, InvoiceCamelSchema,
-    InvoiceSchema, MediaTypeCamelSchema, MediaTypeSchema, NodeCamelSchema,
-    NodeSchema, PlaylistCamelSchema, PlaylistSchema, TrackCamelSchema,
-    TrackSchema
+    CompositeOneSchema, CompositeOneCamelSchema, CompositeManySchema,
+    CompositeManyCamelSchema, CompositeNodeCamelSchema, CompositeNodeSchema,
+    CustomerCamelSchema, CustomerSchema, EmployeeCamelSchema, EmployeeSchema,
+    GenreCamelSchema, GenreSchema, InvoiceLineCamelSchema, InvoiceLineSchema,
+    InvoiceCamelSchema, InvoiceSchema, MediaTypeCamelSchema, MediaTypeSchema,
+    NodeCamelSchema, NodeSchema, PlaylistCamelSchema, PlaylistSchema,
+    TrackCamelSchema, TrackSchema
 )
 
 
@@ -91,6 +92,16 @@ class CompositeNodeResource(ModelResource):
         schema_cls = CompositeNodeSchema
 
 
+class CompositeOneResource(ModelResource):
+    class Meta:
+        schema_cls = CompositeOneSchema
+
+
+class CompositeManyResource(ModelResource):
+    class Meta:
+        schema_cls = CompositeManySchema
+
+
 class AlbumCamelResource(ModelResource):
     class Meta:
         schema_cls = AlbumCamelSchema
@@ -153,3 +164,13 @@ class NodeCamelResource(ModelResource):
 class CompositeNodeCamelResource(ModelResource):
     class Meta:
         schema_cls = CompositeNodeCamelSchema
+
+
+class CompositeOneCamelResource(ModelResource):
+    class Meta:
+        schema_cls = CompositeOneCamelSchema
+
+
+class CompositeManyCamelResource(ModelResource):
+    class Meta:
+        schema_cls = CompositeManyCamelSchema

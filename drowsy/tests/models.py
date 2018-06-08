@@ -31,7 +31,7 @@ class Album(Base):
     artist_id = Column(
         "ArtistId", ForeignKey('Artist.ArtistId'), nullable=False, index=True)
 
-    artist = orm.relationship('Artist')
+    artist = orm.relationship('Artist', backref="albums")
 
 
 class Artist(Base):
@@ -56,7 +56,7 @@ class Customer(Base):
     company = Column("Company", Unicode(80))
     address = Column("Address", Unicode(70))
     city = Column("City", Unicode(40))
-    state = Column("State", Unicode(40))
+    state = Column("State", Unicode(40), doc="Two Character Abbreviation")
     country = Column("Country", Unicode(40))
     postal_code = Column("PostalCode", Unicode(10))
     phone = Column("Phone", Unicode(24))
@@ -122,7 +122,10 @@ class Invoice(Base):
     billing_postal_code = Column("BillingPostalCode", Unicode(10))
     total = Column("Total", Float, nullable=False)
 
-    customer = orm.relationship('Customer', backref="invoices")
+    customer = orm.relationship(
+        'Customer',
+        backref="invoices",
+        primaryjoin=customer_id == Customer.customer_id)
 
 
 class InvoiceLine(Base):
@@ -284,6 +287,35 @@ class CompositeNode(Base):
             t_CompositeNodeToCompositeNode.c.NodeId == node_id,
             t_CompositeNodeToCompositeNode.c.CompositeId == composite_id),
         backref="parents")
+
+
+class CompositeOne(Base):
+
+    """Dummy model for one side of one to many composite key testing."""
+
+    __tablename__ = "CompositeOne"
+
+    one_id = Column("OneId", Integer, primary_key=True)
+    composite_one_id = Column("CompositeOneId", Integer, primary_key=True)
+
+
+class CompositeMany(Base):
+    """Model for many side of one to many composite key testing."""
+
+    __tablename__ = "CompositeMany"
+
+    many_id = Column("ManyId", Integer, primary_key=True)
+    one_id = Column("OneId", Integer)
+    composite_one_id = Column("CompositeOneId", Integer)
+
+    one = orm.relationship('CompositeOne', backref="many")
+
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ['OneId', 'CompositeOneId'],
+            ['CompositeOne.OneId', 'CompositeOne.CompositeOneId']
+        ),
+    )
 
 
 t_sqlite_sequence = Table(

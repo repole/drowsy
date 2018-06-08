@@ -103,6 +103,7 @@ class ModelResourceConverter(ModelConverter):
         :rtype: :class:`~marshmallow.fields.Field` or type
 
         """
+
         field_class = self._get_field_class_for_property(prop)
         if not instance:
             return field_class

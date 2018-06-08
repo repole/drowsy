@@ -203,7 +203,7 @@ class QueryParamParser(object):
     """Utility class used to parse query parameters."""
 
     default_error_messages = {
-        "invalid_limit_value": ("The limit provided (%(limit)s)) is not a "
+        "invalid_limit_value": ("The limit provided (%(limit)s) is not a "
                                 "non negative integer."),
         "invalid_sublimit_value": ("The limit (%(limit)s) provided for the "
                                    "subresource (%(subresource)s) is not a "

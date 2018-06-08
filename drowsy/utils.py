@@ -62,7 +62,8 @@ def get_field_by_dump_name(schema, dump_name):
             field = schema.fields_by_dump_to[dump_name]
     else:
         for field_name in schema.fields:
-            if schema.fields[field_name].dump_to == dump_name:
+            field_dump_name = schema.fields[field_name].dump_to or field_name
+            if field_dump_name == dump_name:
                 field = schema.fields[field_name]
                 break
     return field

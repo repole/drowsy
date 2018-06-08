@@ -9,13 +9,15 @@
     :license: MIT - See LICENSE for more details.
 """
 from drowsy.convert import CamelModelResourceConverter
+from drowsy.fields import Relationship
+from drowsy.permissions import DisallowAllOpPermissions
 from drowsy.schema import ModelResourceSchema
 from drowsy.tests.models import (
-    Album, Artist, CompositeNode, Customer, Employee,
-    Genre, Invoice, InvoiceLine, MediaType, Node,
-    Playlist, Track
+    Album, Artist, CompositeOne, CompositeMany, CompositeNode, Customer,
+    Employee, Genre, Invoice, InvoiceLine, MediaType, Node, Playlist, Track
 )
 from marshmallow import fields
+from marshmallow_sqlalchemy.schema import ModelSchema
 
 
 class InvoiceLineSchema(ModelResourceSchema):
@@ -60,6 +62,13 @@ class TrackSchema(ModelResourceSchema):
         model = Track
 
 
+class TrackPermissionsSchema(ModelResourceSchema):
+    class Meta:
+        model = Track
+    album = Relationship(
+        "AlbumResource", many=False, permissions_cls=DisallowAllOpPermissions)
+
+
 class AlbumSchema(ModelResourceSchema):
     class Meta:
         model = Album
@@ -69,6 +78,8 @@ class AlbumSchema(ModelResourceSchema):
 class ArtistSchema(ModelResourceSchema):
     class Meta:
         model = Artist
+    albums = Relationship(
+        "AlbumResource", many=True, permissions_cls=DisallowAllOpPermissions)
 
 
 class NodeSchema(ModelResourceSchema):
@@ -79,6 +90,16 @@ class NodeSchema(ModelResourceSchema):
 class CompositeNodeSchema(ModelResourceSchema):
     class Meta:
         model = CompositeNode
+
+
+class CompositeOneSchema(ModelResourceSchema):
+    class Meta:
+        model = CompositeOne
+
+
+class CompositeManySchema(ModelResourceSchema):
+    class Meta:
+        model = CompositeMany
 
 
 class TestCamelModelResourceConverter(CamelModelResourceConverter):
@@ -97,24 +118,10 @@ class TestCamelModelResourceConverter(CamelModelResourceConverter):
             :class:`~sqlalchemy.orm.properties.RelationshipProperty`
 
         """
-        nullable = True
-        required = False
-        for pair in prop.local_remote_pairs:
-            if not pair[0].nullable:
-                if prop.uselist is True:
-                    nullable = False
-                    required = False
-                else:
-                    for column in prop.local_columns:
-                        if column.nullable is False:
-                            nullable = False
-                            required = True
-                break
+        super(TestCamelModelResourceConverter, self)._add_relationship_kwargs(
+            kwargs, prop)
         kwargs.update({
-            "nested": prop.mapper.class_.__name__ + 'CamelResource',
-            "allow_none": nullable,
-            "required": required,
-            "many": prop.uselist
+            "nested": prop.mapper.class_.__name__ + 'CamelResource'
         })
 
 
@@ -193,3 +200,27 @@ class CompositeNodeCamelSchema(ModelResourceSchema):
     class Meta:
         model = CompositeNode
         model_converter = TestCamelModelResourceConverter
+
+
+class CompositeOneCamelSchema(ModelResourceSchema):
+    class Meta:
+        model = CompositeOne
+        model_converter = TestCamelModelResourceConverter
+
+
+class CompositeManyCamelSchema(ModelResourceSchema):
+    class Meta:
+        model = CompositeMany
+        model_converter = TestCamelModelResourceConverter
+
+
+class MsAlbumSchema(ModelSchema):
+    class Meta:
+        model = Album
+    album_id = fields.Integer(dump_to="albumId", load_from="albumId")
+
+
+class AlbumBadIdKeysSchema(ModelResourceSchema):
+    class Meta:
+        model = Album
+        id_keys = ["test"]

@@ -82,11 +82,10 @@ class EmbeddableRelationshipMixin(EmbeddableMixinABC):
 
 class NestedRelated(NestedPermissibleABC, Related):
 
-    """A nested relationship field for use in a `ModelSchema`."""
+    """A nested relationship field for use in `ModelResourceSchema`."""
 
     def __init__(self, nested, default=missing_, exclude=tuple(), only=None,
-                 many=False, column=None, resource_cls=None,
-                 permissions_cls=None, **kwargs):
+                 many=False, column=None, permissions_cls=None, **kwargs):
         """Initialize a nested related field.
 
         :param nested: The Schema class or class name (string) to nest,
@@ -105,9 +104,6 @@ class NestedRelated(NestedPermissibleABC, Related):
         :param list columns: Optional column names on related model.
             If not provided, the primary key(s) of the related model
             will be used.
-        :param resource_cls: Either the class or the name of the
-            resource class associated with this relationship. Useful for
-            dynamic nested routing.
         :param permissions_cls: The class of permissions to apply to
             this relationship. Defaults to allowing all relationship
             operation. May be used to limit the operations that can
@@ -122,7 +118,6 @@ class NestedRelated(NestedPermissibleABC, Related):
             exclude=exclude,
             only=only,
             many=many,
-            resource_cls=resource_cls,
             permissions_cls=permissions_cls,
             **kwargs)
         self.columns = ensure_list(column or [])
@@ -147,16 +142,14 @@ class NestedRelated(NestedPermissibleABC, Related):
 
         """
         # schema here is for this nested field, not the parent.
-        if hasattr(self.schema, "id_keys"):
-            columns = [
-                self.related_model.__mapper__.columns[key_name]
-                for key_name in self.schema.id_keys
-            ]
-            return [
-                self.related_model.__mapper__.get_property_by_column(column)
-                for column in columns
-            ]
-        return super(NestedRelated, self).related_keys
+        columns = [
+            self.related_model.__mapper__.columns[key_name]
+            for key_name in self.schema.id_keys
+        ]
+        return [
+            self.related_model.__mapper__.get_property_by_column(column)
+            for column in columns
+        ]
 
     def _get_resource_kwargs(self):
         """Get kwargs for creating a resource for this instance.
@@ -213,25 +206,6 @@ class NestedRelated(NestedPermissibleABC, Related):
                 return True
             return False
 
-    def _has_identifier(self, obj_data):
-        """Determine if the provided data has a unique identifier.
-
-        :param obj_data: Likely a dict, but could be any user provided
-            data.
-        :return: ``True`` or ``False``.
-        :rtype: bool
-
-        """
-        has_identifier = True
-        for column in self.related_keys:
-            field = self.schema.declared_fields.get(column.key)
-            if not field:
-                return False
-            key = field.load_from or column.key
-            if key not in obj_data:
-                has_identifier = False
-        return has_identifier
-
     def _get_identified_instance(self, obj_data):
         """Get a formed instance using the unique identifier of the obj.
 
@@ -246,14 +220,8 @@ class NestedRelated(NestedPermissibleABC, Related):
             # If the parent object hasn't yet been persisted,
             # autoflush can cause an error since it is yet
             # to be fully formed.
-            instance = self.session.query(
-                self.related_model).filter_by(**{
-                    column.key: obj_data.get(
-                        self.schema.fields[column.key].load_from or
-                        column.key)
-                    for column in self.related_keys
-                }).first()
-        return instance
+            # TODO - Someway of enforcing schema type?
+            return self.schema.get_instance(data=obj_data)
 
     def _perform_operation(self, operation, parent, instance, errors, index,
                            strict=True):

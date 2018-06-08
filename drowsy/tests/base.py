@@ -59,14 +59,3 @@ class DrowsyTests(unittest.TestCase):
         except expected_exception as ex:
             self.assertTrue(hasattr(ex, "code"))
             self.assertTrue(ex.code == code)
-
-    def test_assert_raises_code_fail(self):
-        """Test assert raises code fails properly."""
-        self.assertRaises(
-            AssertionError,
-            self.assertRaisesCode,
-            ValueError,
-            "test",
-            int,
-            1
-        )

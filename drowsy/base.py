@@ -16,6 +16,7 @@ from marshmallow.fields import Field, Nested, missing_
 from marshmallow.utils import is_collection, get_value
 from marshmallow.validate import ValidationError
 from drowsy import resource_class_registry
+from drowsy.compat import suppress
 from drowsy.exc import (
     BadRequestError, UnprocessableEntityError, MethodNotAllowedError,
     ResourceNotFoundError, MISSING_ERROR_MESSAGE)
@@ -69,7 +70,7 @@ class EmbeddableMixinABC(Field):
     def _serialize_unembedded(self, attr, obj, *args, **kwargs):
         """Determine how to serialize when the field isn't embedded.
 
-        :param str attr: The attibute or key to get from the object.
+        :param str attr: The attribute or key to get from the object.
         :param str obj: The object to pull the key from.
         :param args: Any positional arguments that were passed to
             the serializer method.
@@ -198,8 +199,10 @@ class NestedPermissibleABC(Nested):
                     resource_cls = resource_class_registry.get_class(
                         self.nested)
                 else:
-                    raise ValueError
-                self._resource = resource_cls(**self._get_resource_kwargs())
+                    resource_cls = None
+                if resource_cls:
+                    self._resource = resource_cls(
+                        **self._get_resource_kwargs())
             if not isinstance(self._resource, BaseResourceABC):
                 raise ValueError(
                     "Nested fields must be passed a subclass of "
@@ -241,10 +244,10 @@ class NestedPermissibleABC(Nested):
             instance=instance,
             context=self.context)
         if not permissible:
-            key = "permission_denied"
-            detailed_key = key + "_" + operation
-            if detailed_key in self.error_messages:
-                key = detailed_key
+            simple_key = "permission_denied"
+            key = simple_key + "_" + operation
+            if key not in self.error_messages:
+                key = simple_key
             self._handle_op_failure(
                 key=key,
                 errors=errors,
@@ -264,17 +267,6 @@ class NestedPermissibleABC(Nested):
         :param instance: A potential child object of the parent.
         :return: ``True`` if the parent attr already contains the
             instance, ``False`` otherwise.
-        :rtype: bool
-
-        """
-        raise NotImplementedError
-
-    def _has_identifier(self, obj_data):
-        """Determine if the provided data has a unique identifier.
-
-        :param obj_data: Likely a dict, but could be any user provided
-            data.
-        :return: ``True`` or ``False``.
         :rtype: bool
 
         """
@@ -421,6 +413,8 @@ class NestedPermissibleABC(Nested):
             if not is_collection(value):
                 self.fail('type', input=value, type=value.__class__.__name__)
             else:
+                # Full update of this collection, reset it to empty
+                # TODO - load partial vs schema created as partial...
                 if not self.parent.partial:
                     setattr(parent, self.name, [])
         else:
@@ -431,26 +425,19 @@ class NestedPermissibleABC(Nested):
         # each item in value is a sub instance
         for i, obj_data in enumerate(obj_datum):
             if not isinstance(obj_data, dict):
-                self.fail('type', input=obj_data, type=obj_data.__class__.__name__)
+                self.fail(
+                    'type',
+                    input=obj_data,
+                    type=obj_data.__class__.__name__)
             # check if there's an explicit operation included
-            loaded_instance = None
+            operation = None
             if hasattr(obj_data, "pop"):
                 operation = obj_data.pop("$op", None)
-            else:
-                operation = None
             is_new_obj = False
             # check whether this data has value(s) for
             # the indentifier columns.
-            try:
-                if self._has_identifier(obj_data):
-                    instance = self._get_identified_instance(obj_data)
-                else:
-                    instance = None
-            except TypeError:
-                # Upon deserialization, UnprocessableEntity will get
-                # raised.
-                # TODO - Should sure this up.
-                instance = None
+            with suppress(TypeError):
+                instance = self._get_identified_instance(obj_data)
             if instance is None:
                 is_new_obj = True
             if operation is None:
@@ -461,7 +448,7 @@ class NestedPermissibleABC(Nested):
             if self._permissible(permissions=permissions,
                                  obj_data=obj_data,
                                  operation=operation,
-                                 index=i,
+                                 index=i if self.many else None,
                                  errors=errors,
                                  strict=strict,
                                  instance=instance):
@@ -479,23 +466,26 @@ class NestedPermissibleABC(Nested):
                         errors = sub_errors
                     if strict:
                         raise ValidationError(errors)
-                    else:
+                    else:  # pragma: no cover
+                        # This line is hit in testing
+                        # but cpython's optimizer skips it
                         continue
-            # TODO - not sure if this is appropriate error handling
-            if (instance is None and self.many) or instance != loaded_instance:
-                try:
-                    self.fail("invalid_operation", **kwargs)
-                except ValidationError as e:
-                    errors[i] = e.messages
-                    if strict:
-                        raise ValidationError(errors)
-            result = self._perform_operation(
-                operation=operation,
-                parent=parent,
-                instance=loaded_instance,
-                index=i,
-                errors=errors,
-                strict=strict)
+                if (instance is None and self.many) or (
+                        instance != loaded_instance):  # pragma: no cover
+                    # This acts as a fail safe
+                    try:
+                        self.fail("invalid_operation", **kwargs)
+                    except ValidationError as e:
+                        errors[i] = e.messages
+                        if strict:
+                            raise ValidationError(errors)
+                result = self._perform_operation(
+                    operation=operation,
+                    parent=parent,
+                    instance=loaded_instance,
+                    index=i,
+                    errors=errors,
+                    strict=strict)
         if errors:
             raise ValidationError(errors)
         return result

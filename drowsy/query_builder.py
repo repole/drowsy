@@ -72,11 +72,14 @@ class QueryBuilder(object):
         :raises ValueError: If the ``child``, ``parent``, and
             ``relationship_name`` can not be used to produce
             a valid result.
-        :return:
-        :rtype: TODO
+        :return: The partition_by, queryable, and join to use
+            for a subquery join and row_number to limit
+            subquery results.
+        :rtype: tuple
 
         """
         relationship = getattr(parent, relationship_name)
+        partition_by, queryable, join = (None, None, None)
         if relationship.prop.direction == MANYTOMANY:
             # For relationship Node.children:
             # Given assoc table to child join:
@@ -96,7 +99,6 @@ class QueryBuilder(object):
             primary_expressions = []
             secondary_expressions = []
             joins = []
-            queryable = None
             # Break the primaryjoin and secondaryjoin down
             # into lists of expressions.
             if isinstance(relationship.prop.primaryjoin, BinaryExpression):
@@ -135,7 +137,8 @@ class QueryBuilder(object):
                     assoc_side = expression.left
                     queryable = left_table
                 else:
-                    raise ValueError
+                    # No tangible reason this should get here...
+                    raise ValueError  # pragma: no cover
                 child_insp = inspect(inspect(child).class_)
                 for column_key in child_insp.columns.keys():
                     if child_insp.columns[column_key].key == child_side.key:
@@ -145,33 +148,40 @@ class QueryBuilder(object):
             partition_by = []
             # First, figure out the join conditions
             for expression in parent_expressions:
-                if not isinstance(expression, BinaryExpression):
-                    # Complex join not supported
-                    raise ValueError
-                # find if left or right is the assoc table
-                left_table = expression.left.table
-                right_table = expression.right.table
-                parent_table = inspect(parent).mapper.local_table
-                if left_table == parent_table:
-                    # parent_side = expression.left
-                    assoc_side = expression.right
-                elif right_table == parent_table:
-                    # parent_side = expression.right
-                    assoc_side = expression.left
-                else:
-                    raise ValueError
+                assoc_side = None
+                if isinstance(expression, BinaryExpression):
+                    # find if left or right is the assoc table
+                    left_table = expression.left.table
+                    right_table = expression.right.table
+                    parent_table = inspect(parent).mapper.local_table
+                    if left_table == parent_table:
+                        # parent_side = expression.left
+                        assoc_side = expression.right
+                    elif right_table == parent_table:
+                        # parent_side = expression.right
+                        assoc_side = expression.left
+                if assoc_side is None:
+                    # Either no assoc_side was found, or
+                    # this wasn't a BinaryExpression
+                    raise ValueError  # pragma: no cover
                 partition_by.append(assoc_side)
-            if not joins:
-                raise ValueError
-            if queryable is None:
-                raise ValueError
-            if not partition_by:
-                raise ValueError
+            if not joins or queryable is None or not partition_by:
+                # To reach this, one of the following conditions
+                # must be met:
+                #
+                # 1. partition_by is empty because parent_expressions
+                #    was empty
+                #
+                # 2. queryable is None because child_expressions was
+                #    empty.
+                #
+                # 3. joins is None because something unpredictable
+                #    happened with the child_expressions.
+                raise ValueError  # pragma: no cover
             if len(joins) == 1:
                 join = joins[0]
             else:
                 join = and_(*joins)
-            return partition_by, queryable, join
         elif relationship.prop.direction == ONETOMANY:
             # For relationship Album.tracks:
             # Given primary (assoc table to child):
@@ -201,16 +211,16 @@ class QueryBuilder(object):
                 elif right_table == child_table:
                     child_side = expression.right
                 else:
-                    raise ValueError
+                    # Shouldn't ever get here...
+                    raise ValueError  # pragma: no cover
                 child_insp = inspect(inspect(child).class_)
                 for column_key in child_insp.columns.keys():
                     if child_insp.columns[column_key].key == child_side.key:
                         partition_by.append(getattr(child, column_key))
                 if not partition_by:
-                    raise ValueError
-            return partition_by, queryable, join
-        else:
-            return None, None, None
+                    # Also shouldn't ever get here...
+                    raise ValueError  # pragma: no cover
+        return partition_by, queryable, join
 
     def apply_sorts(self, query, sorts, convert_key_names_func=str):
         """Apply sorts to a provided query.
@@ -493,7 +503,9 @@ class QueryBuilder(object):
                                     last_node["name"]
                                 )
                             )
-                        except ValueError:
+                        except ValueError:  # pragma: no cover
+                            # Currently have no way to test this.
+                            # Open to suggestions...
                             if not strict:
                                 failed = True
                                 continue
@@ -601,7 +613,6 @@ class QueryBuilder(object):
                         # successfully applied.
                         leaf_nodes.append(last_node)
                     elif not split_subfilter_keys and is_embed:
-                        # TODO - New line below, verify
                         leaf_nodes.append(last_node)
                     elif split_subfilter_keys and is_embed:
                         # There's still another part of the

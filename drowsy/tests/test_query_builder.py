@@ -14,11 +14,13 @@ from drowsy.exc import BadRequestError
 from drowsy.query_builder import QueryBuilder
 from drowsy.parser import SubfilterInfo, OffsetLimitInfo, SortInfo
 from drowsy.tests.base import DrowsyTests
-from drowsy.tests.models import Album, CompositeNode, Track, Customer
+from drowsy.tests.models import (
+    Album, CompositeOne, CompositeNode, Track, Customer
+)
 from drowsy.tests.resources import (
     AlbumResource, PlaylistResource, TrackResource, CompositeNodeResource,
-    CustomerResource)
-
+    CompositeOneResource, CustomerResource
+)
 from sqlalchemy.inspection import inspect
 
 
@@ -93,6 +95,17 @@ class DrowsyQueryBuilderTests(DrowsyTests):
             self.assertTrue(len(album.tracks) <= 1)
             if album.tracks:
                 self.assertTrue(album.tracks[0].track_id == 5)
+
+    def test_apply_sorts_bad_query(self):
+        """Test applying sorts with a bad query fails."""
+        query_builder = QueryBuilder()
+        query = self.db_session.query(Album, Track)
+        self.assertRaises(
+            ValueError,
+            query_builder.apply_sorts,
+            query,
+            sorts=[]
+        )
 
     def test_simple_subfilter_limit_offset(self):
         """Test offset and limit in a subresource."""
@@ -364,7 +377,7 @@ class DrowsyQueryBuilderTests(DrowsyTests):
             "(PARTITION BY Invoice1.CustomerId ORDER BY Invoice1.InvoiceId "
             "ASC) AS row_number FROM Invoice AS Invoice1) AS q1 WHERE "
             "q1.row_number >= ? AND q1.row_number <= ?) AS anon_1 ON "
-            "Customer.CustomerId = anon_1.CustomerId"
+            "anon_1.CustomerId = Customer.CustomerId"
         )
         result = str(query).replace('"', "")
         result = result.replace("\n", "")
@@ -592,6 +605,45 @@ class DrowsyQueryBuilderTests(DrowsyTests):
             "CompositeNode.NodeId AND "
             "CompositeNodeToCompositeNode_1.ChildCompositeId = "
             "CompositeNode.CompositeId"
+        )
+        result = str(query).replace('"', "").replace("\n", "")
+        self.assertTrue(expected_query == result)
+
+    def test_composite_id_subquery_one_to_many(self):
+        """Test a composite id subquery with a many to one relation."""
+        query_builder = QueryBuilder()
+        query = self.db_session.query(CompositeOne)
+        subfilters = {
+            "many": SubfilterInfo(
+                filters={"many_id": 1},
+                offset=1,
+                limit=1
+            )
+        }
+        query = query_builder.apply_subquery_loads(
+            query=query,
+            resource=CompositeOneResource(session=self.db_session),
+            subfilters=subfilters,
+            embeds=[],
+            dialect_override=True
+        )
+        expected_query = (
+            "SELECT CompositeOne.OneId AS CompositeOne_OneId, "
+            "CompositeOne.CompositeOneId AS CompositeOne_CompositeOneId, "
+            "anon_1.ManyId AS anon_1_ManyId, anon_1.OneId AS anon_1_OneId, "
+            "anon_1.CompositeOneId AS anon_1_CompositeOneId FROM CompositeOne "
+            "LEFT OUTER JOIN (SELECT q1.ManyId AS ManyId, q1.OneId AS OneId, "
+            "q1.CompositeOneId AS CompositeOneId, q1.row_number AS row_number "
+            "FROM (SELECT CompositeMany1.ManyId AS ManyId, "
+            "CompositeMany1.OneId AS OneId, CompositeMany1.CompositeOneId AS "
+            "CompositeOneId, row_number() OVER (PARTITION BY "
+            "CompositeMany1.OneId, CompositeMany1.CompositeOneId ORDER BY "
+            "CompositeMany1.ManyId ASC) AS row_number FROM CompositeMany AS "
+            "CompositeMany1) AS q1, CompositeMany AS CompositeMany1 WHERE "
+            "q1.row_number >= ? AND q1.row_number <= ? AND "
+            "CompositeMany1.ManyId = ?) AS anon_1 ON CompositeOne.OneId = "
+            "anon_1.OneId AND CompositeOne.CompositeOneId = "
+            "anon_1.CompositeOneId"
         )
         result = str(query).replace('"', "").replace("\n", "")
         self.assertTrue(expected_query == result)
