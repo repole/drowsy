@@ -23,7 +23,9 @@ class EmbeddableRelationshipMixin(EmbeddableMixinABC):
     def get_url(self, obj):
         """Get the URL for this relationship.
 
-        :param obj: TODO
+        Very likely that you'll want to override this.
+
+        :param obj: The parent object being serialized.
 
         """
         url = ""
@@ -50,7 +52,7 @@ class EmbeddableRelationshipMixin(EmbeddableMixinABC):
         """Determine how to serialize when the field isn't embedded.
 
         :param str attr: The attibute or key to get from the object.
-        :param str obj: The object to pull the key from.
+        :param obj: The parent object to pull the key from.
         :param args: Any positional arguments that were passed to
             the serializer method.
         :param kwargs: Any keyword arguments that were passed to
@@ -344,12 +346,13 @@ class APIUrl(Field):
     """Text field, displays the url of the resource it's attached to."""
 
     def __init__(self, endpoint_name, *args, **kwargs):
-        """TODO
+        """Initializes an APIUrl field.
 
         :param endpoint_name:
-        :param args:
-        :param kwargs:
-        :return:
+        :param args: Any field arguments to be passed to the super
+            constructor.
+        :param kwargs: Any field keyword arguments to be passed to
+            the super constructor.
 
         """
         super(APIUrl, self).__init__(*args, **kwargs)
@@ -367,7 +370,7 @@ class APIUrl(Field):
         :return: The serialized API url value.
 
         """
-        # TODO - Better safety checking
+        # TODO - Better safety checking?
         accessor_func = accessor or get_value
         id_keys = self.parent.id_keys
         result = "/" + self.endpoint_name

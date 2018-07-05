@@ -9,8 +9,9 @@
                 See AUTHORS for more details.
     :license: MIT - See LICENSE for more details.
 """
-from sqlalchemy import Column, DateTime, ForeignKey, Integer, Numeric, \
-    Table, Unicode, orm, and_, Float
+from sqlalchemy import (
+    Column, DateTime, ForeignKey, Integer, Table, Unicode, orm, and_, Float
+)
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.schema import ForeignKeyConstraint
 from sqlalchemy.sql.sqltypes import NullType
@@ -206,7 +207,7 @@ class Track(Base):
     unit_price = Column("UnitPrice", Float, nullable=False)
 
     album = orm.relationship('Album', backref="tracks")
-    genre = orm.relationship('Genre')
+    genre = orm.relationship('Genre', backref="tracks")
     media_type = orm.relationship('MediaType')
 
 

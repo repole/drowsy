@@ -21,7 +21,6 @@ from drowsy.exc import (
 import drowsy.resource_class_registry as class_registry
 from drowsy.utils import get_error_message
 from drowsy.resource import BaseModelResource
-from drowsy.fields import Relationship
 from drowsy.base import NestedPermissibleABC
 from marshmallow_sqlalchemy.schema import ModelSchema
 
@@ -128,7 +127,7 @@ class ResourceRouterABC(object):
             raise AssertionError(msg)
 
     def _get_schema_kwargs(self, schema_cls):
-        """Get key word arguemnts for constructing a schema.
+        """Get key word arguments for constructing a schema.
 
         :param schema_cls: The schema class being constructed.
         :return: A dictionary of arguments.
@@ -181,8 +180,6 @@ class ResourceRouterABC(object):
                 result.append(resource)
             else:
                 attr_name = resource.convert_key_name(path_part)
-                if attr_name is None:
-                    self.fail("resource_not_found", path=path)
                 schema_cls = resource.schema_cls
                 schema = schema_cls(**self._get_schema_kwargs(schema_cls))
                 field = schema.fields.get(attr_name)
@@ -211,7 +208,6 @@ class ResourceRouterABC(object):
                 # collection!
                 return result
             elif len(split_path) < len(id_keys):
-                # bad news everyone!
                 # e.g. /resource/<key_one_of_two/
                 # resource that has a multi key identifier;
                 # only one provided
@@ -376,9 +372,9 @@ class ResourceRouterABC(object):
         elif method.lower() == "patch":
             return self.patch(path, data)
         elif method.lower() == "put":
-            return self.patch(path, data)
+            return self.put(path, data)
         elif method.lower() == "post":
-            return self.patch(path, data)
+            return self.post(path, data)
         else:
             self.fail("method_not_allowed", path=path, method=method.upper())
 
@@ -415,7 +411,7 @@ class ModelResourceRouter(ResourceRouterABC):
     def context(self):
         """Return the schema context for this resource."""
         if self.resource is not None:
-            return self.resource.context
+            return super(ModelResourceRouter, self).context
         else:
             if callable(self._context):
                 return self._context()
@@ -430,9 +426,7 @@ class ModelResourceRouter(ResourceRouterABC):
         if self.resource is not None:
             return self.resource.session
         else:
-            if self._session is not None:
-                return self._session
-            return None
+            return self._session
 
     def _get_schema_kwargs(self, schema_cls):
         """Get key word arguemnts for constructing a schema.
@@ -481,9 +475,17 @@ class ModelResourceRouter(ResourceRouterABC):
         return self.resource
 
     def _get_path_objects(self, path):
-        """Extract resource objects and identities from the path.
+        """Extract info about a resource from a path.
 
         This is pretty messy and should get cleaned up eventually.
+
+        As of now, this hits the database for each identified resource
+        in the query. The path `"/albums/1/trakcs/1/track_id"` would
+        hit the database twice, once to get an album, and then a second
+        time to get a track (while verifying that album is its parent).
+
+        Ideally we'd only hit the database once throughout a chain like
+        this.
 
         :param path: The input resource path.
         :return: A dict with the following keys defined:
@@ -497,6 +499,8 @@ class ModelResourceRouter(ResourceRouterABC):
             * field
 
         :rtype: dict
+        :raise ResourceNotFoundError: When the supplied path can't
+            be converted into a valid result.
 
         """
         path_parts = self._get_path_info(path)
@@ -517,11 +521,14 @@ class ModelResourceRouter(ResourceRouterABC):
                     query_session = resource.session.query(
                         resource.model).with_parent(
                             instance, path_part.name)
-                    if hasattr(path_part, "many") and not path_part.many:
-                        instance = query_session.first()
+                    if not path_part.many:
+                        instance = getattr(instance, path_part.name)
+                        if instance is None:
+                            self.fail("resource_not_found", path=path)
                 else:
                     # resource property
-                    if len(path_parts):
+                    if len(path_parts):  # pragma: no cover
+                        # failsafe, should get caught by _get_path_info
                         self.fail("resource_not_found", path=path)
                     field = path_part
             elif isinstance(path_part, BaseModelResource):
@@ -547,6 +554,11 @@ class ModelResourceRouter(ResourceRouterABC):
                     if instance is None:
                         self.fail("resource_not_found", path=path)
                 # if this is the end of the path, don't need instance
+        if resource is None:  # pragma: no cover
+            # _get_path_info should catch this type of error first.
+            # keeping this as a failsafe in case _get_path_info is
+            # overridden.
+            self.fail("resource_not_found", path=path)
         # TODO - This is pretty ugly. Needs to be tightened up.
         return {
             "parent_resource": parent_resource,
@@ -559,30 +571,47 @@ class ModelResourceRouter(ResourceRouterABC):
         }
 
     def _subfield_update(self, method, data, parent_resource,
-                         resource, path_part, ident, query_session):
-        """TODO
+                         resource, path_part, ident, path):
+        """Update a subresource field with data.
 
-        :param method:
-        :param data:
-        :param parent_resource:
-        :param resource:
-        :param path_part:
-        :param ident:
-        :param query_session:
-        :return:
+        :param str method: Either DELETE, PATCH, POST, or PUT
+        :param data: The data the child field should be set to.
+        :param parent_resource: The parent of the supplied ``resource``.
+        :param resource: The resource having one of its child
+            relationships updated.
+        :param path_part: The final part of the URL path.
+            Should be either an instance identity, subresource, or
+            base resource.
+        :param ident: The last instance identity in the path,
+            corresponding to the supplied ``resource``.
+        :param str path: The URL path being routed.
+        :raise UnprocessableEntityError: When the supplied ``data``
+            can't be processed successfully.
+        :raise MethodNotAllowedError: When trying to DELETE or PUT
+            a subresource collection.
+        :return: The updated version of this subresource after having
+            the supplied ``data`` applied to it.
 
         """
+        # TODO - Clean up some undefined behavior here.
+        # In particular, PUT and POST vs PATCH
         if isinstance(path_part, NestedPermissibleABC):
             relation_name = path_part.load_from or path_part.name
             if isinstance(data, list):
                 # Will attempt to add multiple items to the relation
                 try:
-                    if method.lower() == "put":
-                        temp_data = parent_resource.get(
-                            ident, session=query_session)
-                        temp_data[relation_name] = data
-                        data = temp_data
-                        result = parent_resource.put(ident=ident, data=data)
+                    if method.lower() in ("put", "delete"):
+                        # data = {
+                        #     relation_name: data
+                        # }
+                        # result = parent_resource.patch(ident=ident, data=data)
+                        # Replacing a subresource collection this way
+                        # not currently supported.
+                        # This is due to not having a clear way to
+                        # distinguish when the relationship operation
+                        # is a "PUT" vs a partial "PATCH".
+                        self.fail(
+                            "method_not_allowed", path=path, method="PUT")
                     else:
                         data = {
                             relation_name: data
@@ -677,8 +706,6 @@ class ModelResourceRouter(ResourceRouterABC):
         path_part = path_objs.get("path_part", None)
         ident = path_objs.get("ident", None)
         query_session = path_objs.get("query_session", None)
-        if resource is None:
-            self.fail("resource_not_found", path=path)
         if isinstance(path_part, BaseModelResource):
             # put collection
             return resource.put_collection(data=data)
@@ -694,10 +721,14 @@ class ModelResourceRouter(ResourceRouterABC):
                 resource=resource,
                 path_part=path_part,
                 ident=ident,
-                query_session=query_session)
+                path=path)
             if result:
                 return result
-        self.fail("method_not_allowed", path=path, method="PUT")
+        # failsafe only hit if _subfield_update fails unexpectedly
+        self.fail(  # pragma: no cover
+            "method_not_allowed",
+            path=path,
+            method="PUT")
 
     def patch(self, path, data):
         """Generic API router for PATCH requests.
@@ -728,8 +759,6 @@ class ModelResourceRouter(ResourceRouterABC):
         path_part = path_objs.get("path_part", None)
         ident = path_objs.get("ident", None)
         query_session = path_objs.get("query_session", None)
-        if resource is None:
-            self.fail("resource_not_found", path=path)
         if isinstance(path_part, BaseModelResource):
             # patch collection
             return resource.patch_collection(data=data)
@@ -745,10 +774,14 @@ class ModelResourceRouter(ResourceRouterABC):
                 resource=resource,
                 path_part=path_part,
                 ident=ident,
-                query_session=query_session)
+                path=path)
             if result:
                 return result
-        self.fail("method_not_allowed", path=path, method="PATCH")
+        self.fail(  # pragma: no cover
+            "method_not_allowed",
+            path=path,
+            method="PATCH"
+        )
 
     def post(self, path, data):
         """Generic API router for POST requests.
@@ -775,9 +808,6 @@ class ModelResourceRouter(ResourceRouterABC):
         resource = path_objs.get("resource", None)
         path_part = path_objs.get("path_part", None)
         ident = path_objs.get("ident", None)
-        query_session = path_objs.get("query_session", None)
-        if resource is None:
-            self.fail("resource_not_found", path=path)
         if isinstance(path_part, BaseModelResource):
             # normal post to resource
             if isinstance(data, list):
@@ -794,7 +824,7 @@ class ModelResourceRouter(ResourceRouterABC):
                 resource=resource,
                 path_part=path_part,
                 ident=ident,
-                query_session=query_session)
+                path=path)
             if result:
                 return result
         self.fail("method_not_allowed", path=path, method="POST")
@@ -828,8 +858,6 @@ class ModelResourceRouter(ResourceRouterABC):
         path_part = path_objs.get("path_part", None)
         query_session = path_objs.get("query_session", None)
         ident = path_objs.get("ident", None)
-        if resource is None:
-            self.fail("resource_not_found", path=path)
         parser = ModelQueryParamParser(query_params, context=self.context)
         fields = parser.parse_fields()
         embeds = parser.parse_embeds()
@@ -846,7 +874,7 @@ class ModelResourceRouter(ResourceRouterABC):
                 session=query_session)
             if result is not None and field_name in result:
                 return result[field_name]
-            self.fail("resource_not_found", path=path)
+            self.fail("resource_not_found", path=path)  # pragma: no cover
         if isinstance(path_part, Field) or isinstance(
                 path_part, BaseModelResource):
             # resource collection
@@ -883,7 +911,8 @@ class ModelResourceRouter(ResourceRouterABC):
                     embeds=embeds,
                     session=query_session,
                     strict=strict)
-                if len(result) != 1:
+                if len(result) != 1:  # pragma: no cover
+                    # failsafe, _get_path_objects will catch this first.
                     self.fail("resource_not_found", path=path)
                 return result[0]
         elif isinstance(path_part, tuple):
@@ -895,7 +924,7 @@ class ModelResourceRouter(ResourceRouterABC):
                 embeds=embeds,
                 strict=strict,
                 session=query_session)
-        self.fail("resource_not_found", path=path)
+        self.fail("resource_not_found", path=path)  # pragma: no cover
 
     def delete(self, path, query_params=None):
         """Generic API router for DELETE requests.
@@ -920,46 +949,60 @@ class ModelResourceRouter(ResourceRouterABC):
             self._deduce_resource(path)
         path_objs = self._get_path_objects(path)
         resource = path_objs.get("resource", None)
+        parent_resource = path_objs.get("parent_resource", None)
         path_part = path_objs.get("path_part", None)
         query_session = path_objs.get("query_session", None)
         ident = path_objs.get("ident", None)
-        if resource is None:
-            self.fail("resource_not_found", path=path)
         parser = ModelQueryParamParser(query_params, context=self.context)
         # last path_part determines what type of request this is
         if isinstance(path_part, Field) and not isinstance(
                 path_part, NestedPermissibleABC):
             # Simple property, such as album_id
-            # return only the value
+            # set the value
             field_name = path_part.load_from or path_part.name
             data = {
                 field_name: None
             }
             result = resource.patch(
                 ident=ident,
-                data=data,
-                session=query_session)
+                data=data)
             if result is not None and field_name in result:
                 return result[field_name]
-            self.fail("resource_not_found", path=path)
-        if isinstance(path_part, Field) or isinstance(
-                path_part, BaseModelResource):
-            # resource collection
-            # any non subresource field would already have been handled
-            if not (isinstance(path_part, Nested) and not path_part.many):
-                filters = parser.parse_filters(
-                    resource.model,
-                    convert_key_names_func=resource.convert_key_name)
-                return resource.delete_collection(
-                    filters=filters,
-                    session=query_session)
+            # failsafe, should be caught by _get_path_objects
+            self.fail(
+                "resource_not_found", path=path)  # pragma: no cover
+        elif isinstance(path_part, NestedPermissibleABC):
+            # subresource
+            # Delete contents of the relationship
+            if path_part.many:
+                return self._subfield_update(
+                    method="put",
+                    data=[],
+                    parent_resource=parent_resource,
+                    resource=resource,
+                    path_part=path_part,
+                    ident=ident,
+                    path=path)
             else:
-                return resource.delete_collection(
-                    session=query_session)
+                return self._subfield_update(
+                    method="put",
+                    data=None,
+                    parent_resource=parent_resource,
+                    resource=resource,
+                    path_part=path_part,
+                    ident=ident,
+                    path=path)
+        elif isinstance(path_part, BaseModelResource):
+            # resource collection
+            # any subresource field would already have been handled
+            filters = parser.parse_filters(
+                resource.model,
+                convert_key_names_func=resource.convert_key_name)
+            return resource.delete_collection(
+                filters=filters,
+                session=query_session)
         elif isinstance(path_part, tuple):
             # path part is a resource identifier
             # individual instance
-            return resource.delete(
-                ident=path_part,
-                session=query_session)
-        self.fail("resource_not_found", path=path)
+            return resource.delete(ident=path_part)
+        self.fail("resource_not_found", path=path)  # pragma: no cover

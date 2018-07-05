@@ -475,8 +475,8 @@ class NestedPermissibleABC(Nested):
                     # This acts as a fail safe
                     try:
                         self.fail("invalid_operation", **kwargs)
-                    except ValidationError as e:
-                        errors[i] = e.messages
+                    except ValidationError as exc:
+                        errors[i] = exc.messages
                         if strict:
                             raise ValidationError(errors)
                 result = self._perform_operation(
@@ -670,6 +670,8 @@ class NestableResourceABC(ResourceABC):
 
 
 class BaseResourceABC(SchemaResourceABC, NestableResourceABC):
+
+    """Base Schema Resource abstract class to inherit from."""
 
     default_error_messages = {
         "validation_failure": "Unable to process entity.",

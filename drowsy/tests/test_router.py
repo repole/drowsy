@@ -10,12 +10,13 @@
 """
 from __future__ import unicode_literals
 import json
-import drowsy.tests.resources
+from drowsy.tests.resources import AlbumResource
 from drowsy.exc import (
     UnprocessableEntityError, MethodNotAllowedError, BadRequestError,
     ResourceNotFoundError)
-from drowsy.router import ModelResourceRouter
+from drowsy.router import ModelResourceRouter, ResourceRouterABC
 from drowsy.tests.base import DrowsyTests
+from drowsy.tests.models import Album, Track
 
 
 class DrowsyRouterTests(DrowsyTests):
@@ -26,6 +27,180 @@ class DrowsyRouterTests(DrowsyTests):
     in the package.
 
     """
+
+    # BASE
+    def test_router_abc_get(self):
+        """Make sure ResourceRouterABC raises exception on `get`."""
+        self.assertRaises(
+            NotImplementedError,
+            ResourceRouterABC(resource=None).get,
+            "/path"
+        )
+
+    def test_router_abc_post(self):
+        """Make sure ResourceRouterABC raises exception on `post`."""
+        self.assertRaises(
+            NotImplementedError,
+            ResourceRouterABC(resource=None).post,
+            "/path",
+            {}
+        )
+
+    def test_router_abc_patch(self):
+        """Make sure ResourceRouterABC raises exception on `patch`."""
+        self.assertRaises(
+            NotImplementedError,
+            ResourceRouterABC(resource=None).patch,
+            "/path",
+            {}
+        )
+
+    def test_router_abc_put(self):
+        """Make sure ResourceRouterABC raises exception on `put`."""
+        self.assertRaises(
+            NotImplementedError,
+            ResourceRouterABC(resource=None).put,
+            "/path",
+            {}
+        )
+
+    def test_router_abc_delete(self):
+        """Make sure ResourceRouterABC raises exception on `delete`."""
+        self.assertRaises(
+            NotImplementedError,
+            ResourceRouterABC(resource=None).delete,
+            "/path"
+        )
+
+    def test_router_missing_error_message_fail(self):
+        """Test that failing with a bad error message is handled."""
+        router = ModelResourceRouter(session=self.db_session)
+        self.assertRaises(
+            AssertionError,
+            router.fail,
+            key="test"
+        )
+
+    def test_router_dispatch_get(self):
+        """Test that auto router dispatch to get works."""
+        router = ModelResourceRouter(session=self.db_session)
+        result = router.dispatcher(
+            method="get",
+            path="/albums/1")
+        self.assertTrue(result["album_id"] == 1)
+
+    def test_router_dispatch_post(self):
+        """Test that auto router dispatch to post works."""
+        router = ModelResourceRouter(session=self.db_session)
+        data = {
+            "track_id": "4000",
+            "name": "Test Track Seven",
+            "media_type": {
+                "media_type_id": "2"
+            },
+            "genre": {
+                "genre_id": "10"
+            },
+            "composer": "Nick Repole",
+            "milliseconds": "206009",
+            "bytes": "3305166",
+            "unit_price": "0.99",
+        }
+        result = router.dispatcher(
+            method="post",
+            path="/tracks",
+            data=data
+        )
+        self.assertTrue(
+            result["track_id"] == 4000
+        )
+
+    def test_router_dispatch_put(self):
+        """Test that auto router dispatch to put works."""
+        router = ModelResourceRouter(session=self.db_session)
+        data = {
+            "album": "/tracks/1/album",
+            "bytes": 11170334,
+            "composer": "Angus Young, Malcolm Young, Brian Johnson",
+            "genre": {"genre_id": 1},
+            "media_type": {"media_type_id": 1},
+            "milliseconds": 4000000,
+            "name": "For Those About To Rock (We Salute You)",
+            "playlists": "/tracks/1/playlists",
+            "self": "/tracks/1",
+            "track_id": 1,
+            "unit_price": 0.99
+        }
+        result = router.dispatcher(
+            method="put",
+            path="/tracks/1",
+            data=data
+        )
+        self.assertTrue(
+            result["milliseconds"] == 4000000
+        )
+
+    def test_router_dispatch_patch(self):
+        """Test that auto router dispatch to patch works."""
+        router = ModelResourceRouter(session=self.db_session)
+        data = {
+            "milliseconds": 4000000
+        }
+        result = router.dispatcher(
+            method="patch",
+            path="/tracks/1",
+            data=data
+        )
+        self.assertTrue(
+            result["milliseconds"] == 4000000
+        )
+
+    def test_router_dispatch_delete(self):
+        """Test that auto router dispatch to delete works."""
+        router = ModelResourceRouter(session=self.db_session)
+        result = router.dispatcher(
+            method="delete",
+            path="/tracks/1"
+        )
+        self.assertTrue(result is None)
+
+    def test_router_dispatch_bad_method(self):
+        """Test that auto router dispatch to a bad method fails."""
+        router = ModelResourceRouter(session=self.db_session)
+        self.assertRaises(
+            MethodNotAllowedError,
+            router.dispatcher,
+            method="bad",
+            path="/albums/1"
+        )
+
+    def test_router_context_callable(self):
+        """Test that a callable context works."""
+        router = ModelResourceRouter(
+            session=self.db_session, context=lambda: {"test": True})
+        self.assertTrue(router.context.get("test"))
+
+    def test_router_get_path_parts_too_long(self):
+        """Test a path with a part after an attr fails."""
+        resource = AlbumResource(session=self.db_session)
+        router = ModelResourceRouter(
+            session=self.db_session, resource=resource)
+        self.assertRaises(
+            ResourceNotFoundError,
+            router.get,
+            path="/albums/1/album_id/toolong"
+        )
+
+    def test_router_path_parts_too_long(self):
+        """Test a path with a part after an unfound instance fails."""
+        resource = AlbumResource(session=self.db_session)
+        router = ModelResourceRouter(
+            session=self.db_session, resource=resource)
+        self.assertRaises(
+            ResourceNotFoundError,
+            router.get,
+            path="/albums/9999999/tracks/"
+        )
 
     # POST
     def test_router_post(self):
@@ -363,6 +538,26 @@ class DrowsyRouterTests(DrowsyTests):
             path="/albums/1000000",
             query_params=query_params)
 
+    def test_router_get_composite(self):
+        """Test getting a resource with a composite key works."""
+        query_params = {}
+        router = ModelResourceRouter(session=self.db_session, context={})
+        result = router.get("/compositeNode/1/1", query_params=query_params)
+        self.assertTrue(
+            result["composite_id"] == 1
+        )
+
+    def test_router_get_composite_bad_id(self):
+        """Test too few identifiers on a composite key fails."""
+        query_params = {}
+        router = ModelResourceRouter(session=self.db_session, context={})
+        self.assertRaises(
+            ResourceNotFoundError,
+            router.get,
+            path="/compositeNode/1",
+            query_params=query_params
+        )
+
     def test_router_get_attr(self):
         """Test getting an identified resource attr works."""
         query_params = {}
@@ -380,6 +575,16 @@ class DrowsyRouterTests(DrowsyTests):
             ResourceNotFoundError,
             router.get,
             path="/albums/1/dne",
+            query_params=query_params)
+
+    def test_router_get_attr_extra_part(self):
+        """Test getting an attr fails with an extra path part."""
+        query_params = {}
+        router = ModelResourceRouter(session=self.db_session, context={})
+        self.assertRaises(
+            ResourceNotFoundError,
+            router.get,
+            path="/albums/1/title/bad",
             query_params=query_params)
 
     def test_router_get_collection_filtered(self):
@@ -505,6 +710,17 @@ class DrowsyRouterTests(DrowsyTests):
         result = router.get("/albums/1/artist", query_params=query_params)
         self.assertTrue(
             result["artist_id"] == 1
+        )
+
+    def test_router_get_subresource_only_child_not_found(self):
+        """Test getting only child subresource fails when not found."""
+        query_params = {}
+        router = ModelResourceRouter(session=self.db_session, context={})
+        self.assertRaises(
+            ResourceNotFoundError,
+            router.get,
+            "/employees/1/parent",
+            query_params=query_params
         )
 
     def test_router_get_subresource_not_found(self):
@@ -658,4 +874,152 @@ class DrowsyRouterTests(DrowsyTests):
         result = router.put("/tracks/1", data=track)
         self.assertTrue(
             result["milliseconds"] == 4000000
+        )
+
+    def test_router_put_attr(self):
+        """Test that putting a resource attr via a router works."""
+        router = ModelResourceRouter(session=self.db_session, context={})
+        result = router.put("/tracks/14/bytes", data=1)
+        self.assertTrue(result == 1)
+
+    def test_router_put_collection(self):
+        """Test putting a resource collection via a router fails."""
+        router = ModelResourceRouter(session=self.db_session, context={})
+        self.assertRaises(
+            MethodNotAllowedError,
+            router.put,
+            "/albums",
+            data=[]
+        )
+
+    def test_router_child_put_collection(self):
+        """Test putting a child collection via a router fails."""
+        router = ModelResourceRouter(session=self.db_session, context={})
+        self.assertRaises(
+            MethodNotAllowedError,
+            router.put,
+            "/albums/1/tracks",
+            data=[]
+        )
+
+    # PATCH
+    def test_router_patch_attr(self):
+        """Test that patching a resource attr via a router works."""
+        router = ModelResourceRouter(session=self.db_session, context={})
+        result = router.patch("/tracks/14/bytes", data=1)
+        self.assertTrue(result == 1)
+
+    def test_router_patch_object(self):
+        """Test patching a single child instance works."""
+        router = ModelResourceRouter(session=self.db_session, context={})
+        data = {
+            "artist_id": 1
+        }
+        result = router.patch(
+            "albums/1/artist",
+            data=data
+        )
+        self.assertTrue(result["artist_id"] == 1)
+
+    def test_router_patch_object_fails(self):
+        """Test patching a single child instance with bad data fails."""
+        router = ModelResourceRouter(session=self.db_session, context={})
+        data = {
+            "artist_id": 1,
+            "name": 5
+        }
+        self.assertRaises(
+            UnprocessableEntityError,
+            router.patch,
+            "albums/1/artist",
+            data=data
+        )
+
+    def test_router_patch(self):
+        """Test that patching a resource via a router works."""
+        router = ModelResourceRouter(session=self.db_session, context={})
+        track = {
+            "milliseconds": 4000000,
+            "track_id": 1
+        }
+        result = router.patch("/tracks/1", data=track)
+        self.assertTrue(
+            result["milliseconds"] == 4000000
+        )
+
+    def test_router_patch_collection(self):
+        """Test that patching a resource collection via router works."""
+        router = ModelResourceRouter(session=self.db_session, context={})
+        tracks = [{
+            "milliseconds": 4000000,
+            "track_id": 1
+        }]
+        result = router.patch("/tracks", data=tracks)
+        self.assertTrue(result is None)
+
+    def test_router_delete_attr(self):
+        """Test deleting an identified resource attr works."""
+        query_params = {}
+        router = ModelResourceRouter(session=self.db_session, context={})
+        result = router.delete("/customer/1/address", query_params=query_params)
+        self.assertTrue(
+            result is None
+        )
+
+    def test_router_delete_attr_unprocessable(self):
+        """Test deleting a non null identified resource attr fails."""
+        query_params = {}
+        router = ModelResourceRouter(session=self.db_session, context={})
+        self.assertRaises(
+            UnprocessableEntityError,
+            router.delete,
+            "/album/1/title",
+            query_params=query_params
+        )
+
+    def test_router_delete_attr_not_found(self):
+        """Test deleting an unfindable identified resource attr fails."""
+        query_params = {}
+        router = ModelResourceRouter(session=self.db_session, context={})
+        self.assertRaises(
+            ResourceNotFoundError,
+            router.delete,
+            "/album/1/test",
+            query_params=query_params
+        )
+
+    def test_router_delete_subresource_list(self):
+        """Test deleting a subresource list works."""
+        query_params = {}
+        router = ModelResourceRouter(session=self.db_session, context={})
+        self.assertRaises(
+            MethodNotAllowedError,
+            router.delete,
+            "/albums/1/tracks",
+            query_params=query_params
+        )
+
+    def test_router_delete_subresource_child(self):
+        """Test deleting a child subresource works."""
+        query_params = {}
+        router = ModelResourceRouter(session=self.db_session, context={})
+        result = router.delete(
+            "/tracks/1/genre",
+            query_params=query_params)
+        self.assertTrue(
+            result is None
+        )
+        track = self.db_session.query(Track).filter(
+            Track.track_id == 1).first()
+        self.assertTrue(
+            track.genre is None
+        )
+
+    def test_router_delete_collection(self):
+        """Test deleting a resource collection works."""
+        query_params = {}
+        router = ModelResourceRouter(session=self.db_session, context={})
+        result = router.delete("/tracks", query_params=query_params)
+        self.assertTrue(
+            result is None
         )

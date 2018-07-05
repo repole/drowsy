@@ -427,6 +427,8 @@ class ModelResourceSchema(ResourceSchema, ModelSchema):
 
         """
         # Adding things to kwargs to play nice with super...
-        kwargs["session"] = session
+        kwargs["session"] = session or self.session
         kwargs["instance"] = instance
-        return super(ModelResourceSchema, self).load(data, *args, **kwargs)
+        with kwargs["session"].no_autoflush:
+            # prevent bad child data from causing a premature flush
+            return super(ModelResourceSchema, self).load(data, *args, **kwargs)

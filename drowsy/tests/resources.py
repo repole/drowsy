@@ -8,7 +8,6 @@
                 See AUTHORS for more details.
     :license: MIT - See LICENSE for more details.
 """
-from marshmallow.fields import Nested
 from drowsy.resource import ModelResource
 from drowsy.tests.schemas import (
     AlbumCamelSchema, AlbumSchema, ArtistCamelSchema, ArtistSchema,
