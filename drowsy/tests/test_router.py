@@ -16,7 +16,7 @@ from drowsy.exc import (
     ResourceNotFoundError)
 from drowsy.router import ModelResourceRouter, ResourceRouterABC
 from drowsy.tests.base import DrowsyTests
-from drowsy.tests.models import Album, Track
+from drowsy.tests.models import Track
 
 
 class DrowsyRouterTests(DrowsyTests):
@@ -203,6 +203,7 @@ class DrowsyRouterTests(DrowsyTests):
         )
 
     # POST
+
     def test_router_post(self):
         """Test that posting a resource via a router works."""
         router = ModelResourceRouter(session=self.db_session, context={})
@@ -957,6 +958,23 @@ class DrowsyRouterTests(DrowsyTests):
         result = router.patch("/tracks", data=tracks)
         self.assertTrue(result is None)
 
+    # DELETE
+
+    def test_router_delete(self):
+        """Test deleting an identified resource works."""
+        query_params = {}
+        router = ModelResourceRouter(session=self.db_session, context={})
+        result = router.delete("/tracks/5", query_params=query_params)
+        self.assertTrue(
+            result is None
+        )
+        track = self.db_session.query(Track).filter(
+            Track.track_id == 5).first()
+        self.assertTrue(track is None)
+        track = self.db_session.query(Track).filter(
+            Track.track_id == 1).first()
+        self.assertTrue(track is not None)
+
     def test_router_delete_attr(self):
         """Test deleting an identified resource attr works."""
         query_params = {}
@@ -1023,3 +1041,18 @@ class DrowsyRouterTests(DrowsyTests):
         self.assertTrue(
             result is None
         )
+
+    def test_router_delete_collection_filtered(self):
+        """Test deleting a resource collection works with filters."""
+        query_params = {"track_id": "5"}
+        router = ModelResourceRouter(session=self.db_session, context={})
+        result = router.delete("/tracks", query_params=query_params)
+        self.assertTrue(
+            result is None
+        )
+        track = self.db_session.query(Track).filter(
+            Track.track_id == 5).first()
+        self.assertTrue(track is None)
+        track = self.db_session.query(Track).filter(
+            Track.track_id == 1).first()
+        self.assertTrue(track is not None)
