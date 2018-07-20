@@ -8,6 +8,7 @@
                 See AUTHORS for more details.
     :license: MIT - See LICENSE for more details.
 """
+import math
 from marshmallow.compat import with_metaclass
 from mqlalchemy import InvalidMQLException
 from sqlalchemy.exc import SQLAlchemyError
@@ -17,21 +18,156 @@ from drowsy.query_builder import QueryBuilder, SortInfo
 from drowsy.exc import BadRequestError
 
 
-class ResourceCollection(list):
+class PaginationInfo(object):
+
+    """Pagination meta info container."""
+
+    def __init__(self, resources_available, page_size=None, current_page=None):
+        """Initializes pagination info container.
+
+        :param int resources_available: The total number of matching
+            resources for a query. Used for pagination info.
+        :param page_size: The current page number for the result.
+        :type page_size: int or None
+        :param current_page: The current page number for the result.
+        :type current_page: int or None
+
+        """
+        self.resources_available = resources_available
+        self._page_size = None
+        self._current_page = None
+        self.page_size = page_size
+        self.current_page = current_page
+
+    @property
+    def page_size(self):
+        """Get the number of resources included in a result collection.
+
+        :return: The size of each page in a result collection.
+        :rtype: int or None
+
+        """
+        return self._page_size
+
+    @page_size.setter
+    def page_size(self, value):
+        """Set the number of resources included in a result collection.
+
+        :return: The size of each page in a result collection.
+        :rtype: int or None
+
+        """
+        if not isinstance(value, int) and value is not None:
+            raise TypeError("page_size must be an integer or None.")
+        if value is None or value > 0:
+            self._page_size = value
+        else:
+            raise ValueError(
+                "page_size must be an integer greater than 0 or None.")
+
+    @property
+    def current_page(self):
+        """Get the current page of this resource collection.
+
+        :return: The current page of this resource collection.
+        :rtype: int or None
+
+        """
+        return self._current_page
+
+    @current_page.setter
+    def current_page(self, value):
+        """Set the current page of this resource collection.
+
+        :param value: A positive integer or ``None``. Page numbering
+            starts at 1, not 0.
+        :type value: int or None
+        :return: None
+
+        """
+        if not isinstance(value, int) and value is not None:
+            raise TypeError("current_page must be an integer or None.")
+        if value is None or value > 0:
+            self._current_page = value
+        else:
+            raise ValueError(
+                "current_page must be an integer greater than 0 or None.")
+
+    @property
+    def first_page(self):
+        """Get the first page number of this resource collection.
+
+        :return: ``1`` if pagination is being used, otherwise ``None``.
+        :rtype: int or None
+
+        """
+        if self.page_size is not None:
+            return 1
+        return None
+
+    @property
+    def last_page(self):
+        """Get the last page number of this resource collection.
+
+        :return: The number of the last page if pagination is being
+            used, otherwise ``None``.
+        :rtype: int or None
+
+        """
+        if self.page_size is not None:
+            return math.ceil(self.resources_available/(self.page_size * 1.0))
+        return None
+
+    @property
+    def previous_page(self):
+        """Get the previous page number based on the current page.
+
+        :return: The current page number - 1 if pagination is being
+            used, and if the current page isn't the first page.
+        :rtype: int or None
+
+        """
+        if self.current_page is not None and self.page_size is not None:
+            if self.current_page > self.first_page:
+                return self.current_page - 1
+        return None
+
+    @property
+    def next_page(self):
+        """Get the next page number based on the current page number.
+
+        :return: The current page number + 1 if pagination is being
+            used, and if the current page isn't the last page.
+        :rtype: int or None
+
+        """
+        if self.current_page is not None and self.page_size is not None:
+            if self.current_page < self.last_page:
+                return self.current_page + 1
+        return None
+
+
+class ResourceCollection(list, PaginationInfo):
 
     """A simple list subclass that contains some extra meta info."""
 
-    def __init__(self, resources, resources_available):
+    def __init__(self, resources, resources_available, page_size=None,
+                 current_page=None):
         """Initializes a resource collection.
 
         :param iterable resources: The resources that were fetched in
             a query.
         :param int resources_available: The total number of matching
             resources for a query. Used for pagination info.
+        :param page_size: The current page number for the result.
+        :type page_size: int or None
+        :param current_page: The current page number for the result.
+        :type current_page: int or None
 
         """
-        self.resources_available = resources_available
         list.__init__(self, resources)
+        PaginationInfo.__init__(
+            self, resources_available, page_size, current_page)
 
     @property
     def resources_fetched(self):
@@ -50,6 +186,10 @@ class ResourceOpts(object):
 
     A ``schema_cls`` option must be provided.
 
+    An ``options`` option may be provided as a list in order to
+    explicitly state what actions may be taken on this resource, with
+    GET, POST, PUT, PATCH, DELETE, HEAD, and OPTIONS as possible values.
+
     An ``error_messages`` option may be provided as a `dict` in order
     to override some or all of the default error messages for a
     resource.
@@ -65,6 +205,7 @@ class ResourceOpts(object):
         class UserResource(ModelResource):
             class Meta:
                 schema_cls = UserSchema
+                options = ["GET", "POST", "PUT", "PATCH]
                 error_messages = {
                     "validation_failure": "Fix your data."
                 }
@@ -82,6 +223,10 @@ class ResourceOpts(object):
         self.schema_cls = getattr(meta, "schema_cls", None)
         self.error_messages = getattr(meta, "error_messages", None)
         self.page_max_size = getattr(meta, "page_max_size", None)
+        self.options = getattr(
+            meta,
+            "options",
+            ["GET", "POST", "PATCH", "PUT", "DELETE", "HEAD", "OPTIONS"])
 
 
 class ResourceMeta(type):
@@ -281,7 +426,7 @@ class BaseModelResource(BaseResourceABC):
 
         :param ident: A value used to identify this resource.
             See :meth:`get` for more info.
-        :raise ResourceNotFound: Raised in cases where invalid
+        :raise ResourceNotFoundError: Raised in cases where invalid
             filters were supplied.
         :return: An instance of this resource type.
 
@@ -380,8 +525,37 @@ class BaseModelResource(BaseResourceABC):
         query = self.apply_required_filters(query)
         return query
 
+    @property
+    def options(self):
+        """Get the available options for this resource.
+
+        :return: A list of available options for this resource.
+            Values can include GET, POST, PUT, PATCH, DELETE, HEAD, and
+            OPTIONS.
+        :rtype: list
+
+        """
+        return self.opts.options
+
+    def _check_method_allowed(self, method):
+        """Check if a given method is valid for this resource.
+
+        Note that OPTIONS is always allowed.
+
+        :param str method: Should be one of GET, POST, PUT, PATCH,
+            DELETE, HEAD, or OPTIONS.
+        :return: ``True`` if the supplied ``method`` is allowed.
+        :raise MethodNowAllowedError: When the supplied ``method``
+            is not allowed.
+
+        """
+        if method.upper() in self.options or (
+                method.upper() == "OPTIONS"):
+            return True
+        self.fail("method_not_allowed", method=method.upper())
+
     def get(self, ident, subfilters=None, fields=None, embeds=None,
-            session=None, strict=True):
+            session=None, strict=True, head=False):
         """Get the identified resource.
 
         :param ident: A value used to identify this resource. If the
@@ -405,13 +579,19 @@ class BaseModelResource(BaseResourceABC):
         :param bool strict: If ``True``, will raise an exception when
             bad parameters are passed. If ``False``, will quietly ignore
             any bad input and treat it as if none was provided.
+        :param bool head: If this was a HEAD request. Doesn't affect
+            anything here, but supplied in case there's desire to
+            override the method.
         :raise ResourceNotFoundError: If no such resource exists.
         :raise BadRequestError: Invalid fields or embeds will result
             in a raised exception if strict is set to ``True``.
+        :raise MethodNotAllowedError: If this method hasn't been marked
+            as allowed in the meta class options.
         :return: The resource itself if found.
         :rtype: dict
 
         """
+        self._check_method_allowed("GET" if not head else "HEAD")
         filters = self._get_ident_filters(ident)
         if session is None:
             session = self.session
@@ -441,10 +621,13 @@ class BaseModelResource(BaseResourceABC):
         :param dict data: Data used to create a new resource.
         :raise UnprocessableEntityError: If the supplied data cannot be
             processed.
+        :raise MethodNotAllowedError: If this method hasn't been marked
+            as allowed in the meta class options.
         :return: The created resource.
         :rtype: dict
 
         """
+        self._check_method_allowed("POST")
         # NOTE: No risk of BadRequestError here due to no embeds or
         # fields being passed to make_schema
         schema = self.make_schema(partial=False)
@@ -472,10 +655,13 @@ class BaseModelResource(BaseResourceABC):
         :raise ResourceNotFoundError: If no such resource exists.
         :raise UnprocessableEntityError: If the supplied data cannot be
             processed.
+        :raise MethodNotAllowedError: If this method hasn't been marked
+            as allowed in the meta class options.
         :return: The replaced resource.
         :rtype: dict
 
         """
+        self._check_method_allowed("PUT")
         obj = data
         instance = self._get_instance(ident)
         # NOTE: No risk of BadRequestError here due to no embeds or
@@ -505,10 +691,13 @@ class BaseModelResource(BaseResourceABC):
         :raise ResourceNotFoundError: If no such resource exists.
         :raise UnprocessableEntityError: If the supplied data cannot be
             processed.
+        :raise MethodNotAllowedError: If this method hasn't been marked
+            as allowed in the meta class options.
         :return: The updated resource.
         :rtype: dict
 
         """
+        self._check_method_allowed("PATCH")
         obj = data
         instance = self._get_instance(ident)
         # NOTE: No risk of BadRequestError here due to no embeds or
@@ -535,9 +724,12 @@ class BaseModelResource(BaseResourceABC):
         :param ident: A value used to identify this resource.
             See :meth:`get` for more info.
         :raise ResourceNotFoundError: If no such resource exists.
+        :raise MethodNotAllowedError: If this method hasn't been marked
+            as allowed in the meta class options.
         :return: ``None``
 
         """
+        self._check_method_allowed("DELETE")
         instance = self._get_instance(ident)
         if instance:
             self.session.delete(instance)
@@ -551,7 +743,7 @@ class BaseModelResource(BaseResourceABC):
 
     def get_collection(self, filters=None, subfilters=None, fields=None,
                        embeds=None, sorts=None, offset=None, limit=None,
-                       session=None, strict=True):
+                       session=None, strict=True, head=False):
         """Get a collection of resources.
 
         :param filters: MQLAlchemy filters to be applied on this query.
@@ -578,13 +770,19 @@ class BaseModelResource(BaseResourceABC):
         :param bool strict: If ``True``, will raise an exception when
             bad parameters are passed. If ``False``, will quietly ignore
             any bad input and treat it as if none was provided.
+        :param bool head: If this was a HEAD request. Doesn't affect
+            anything here, but supplied in case there's desire to
+            override the method.
         :raise BadRequestError: Invalid filters, sorts, fields,
             embeds, offset, or limit will result in a raised exception
             if strict is set to ``True``.
+        :raise MethodNotAllowedError: If this method hasn't been marked
+            as allowed in the meta class options.
         :return: Resources meeting the supplied criteria.
         :rtype: :class:`ResourceCollection`
 
         """
+        self._check_method_allowed("GET" if not head else "HEAD")
         if filters is None:
             filters = {}
         if session is None:
@@ -648,9 +846,12 @@ class BaseModelResource(BaseResourceABC):
         :param list data: List of resources to be created.
         :raise UnprocessableEntityError: If the supplied data cannot be
             processed.
+        :raise MethodNotAllowedError: If this method hasn't been marked
+            as allowed in the meta class options.
         :return: ``None``
 
         """
+        self._check_method_allowed("POST")
         if not isinstance(data, list):
             self.fail("invalid_collection_input", data=data)
         for obj in data:
@@ -692,9 +893,12 @@ class BaseModelResource(BaseResourceABC):
             accordingly removed from the collection.
         :raise UnprocessableEntityError: If the supplied data cannot be
             processed.
+        :raise MethodNotAllowedError: If this method hasn't been marked
+            as allowed in the meta class options.
         :return: ``None``
 
         """
+        self._check_method_allowed("PATCH")
         if not isinstance(data, list):
             self.fail("invalid_collection_input")
         for obj in data:
@@ -747,9 +951,12 @@ class BaseModelResource(BaseResourceABC):
             any bad input and treat it as if none was provided.
         :raise UnprocessableEntityError: If the deletions are unable to
             be processed.
+        :raise MethodNotAllowedError: If this method hasn't been marked
+            as allowed in the meta class options.
         :return: ``None``
 
         """
+        self._check_method_allowed("DELETE")
         filters = filters or {}
         if session is None:
             session = self.session

@@ -72,6 +72,14 @@ class DrowsyRouterTests(DrowsyTests):
             "/path"
         )
 
+    def test_router_abc_options(self):
+        """Make sure ResourceRouterABC raises exception on `options`."""
+        self.assertRaises(
+            NotImplementedError,
+            ResourceRouterABC(resource=None).options,
+            "/path"
+        )
+
     def test_router_missing_error_message_fail(self):
         """Test that failing with a bad error message is handled."""
         router = ModelResourceRouter(session=self.db_session)
@@ -164,6 +172,14 @@ class DrowsyRouterTests(DrowsyTests):
         )
         self.assertTrue(result is None)
 
+    def test_router_dispatch_options(self):
+        """Test that auto router dispatch to options works."""
+        router = ModelResourceRouter(session=self.db_session)
+        result = router.dispatcher(
+            method="options",
+            path="/albums/1")
+        self.assertTrue("GET" in result)
+
     def test_router_dispatch_bad_method(self):
         """Test that auto router dispatch to a bad method fails."""
         router = ModelResourceRouter(session=self.db_session)
@@ -172,6 +188,16 @@ class DrowsyRouterTests(DrowsyTests):
             router.dispatcher,
             method="bad",
             path="/albums/1"
+        )
+
+    def test_router_dispatch_bad_path(self):
+        """Test that auto router dispatch to a bad path fails."""
+        router = ModelResourceRouter(session=self.db_session)
+        self.assertRaises(
+            ResourceNotFoundError,
+            router.dispatcher,
+            method="get",
+            path="/1"
         )
 
     def test_router_context_callable(self):

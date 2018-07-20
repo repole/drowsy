@@ -16,7 +16,7 @@ from drowsy.exc import (
     ResourceNotFoundError)
 from drowsy.parser import SubfilterInfo, SortInfo
 from drowsy.base import ResourceABC, NestableResourceABC, SchemaResourceABC
-from drowsy.resource import ResourceCollection
+from drowsy.resource import ResourceCollection, PaginationInfo
 from drowsy.tests.base import DrowsyTests
 from drowsy.tests.models import Album, Artist, Playlist, Track
 from drowsy.tests.resources import (
@@ -73,14 +73,14 @@ class DrowsyResourceTests(DrowsyTests):
         )
 
     def test_resource_abc_get_collection(self):
-        """Make sure ResourceABC raises exception on `get_collection`."""
+        """Check ResourceABC raises exception on `get_collection`."""
         self.assertRaises(
             NotImplementedError,
             ResourceABC().get_collection
         )
 
     def test_resource_abc_post_collection(self):
-        """Make sure ResourceABC raises exception on `post_collection`."""
+        """Check ResourceABC raises exception on `post_collection`."""
         self.assertRaises(
             NotImplementedError,
             ResourceABC().post_collection,
@@ -88,7 +88,7 @@ class DrowsyResourceTests(DrowsyTests):
         )
 
     def test_resource_abc_patch_collection(self):
-        """Make sure ResourceABC raises exception on `patch_collection`."""
+        """Check ResourceABC raises exception on `patch_collection`."""
         self.assertRaises(
             NotImplementedError,
             ResourceABC().patch_collection,
@@ -96,7 +96,7 @@ class DrowsyResourceTests(DrowsyTests):
         )
 
     def test_resource_abc_put_collection(self):
-        """Make sure ResourceABC raises exception on `put_collection`."""
+        """Check ResourceABC raises exception on `put_collection`."""
         self.assertRaises(
             NotImplementedError,
             ResourceABC().put_collection,
@@ -104,10 +104,19 @@ class DrowsyResourceTests(DrowsyTests):
         )
 
     def test_resource_abc_delete_collection(self):
-        """Make sure ResourceABC raises exception on `delete_collection`."""
+        """Check ResourceABC raises exception on `delete_collection`."""
         self.assertRaises(
             NotImplementedError,
             ResourceABC().delete_collection
+        )
+
+    def test_resource_abc_options(self):
+        """Make sure ResourceABC raises exception on `options`."""
+        self.assertRaises(
+            NotImplementedError,
+            getattr,
+            ResourceABC(),
+            "options"
         )
 
     def test_nestable_resource_abc_make_resource(self):
@@ -177,6 +186,173 @@ class DrowsyResourceTests(DrowsyTests):
             registry.get_class,
             "Test",
             all=False)
+
+    # PAGINATION TESTS
+    def test_pagination_info_current_page(self):
+        """Test PaginationInfo current_page works with positive int."""
+        info = PaginationInfo(
+            resources_available=100,
+            page_size=10,
+            current_page=4
+        )
+        self.assertTrue(info.current_page == 4)
+
+    def test_pagination_info_current_page_none(self):
+        """Test PaginationInfo current_page works with a None value."""
+        info = PaginationInfo(
+            resources_available=100,
+            page_size=10,
+            current_page=None
+        )
+        self.assertTrue(info.current_page is None)
+
+    def test_pagination_info_current_page_negative(self):
+        """Test PaginationInfo current_page fails with negative int."""
+        self.assertRaises(
+            ValueError,
+            PaginationInfo,
+            resources_available=100,
+            page_size=10,
+            current_page=-4
+        )
+
+    def test_pagination_info_current_page_non_int(self):
+        """Test PaginationInfo current_page fails with non int."""
+        self.assertRaises(
+            TypeError,
+            PaginationInfo,
+            resources_available=100,
+            page_size=10,
+            current_page="1"
+        )
+
+    def test_pagination_info_page_size(self):
+        """Test PaginationInfo page_size works with positive int."""
+        info = PaginationInfo(
+            resources_available=100,
+            page_size=10,
+            current_page=4
+        )
+        self.assertTrue(info.page_size == 10)
+
+    def test_pagination_info_page_size_none(self):
+        """Test PaginationInfo page_size works with a None value."""
+        info = PaginationInfo(
+            resources_available=100,
+            page_size=None,
+            current_page=None
+        )
+        self.assertTrue(info.page_size is None)
+
+    def test_pagination_info_page_size_negative(self):
+        """Test PaginationInfo page_size fails with negative int."""
+        self.assertRaises(
+            ValueError,
+            PaginationInfo,
+            resources_available=100,
+            page_size=-10,
+            current_page=1
+        )
+
+    def test_pagination_info_page_size_non_int(self):
+        """Test PaginationInfo page_size fails with non int."""
+        self.assertRaises(
+            TypeError,
+            PaginationInfo,
+            resources_available=100,
+            page_size="10",
+            current_page=1
+        )
+
+    def test_pagination_info_first_page(self):
+        """Test PaginationInfo first_page works."""
+        info = PaginationInfo(
+            resources_available=100,
+            page_size=10,
+            current_page=4
+        )
+        self.assertTrue(info.first_page == 1)
+
+    def test_pagination_info_first_page_none(self):
+        """Test PaginationInfo first_page as None works."""
+        info = PaginationInfo(
+            resources_available=100,
+            page_size=None,
+            current_page=None
+        )
+        self.assertTrue(info.first_page is None)
+
+    def test_pagination_info_last_page(self):
+        """Test PaginationInfo last_page works."""
+        info = PaginationInfo(
+            resources_available=100,
+            page_size=10,
+            current_page=4
+        )
+        self.assertTrue(info.last_page == 10)
+
+    def test_pagination_info_last_page_none(self):
+        """Test PaginationInfo last_page as None works."""
+        info = PaginationInfo(
+            resources_available=100,
+            page_size=None,
+            current_page=None
+        )
+        self.assertTrue(info.last_page is None)
+
+    def test_pagination_info_next_page(self):
+        """Test PaginationInfo next_page works."""
+        info = PaginationInfo(
+            resources_available=100,
+            page_size=10,
+            current_page=4
+        )
+        self.assertTrue(info.next_page == 5)
+
+    def test_pagination_info_next_page_none(self):
+        """Test PaginationInfo next_page as None works."""
+        info = PaginationInfo(
+            resources_available=100,
+            page_size=None,
+            current_page=None
+        )
+        self.assertTrue(info.next_page is None)
+
+    def test_pagination_info_next_page_not_found(self):
+        """Test PaginationInfo next_page when on last page works."""
+        info = PaginationInfo(
+            resources_available=100,
+            page_size=10,
+            current_page=10
+        )
+        self.assertTrue(info.next_page is None)
+
+    def test_pagination_info_previous_page(self):
+        """Test PaginationInfo previous_page works."""
+        info = PaginationInfo(
+            resources_available=100,
+            page_size=10,
+            current_page=4
+        )
+        self.assertTrue(info.previous_page == 3)
+
+    def test_pagination_info_previous_page_none(self):
+        """Test PaginationInfo previous_page as None works."""
+        info = PaginationInfo(
+            resources_available=100,
+            page_size=None,
+            current_page=None
+        )
+        self.assertTrue(info.previous_page is None)
+
+    def test_pagination_info_previous_page_not_found(self):
+        """Test PaginationInfo previous_page from first page works."""
+        info = PaginationInfo(
+            resources_available=100,
+            page_size=10,
+            current_page=1
+        )
+        self.assertTrue(info.previous_page is None)
 
     # RESOURCECOLLECTION TESTS
 
@@ -382,6 +558,17 @@ class DrowsyResourceTests(DrowsyTests):
             "invalid_embed",
             resource.make_schema,
             embeds=["album"]
+        )
+
+    def test_resource_check_method_allowed(self):
+        """Test a disallowed method fails."""
+        resource = InvoiceResource(session=self.db_session)
+        self.assertRaisesCode(
+            MethodNotAllowedError,
+            "method_not_allowed",
+            resource.get,
+            1,
+            head=True
         )
 
 

@@ -13,6 +13,7 @@
 """
 import inflection
 from marshmallow.fields import MISSING_ERROR_MESSAGE, Field, Nested
+from drowsy.resource_class_registry import RegistryError
 from mqlalchemy import convert_to_alchemy_type
 from drowsy.parser import ModelQueryParamParser
 from drowsy.exc import (
@@ -220,7 +221,17 @@ class ResourceRouterABC(object):
                 result.append(ident)
         return result
 
-    def get(self, path, query_params=None, strict=True):
+    def options(self, path):
+        """Get a list of available options for this resource.
+
+        :return: The options available for this resource at the
+            supplied ``path``.
+        :rtype: list
+
+        """
+        raise NotImplementedError
+
+    def get(self, path, query_params=None, strict=True, head=False):
         """Generic API router for GET requests.
 
         :param str path: The resource path specified. This should not
@@ -230,6 +241,7 @@ class ResourceRouterABC(object):
         :type query_params: dict or None
         :param bool strict: If ``True``, bad query params will raise
             non fatal errors rather than ignoring them.
+        :param bool head: ``True`` if this was a HEAD request.
         :return: If this is a single entity query, an individual
             resource in dict form. If this is a collection query,
             a list of resources in dict form.
@@ -355,18 +367,25 @@ class ResourceRouterABC(object):
             a collection or individual resource.
 
             * Get: An individual resource in dict form.
+            * Head: An individual resource in dict form. Should only
+                be used for header info, the actual resource should not
+                be returned to a user.
             * Post: The created resource in dict form if successful.
             * Patch: The updated resource in dict form if successful.
             * Put: The replaced resource in dict form if successful.
             * Delete: ``None`` if successful.
             * Get collection: A list of resources in dict form.
+            * Head collection: A list of resources in dict form. Should
+                only be used for header info, the actual resource should
+                not be returned to a user.
             * Patch collection: ``None`` if successful.
             * Post collection: A list of created resources in dict form.
             * Delete collection: ``None`` if successful.
 
         """
-        if method.lower() == "get":
-            return self.get(path, query_params, strict)
+        if method.lower() in ("get", "head"):
+            head = True if method.lower() == "head" else False
+            return self.get(path, query_params, strict, head)
         elif method.lower() == "delete":
             return self.delete(path, query_params)
         elif method.lower() == "patch":
@@ -375,6 +394,8 @@ class ResourceRouterABC(object):
             return self.put(path, data)
         elif method.lower() == "post":
             return self.post(path, data)
+        elif method.lower() == "options":
+            return self.options(path)
         else:
             self.fail("method_not_allowed", path=path, method=method.upper())
 
@@ -469,9 +490,13 @@ class ModelResourceRouter(ResourceRouterABC):
             if split_path:
                 resource_class_name = inflection.camelize(
                     inflection.singularize(split_path[0]))+"Resource"
-                resource_cls = class_registry.get_class(resource_class_name)
-                self.resource = resource_cls(
-                    **self._get_resource_kwargs(resource_cls))
+                try:
+                    resource_cls = class_registry.get_class(
+                        resource_class_name)
+                    self.resource = resource_cls(
+                        **self._get_resource_kwargs(resource_cls))
+                except RegistryError:
+                    self.fail("resource_not_found")
         return self.resource
 
     def _get_path_objects(self, path):
@@ -829,7 +854,21 @@ class ModelResourceRouter(ResourceRouterABC):
                 return result
         self.fail("method_not_allowed", path=path, method="POST")
 
-    def get(self, path, query_params=None, strict=True):
+    def options(self, path):
+        """Generic API router for OPTIONS requests.
+
+        :param str path: The resource path specified. This should not
+            include the root ``/api`` or any versioning info.
+        :return: A list of available options for the resource at
+            the supplied ``path``. Such options may include GET,
+            POST, PUT, PATCH, DELETE, HEAD, and OPTIONS.
+
+        """
+        if self.resource is None:
+            self._deduce_resource(path)
+        return self.resource.options
+
+    def get(self, path, query_params=None, strict=True, head=False):
         """Generic API router for GET requests.
 
         :param str path: The resource path specified. This should not
@@ -839,6 +878,7 @@ class ModelResourceRouter(ResourceRouterABC):
         :type query_params: dict or None
         :param bool strict: If ``True``, bad query params will raise
             non fatal errors rather than ignoring them.
+        :param bool head: ``True`` if this was a HEAD request.
         :return: If this is a single entity query, an individual
             resource or ``None``. If this is a collection query, a
             list of resources. If it's an instance field query, the
@@ -871,7 +911,8 @@ class ModelResourceRouter(ResourceRouterABC):
                 ident=ident,
                 fields=[field_name],
                 strict=strict,
-                session=query_session)
+                session=query_session,
+                head=head)
             if result is not None and field_name in result:
                 return result[field_name]
             self.fail("resource_not_found", path=path)  # pragma: no cover
@@ -896,7 +937,7 @@ class ModelResourceRouter(ResourceRouterABC):
                                               **e.kwargs)
                     offset, limit, filters = None, None, None
                 sorts = parser.parse_sorts()
-                return resource.get_collection(
+                results = resource.get_collection(
                     filters=filters,
                     fields=fields,
                     embeds=embeds,
@@ -904,13 +945,19 @@ class ModelResourceRouter(ResourceRouterABC):
                     offset=offset,
                     limit=limit,
                     session=query_session,
-                    strict=strict)
+                    strict=strict,
+                    head=head)
+                if query_params.get("page")is not None or not offset:
+                    results.current_page = int(query_params.get("page") or 1)
+                    results.page_size = limit or resource.page_max_size
+                return results
             else:
                 result = resource.get_collection(
                     fields=fields,
                     embeds=embeds,
                     session=query_session,
-                    strict=strict)
+                    strict=strict,
+                    head=head)
                 if len(result) != 1:  # pragma: no cover
                     # failsafe, _get_path_objects will catch this first.
                     self.fail("resource_not_found", path=path)
@@ -923,7 +970,8 @@ class ModelResourceRouter(ResourceRouterABC):
                 fields=fields,
                 embeds=embeds,
                 strict=strict,
-                session=query_session)
+                session=query_session,
+                head=head)
         self.fail("resource_not_found", path=path)  # pragma: no cover
 
     def delete(self, path, query_params=None):

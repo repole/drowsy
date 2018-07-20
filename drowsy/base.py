@@ -495,6 +495,19 @@ class ResourceABC(object):
 
     """Abstract resource base class."""
 
+    @property
+    def options(self):
+        """Get the available options for this resource.
+
+        :return: A list of available options for this resource.
+            Values can include GET, POST, PUT, PATCH, DELETE, HEAD, and
+            OPTIONS.
+        :rtype: list
+
+
+        """
+        raise NotImplementedError
+
     def get(self, ident):
         """Get an instance of this resource.
 

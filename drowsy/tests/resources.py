@@ -41,6 +41,7 @@ class InvoiceResource(ModelResource):
     class Meta:
         schema_cls = InvoiceSchema
         page_max_size = page_max_100
+        options = ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"]
 
 
 class EmployeeResource(ModelResource):

@@ -366,7 +366,7 @@ class QueryParamParser(object):
 
     def parse_fields(self, fields_query_name="fields"):
         """Parse from query params the fields to include in the result.
-.
+
         :param str fields_query_name: The name of the key used to check
             for fields in the provided ``query_params``.
         :return: A list of fields to be included in the response.
