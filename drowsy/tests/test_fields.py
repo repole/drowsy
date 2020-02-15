@@ -4,13 +4,14 @@
 
     Fields tests for Drowsy.
 
-    :copyright: (c) 2018 by Nicholas Repole and contributors.
+    :copyright: (c) 2016-2019 by Nicholas Repole and contributors.
                 See AUTHORS for more details.
     :license: MIT - See LICENSE for more details.
 """
 from __future__ import unicode_literals
+from collections import namedtuple
 from drowsy.base import EmbeddableMixinABC, NestedPermissibleABC
-from drowsy.fields import Relationship
+from drowsy.fields import APIUrl, Relationship
 from drowsy.permissions import OpPermissionsABC
 from drowsy.tests.resources import AlbumResource, TrackResource
 from drowsy.tests.schemas import AlbumSchema
@@ -117,6 +118,20 @@ class DrowsyFieldTests(DrowsyTests):
             "resource"
         )
 
+    def test_field_api_url_serialize(self):
+        """Test ApiUrl serializes properly."""
+        field = APIUrl(endpoint_name="test", base_url="drowsy.com")
+        Parent = namedtuple("Parent", ["id_keys"])
+        TestObj = namedtuple("TestObj", ["test_id"])
+        field.parent = Parent(id_keys=["test_id"])
+        result = field.serialize("url", obj=TestObj(test_id=5))
+        self.assertTrue(result == "drowsy.com/test/5")
 
-
-
+    def test_field_api_url_serialize_slash(self):
+        """Test ApiUrl serialization with trailing slash base url."""
+        field = APIUrl(endpoint_name="test", base_url="drowsy.com/")
+        Parent = namedtuple("Parent", ["id_keys"])
+        TestObj = namedtuple("TestObj", ["test_id"])
+        field.parent = Parent(id_keys=["test_id"])
+        result = field.serialize("url", obj=TestObj(test_id=5))
+        self.assertTrue(result == "drowsy.com/test/5")

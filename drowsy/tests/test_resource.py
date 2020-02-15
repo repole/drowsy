@@ -4,19 +4,20 @@
 
     Resource tests for Drowsy.
 
-    :copyright: (c) 2016-2018 by Nicholas Repole and contributors.
+    :copyright: (c) 2016-2019 by Nicholas Repole and contributors.
                 See AUTHORS for more details.
     :license: MIT - See LICENSE for more details.
 """
 from __future__ import unicode_literals
 from marshmallow.exceptions import RegistryError
 import drowsy.resource_class_registry as registry
-from drowsy.exc import (
-    UnprocessableEntityError, BadRequestError, MethodNotAllowedError,
-    ResourceNotFoundError)
-from drowsy.parser import SubfilterInfo, SortInfo
 from drowsy.base import ResourceABC, NestableResourceABC, SchemaResourceABC
+from drowsy.exc import (
+    BadRequestError, MethodNotAllowedError, ResourceNotFoundError,
+    UnprocessableEntityError)
+from drowsy.parser import SubfilterInfo, SortInfo
 from drowsy.resource import ResourceCollection, PaginationInfo
+from drowsy.schema import NestedOpts
 from drowsy.tests.base import DrowsyTests
 from drowsy.tests.models import Album, Artist, Playlist, Track
 from drowsy.tests.resources import (
@@ -693,11 +694,24 @@ class DrowsyResourceTests(DrowsyTests):
             album.artist.name == "TEST" and
             result["artist"]["name"] == album.artist.name)
 
+    def test_patch_permission_denied(self):
+        """Test patch permission denial."""
+        data = {"album_id": 340, "title": "Denied"}
+        resource = AlbumResource(session=self.db_session)
+        self.assertRaises(BadRequestError, resource.patch, 340, data)
+
     def test_single_relation_item_set_fail(self):
         """Ensure we can't set a relation to a non object value."""
         album = self.db_session.query(Album).filter(
             Album.album_id == 1).all()[0]
         album_resource = AlbumResource(session=self.db_session)
+        try:
+            album_resource.patch(
+                (album.album_id, ),
+                {"artist": 5}
+            )
+        except UnprocessableEntityError as exc:
+            print(exc)
         self.assertRaises(
             UnprocessableEntityError,
             album_resource.patch,
@@ -1000,31 +1014,12 @@ class DrowsyResourceTests(DrowsyTests):
             Album.album_id == 9999).first()
         self.assertTrue(result is not None)
 
-    def test_post_commit_fail(self):
-        """Test the commit failure on posts is handled properly."""
-        from sqlalchemy.orm import sessionmaker
-        DBSession = sessionmaker(bind=self.db_engine, autoflush=False)
-        db_session = DBSession()
-        new_album = Album(
-            album_id=1,
-            title="test",
-            artist_id=1
-        )
-        db_session.add(new_album)
-        resource = AlbumResource(session=db_session)
-        self.assertRaisesCode(
-            UnprocessableEntityError,
-            "commit_failure",
-            resource.post,
-            {"album_id": 1, "title": "test2", "artist": {"artist_id": 1}}
-        )
-
-    def test_post_commit_fail_already_exists(self):
-        """Test the commit fails when the same id already exists."""
+    def test_post_fail_already_exists(self):
+        """Test post fails when the same id already exists."""
         resource = AlbumResource(session=self.db_session)
         self.assertRaisesCode(
             UnprocessableEntityError,
-            "commit_failure",
+            "validation_failure",
             resource.post,
             {"album_id": 1, "title": "test2", "artist": {"artist_id": 1}}
         )
@@ -1226,6 +1221,34 @@ class DrowsyResourceTests(DrowsyTests):
             update_data
         )
 
+    def test_patch_collection_nested_opts(self):
+        """Test nested opts work as expected."""
+        data = [{
+            "album_id": 1,
+            "tracks": [{"track_id": 1}]
+        }]
+        resource = AlbumResource(session=self.db_session)
+        resource.patch_collection(
+            data,
+            nested_opts={"tracks": NestedOpts(partial=False)})
+        db_result = self.db_session.query(Album).filter(
+            Album.album_id == 1).first()
+        self.assertTrue(db_result is not None)
+        self.assertTrue(len(db_result.tracks) == 1)
+
+    def test_patch_collection_nested_opts_fail(self):
+        """Test invalid nested opts fail."""
+        data = [{
+            "album_id": 1,
+            "tracks": [{"track_id": 1}]
+        }]
+        resource = AlbumResource(session=self.db_session)
+        self.assertRaises(
+            TypeError,
+            resource.patch_collection,
+            data,
+            nested_opts="test")
+
     # PUT TESTS
 
     def test_put_validation_fail(self):
@@ -1237,6 +1260,17 @@ class DrowsyResourceTests(DrowsyTests):
             resource.put,
             1,
             {"album_id": "bad"}
+        )
+
+    def test_put_resource_not_found(self):
+        """Test put on a nonexistant resource fails."""
+        resource = AlbumResource(session=self.db_session)
+        self.assertRaisesCode(
+            ResourceNotFoundError,
+            "resource_not_found",
+            resource.put,
+            12345,
+            {"title": "test"}
         )
 
     # PUT COLLECTION TESTS

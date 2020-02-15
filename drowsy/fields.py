@@ -4,7 +4,7 @@
 
     Marshmallow fields used in resource schemas.
 
-    :copyright: (c) 2016-2018 by Nicholas Repole and contributors.
+    :copyright: (c) 2016-2020 by Nicholas Repole and contributors.
                 See AUTHORS for more details.
     :license: MIT - See LICENSE for more details.
 """
@@ -14,6 +14,7 @@ from marshmallow.utils import get_value
 from marshmallow_sqlalchemy.fields import Related, ensure_list
 from sqlalchemy.inspection import inspect
 from drowsy.base import EmbeddableMixinABC, NestedPermissibleABC
+from drowsy.log import Loggable
 
 
 class EmbeddableRelationshipMixin(EmbeddableMixinABC):
@@ -183,10 +184,11 @@ class NestedRelated(NestedPermissibleABC, Related):
         with_parentable = False
         if self.parent.instance is not None:
             if inspect(self.parent.instance).persistent:
-                if self.many:
-                    with_parentable = True
-                elif getattr(self.parent.instance, relationship_name):
-                    with_parentable = True
+                if relationship_name in inspect(self.parent.instance).unloaded:
+                    if self.many:
+                        with_parentable = True
+                    elif getattr(self.parent.instance, relationship_name):
+                        with_parentable = True
         if with_parentable:
             in_relation_instance = self.session.query(
                 self.related_model).with_parent(
@@ -222,7 +224,6 @@ class NestedRelated(NestedPermissibleABC, Related):
             # If the parent object hasn't yet been persisted,
             # autoflush can cause an error since it is yet
             # to be fully formed.
-            # TODO - Someway of enforcing schema type?
             return self.schema.get_instance(data=obj_data)
 
     def _perform_operation(self, operation, parent, instance, errors, index,
@@ -282,12 +283,12 @@ class NestedRelated(NestedPermissibleABC, Related):
                     relation.append(instance)
                 else:
                     setattr(parent, self.name, instance)
-            elif operation == "add" and strict:
-                self._handle_op_failure(
-                    "invalid_add",
-                    errors=errors,
-                    index=index,
-                    strict=strict)
+            # elif operation == "add" and strict:
+            #     self._handle_op_failure(
+            #         "invalid_add",
+            #         errors=errors,
+            #         index=index,
+            #         strict=strict)
         elif strict:
             self._handle_op_failure(
                 "invalid_operation",
@@ -341,14 +342,18 @@ class Relationship(EmbeddableRelationshipMixin, NestedRelated):
     pass
 
 
-class APIUrl(Field):
+class APIUrl(Field, Loggable):
 
     """Text field, displays the url of the resource it's attached to."""
 
-    def __init__(self, endpoint_name, *args, **kwargs):
+    def __init__(self, endpoint_name, base_url=None, *args, **kwargs):
         """Initializes an APIUrl field.
 
-        :param endpoint_name:
+        :param str endpoint_name: The name of this URL endpoint and
+            where to access this resource.
+        :param base_url: A str or callable (with no args) that returns
+            the base part of the API url: https://example.com/api
+        :type base_url: str or callable
         :param args: Any field arguments to be passed to the super
             constructor.
         :param kwargs: Any field keyword arguments to be passed to
@@ -357,12 +362,13 @@ class APIUrl(Field):
         """
         super(APIUrl, self).__init__(*args, **kwargs)
         self.endpoint_name = endpoint_name
+        self.base_url = base_url
 
     def serialize(self, attr, obj, accessor=None):
         """Serialize an API url.
 
         :param str attr: The attribute name of this field. Unused.
-        :param str obj: The object to pull any needed info from.
+        :param obj: The object to pull any needed info from.
         :param accessor: Function used to pull values from ``obj``.
             Defaults to :func:`~marshmallow.utils.get_value`.
         :type accessor: callable or None
@@ -370,10 +376,12 @@ class APIUrl(Field):
         :return: The serialized API url value.
 
         """
-        # TODO - Better safety checking?
         accessor_func = accessor or get_value
         id_keys = self.parent.id_keys
-        result = "/" + self.endpoint_name
+        result = self.base_url or ""
+        if result and result[-1] == "/":
+            result = result[:-1]
+        result += "/" + self.endpoint_name
         for column in id_keys:
             if hasattr(obj, column):
                 val = accessor_func(column, obj, missing_)

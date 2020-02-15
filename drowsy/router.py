@@ -7,7 +7,7 @@
     Work in progress, should not be used as anything other than
     a proof of concept at this point.
 
-    :copyright: (c) 2016-2018 by Nicholas Repole and contributors.
+    :copyright: (c) 2016-2020 by Nicholas Repole and contributors.
                 See AUTHORS for more details.
     :license: MIT - See LICENSE for more details.
 """
@@ -17,16 +17,19 @@ from drowsy.resource_class_registry import RegistryError
 from mqlalchemy import convert_to_alchemy_type
 from drowsy.parser import ModelQueryParamParser
 from drowsy.exc import (
-    BadRequestError, OffsetLimitParseError, FilterParseError,
-    ResourceNotFoundError, UnprocessableEntityError, MethodNotAllowedError)
+    BadRequestError,  FilterParseError, MethodNotAllowedError,
+    OffsetLimitParseError, ParseError, ResourceNotFoundError,
+    UnprocessableEntityError)
+from drowsy.log import Loggable
 import drowsy.resource_class_registry as class_registry
 from drowsy.utils import get_error_message
 from drowsy.resource import BaseModelResource
 from drowsy.base import NestedPermissibleABC
+from drowsy.schema import NestedOpts
 from marshmallow_sqlalchemy.schema import ModelSchema
 
 
-class ResourceRouterABC(object):
+class ResourceRouterABC(Loggable):
 
     """Abstract base class for a resource based automatic router."""
 
@@ -84,20 +87,23 @@ class ResourceRouterABC(object):
         :raise DrowsyError: Raised in all other cases.
 
         """
+        message = self._get_error_message(key, **kwargs)
+        self.logger.info("Routing unsuccessful, key=%s", key)
+        self.logger.debug("Error message: %s", message)
         if key == "resource_not_found":
             raise ResourceNotFoundError(
                 code=key,
-                message=self._get_error_message(key, **kwargs),
+                message=message,
                 **kwargs)
         elif key == "method_not_allowed":
             raise MethodNotAllowedError(
                 code=key,
-                message=self._get_error_message(key, **kwargs),
+                message=message,
                 **kwargs)
         else:
             raise BadRequestError(
                 code=key,
-                message=self._get_error_message(key, **kwargs),
+                message=message,
                 **kwargs)
 
     def _get_error_message(self, key, **kwargs):
@@ -383,6 +389,8 @@ class ResourceRouterABC(object):
             * Delete collection: ``None`` if successful.
 
         """
+        self.logger.info(
+            "Router dispatching path=%s, method=%s", path, method)
         if method.lower() in ("get", "head"):
             head = True if method.lower() == "head" else False
             return self.get(path, query_params, strict, head)
@@ -483,6 +491,7 @@ class ModelResourceRouter(ResourceRouterABC):
         :param str path: The url path for this resource.
 
         """
+        self.logger.debug("Deciding which resource to use based on path.")
         if self.resource is None:
             split_path = path.split("/")
             if len(split_path) > 0 and split_path[0] == "":
@@ -496,6 +505,8 @@ class ModelResourceRouter(ResourceRouterABC):
                     self.resource = resource_cls(
                         **self._get_resource_kwargs(resource_cls))
                 except RegistryError:
+                    self.logger.debug(
+                        "Unable to find resource due to Registry error.")
                     self.fail("resource_not_found")
         return self.resource
 
@@ -602,6 +613,7 @@ class ModelResourceRouter(ResourceRouterABC):
         :param str method: Either DELETE, PATCH, POST, or PUT
         :param data: The data the child field should be set to.
         :param parent_resource: The parent of the supplied ``resource``.
+        :type parent_resource: BaseModelResource
         :param resource: The resource having one of its child
             relationships updated.
         :param path_part: The final part of the URL path.
@@ -618,36 +630,45 @@ class ModelResourceRouter(ResourceRouterABC):
             the supplied ``data`` applied to it.
 
         """
-        # TODO - Clean up some undefined behavior here.
-        # In particular, PUT and POST vs PATCH
+        self.logger.info(
+            "Updating a subresource, method=%s, parent=%s, child=%s.",
+            str(parent_resource.__class__),
+            str(resource).__class__)
         if isinstance(path_part, NestedPermissibleABC):
             relation_name = path_part.load_from or path_part.name
             if isinstance(data, list):
                 # Will attempt to add multiple items to the relation
                 try:
                     if method.lower() in ("put", "delete"):
-                        # data = {
-                        #     relation_name: data
-                        # }
-                        # result = parent_resource.patch(ident=ident, data=data)
-                        # Replacing a subresource collection this way
-                        # not currently supported.
-                        # This is due to not having a clear way to
-                        # distinguish when the relationship operation
-                        # is a "PUT" vs a partial "PATCH".
-                        self.fail(
-                            "method_not_allowed", path=path, method="PUT")
+                        nested_opts = {
+                            relation_name: NestedOpts(partial=False)
+                        }
+                        if method.lower() == "delete":
+                            data = {
+                                relation_name: []
+                            }
+                        else:
+                            data = {
+                                relation_name: data
+                            }
                     else:
+                        nested_opts = {
+                            relation_name: NestedOpts(partial=True)
+                        }
                         data = {
                             relation_name: data
                         }
-                        result = parent_resource.patch(ident=ident, data=data)
-                    return result[relation_name]
-                except UnprocessableEntityError as e:
+                    result = parent_resource.patch(ident=ident, data=data,
+                                                   nested_opts=nested_opts)
+                    if method.lower() == "delete":
+                        return None
+                    else:
+                        return result[relation_name]
+                except UnprocessableEntityError as exc:
                     reformatted_error = UnprocessableEntityError(
-                        message=e.message,
-                        code=e.kwargs.get("code", None),
-                        errors=e.errors[relation_name]
+                        message=exc.message,
+                        code=exc.kwargs.get("code", None),
+                        errors=exc.errors[relation_name]
                     )
                     raise reformatted_error
             else:
@@ -661,11 +682,11 @@ class ModelResourceRouter(ResourceRouterABC):
                         result = parent_resource.patch(
                             ident=ident, data=data)
                         return result[relation_name]
-                    except UnprocessableEntityError as e:
+                    except UnprocessableEntityError as exc:
                         reformatted_error = UnprocessableEntityError(
-                            message=e.message,
-                            code=e.kwargs.get("code", None),
-                            errors=e.errors[relation_name][0]
+                            message=exc.message,
+                            code=exc.kwargs.get("code", None),
+                            errors=exc.errors[relation_name][0]
                         )
                         raise reformatted_error
                 else:
@@ -678,11 +699,11 @@ class ModelResourceRouter(ResourceRouterABC):
                         result = parent_resource.patch(
                             ident=ident, data=data)
                         return result[relation_name]
-                    except UnprocessableEntityError as e:
+                    except UnprocessableEntityError as exc:
                         reformatted_error = UnprocessableEntityError(
-                            message=e.message,
-                            code=e.kwargs.get("code", None),
-                            errors=e.errors[relation_name]
+                            message=exc.message,
+                            code=exc.kwargs.get("code", None),
+                            errors=exc.errors[relation_name]
                         )
                         raise reformatted_error
         elif isinstance(path_part, Field):
@@ -723,6 +744,7 @@ class ModelResourceRouter(ResourceRouterABC):
             will raise this error.
 
         """
+        self.logger.info("Routed to a PUT request.")
         if self.resource is None:
             self._deduce_resource(path)
         path_objs = self._get_path_objects(path)
@@ -901,6 +923,13 @@ class ModelResourceRouter(ResourceRouterABC):
         parser = ModelQueryParamParser(query_params, context=self.context)
         fields = parser.parse_fields()
         embeds = parser.parse_embeds()
+        try:
+            subfilters = parser.parse_subfilters(strict=strict)
+        except ParseError as exc:
+            if strict:
+                raise BadRequestError(code=exc.code, message=exc.message,
+                                      **exc.kwargs)
+            subfilters = None
         # last path_part determines what type of request this is
         if isinstance(path_part, Field) and not isinstance(
                 path_part, NestedPermissibleABC):
@@ -920,25 +949,30 @@ class ModelResourceRouter(ResourceRouterABC):
                 path_part, BaseModelResource):
             # resource collection
             # any non subresource field would already have been handled
+            try:
+                filters = parser.parse_filters(
+                    resource.model,
+                    convert_key_names_func=resource.convert_key_name)
+            except FilterParseError as e:
+                if strict:
+                    raise BadRequestError(code=e.code, message=e.message,
+                                          **e.kwargs)
+                filters = None
             if not (isinstance(path_part, Nested) and not path_part.many):
-                # TODO - should split this out one by one so one failure
-                # doesn't kill everything
                 try:
                     offset_limit_info = parser.parse_offset_limit(
                         resource.page_max_size)
                     offset = offset_limit_info.offset
                     limit = offset_limit_info.limit
-                    filters = parser.parse_filters(
-                        resource.model,
-                        convert_key_names_func=resource.convert_key_name)
-                except (OffsetLimitParseError, FilterParseError) as e:
+                except OffsetLimitParseError as e:
                     if strict:
                         raise BadRequestError(code=e.code, message=e.message,
                                               **e.kwargs)
-                    offset, limit, filters = None, None, None
+                    offset, limit = None, None
                 sorts = parser.parse_sorts()
                 results = resource.get_collection(
                     filters=filters,
+                    subfilters=subfilters,
                     fields=fields,
                     embeds=embeds,
                     sorts=sorts,
@@ -955,6 +989,7 @@ class ModelResourceRouter(ResourceRouterABC):
                 result = resource.get_collection(
                     fields=fields,
                     embeds=embeds,
+                    subfilters=subfilters,
                     session=query_session,
                     strict=strict,
                     head=head)
@@ -969,6 +1004,7 @@ class ModelResourceRouter(ResourceRouterABC):
                 ident=path_part,
                 fields=fields,
                 embeds=embeds,
+                subfilters=subfilters,
                 strict=strict,
                 session=query_session,
                 head=head)
@@ -1024,7 +1060,7 @@ class ModelResourceRouter(ResourceRouterABC):
             # Delete contents of the relationship
             if path_part.many:
                 return self._subfield_update(
-                    method="put",
+                    method="delete",
                     data=[],
                     parent_resource=parent_resource,
                     resource=resource,

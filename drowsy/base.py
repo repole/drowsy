@@ -6,20 +6,22 @@
 
     Needed to avoid circular imports between resource and field.
 
-    :copyright: (c) 2016-2018 by Nicholas Repole and contributors.
+    :copyright: (c) 2016-2020 by Nicholas Repole and contributors.
                 See AUTHORS for more details.
     :license: MIT - See LICENSE for more details.
 """
+import collections
 import sys
 from marshmallow.compat import basestring
 from marshmallow.fields import Field, Nested, missing_
-from marshmallow.utils import is_collection, get_value
+from marshmallow.utils import is_collection
 from marshmallow.validate import ValidationError
 from drowsy import resource_class_registry
 from drowsy.compat import suppress
 from drowsy.exc import (
     BadRequestError, UnprocessableEntityError, MethodNotAllowedError,
     ResourceNotFoundError, MISSING_ERROR_MESSAGE)
+from drowsy.log import Loggable
 from drowsy.permissions import AllowAllOpPermissions
 from drowsy.utils import get_error_message, get_field_by_dump_name
 
@@ -122,7 +124,7 @@ class EmbeddableMixinABC(Field):
         return self._serialize_unembedded(attr, obj, *args, **kwargs)
 
 
-class NestedPermissibleABC(Nested):
+class NestedPermissibleABC(Nested, Loggable):
 
     """Abstract base class for a nested permissible field.
 
@@ -180,7 +182,10 @@ class NestedPermissibleABC(Nested):
         :rtype: dict
 
         """
-        return {"context": getattr(self.parent, 'context', {})}
+        return {
+            "context": getattr(self.parent, 'context', {}),
+            "parent_field": self
+        }
 
     @property
     def resource(self):
@@ -238,6 +243,9 @@ class NestedPermissibleABC(Nested):
         :rtype: bool
 
         """
+        # TODO - raise PermissionDenied error instead?
+        # Currently bad permissions on a nested op will get treated like
+        # any other validation error.
         permissible = permissions.check(
             operation=operation,
             obj_data=obj_data,
@@ -413,9 +421,10 @@ class NestedPermissibleABC(Nested):
             if not is_collection(value):
                 self.fail('type', input=value, type=value.__class__.__name__)
             else:
-                # Full update of this collection, reset it to empty
-                # TODO - load partial vs schema created as partial...
-                if not self.parent.partial:
+                nested_opts = self.parent.nested_opts or {}
+                nested_opt = nested_opts.get(self.name)
+                if nested_opt is not None and not nested_opt.partial:
+                    # Full update of this collection, reset it to empty
                     setattr(parent, self.name, [])
         else:
             # Treat this like a list until it comes time to actually
@@ -435,7 +444,7 @@ class NestedPermissibleABC(Nested):
                 operation = obj_data.pop("$op", None)
             is_new_obj = False
             # check whether this data has value(s) for
-            # the indentifier columns.
+            # the identifier columns.
             with suppress(TypeError):
                 instance = self._get_identified_instance(obj_data)
             if instance is None:
@@ -453,12 +462,18 @@ class NestedPermissibleABC(Nested):
                                  strict=strict,
                                  instance=instance):
                 if is_new_obj:
-                    loaded_instance, sub_errors = self._load_new_instance(
-                        obj_data)
-                    instance = loaded_instance
+                    try:
+                        loaded_instance, sub_errors = self._load_new_instance(
+                            obj_data)
+                        instance = loaded_instance
+                    except ValidationError as exc:
+                        sub_errors = exc.messages
                 else:
-                    loaded_instance, sub_errors = self._load_existing_instance(
-                        obj_data, instance)
+                    try:
+                        loaded_instance, sub_errors = (
+                            self._load_existing_instance(obj_data, instance))
+                    except ValidationError as exc:
+                        sub_errors = exc.messages
                 if sub_errors:
                     if self.many:
                         errors[i] = sub_errors
@@ -488,10 +503,10 @@ class NestedPermissibleABC(Nested):
                     strict=strict)
         if errors:
             raise ValidationError(errors)
-        return result
+        return result or getattr(parent, self.name)
 
 
-class ResourceABC(object):
+class ResourceABC(Loggable):
 
     """Abstract resource base class."""
 
@@ -652,7 +667,7 @@ class SchemaResourceABC(ResourceABC):
         :type fields: list or None
         :param embeds: A list of child resources (and/or their fields)
             to include in the response.
-        :type embeds: list or None
+        :type embeds: collection or None
         :param bool partial: Whether partial deserialization is allowed.
         :param instance: Object to associate with the schema.
         :param bool strict: If ``True``, will raise an exception when
@@ -722,7 +737,8 @@ class BaseResourceABC(SchemaResourceABC, NestableResourceABC):
                                       "%(max_limit)s."),
         "invalid_subresource_sorts": ("The subresource %(subresource_key)s "
                                       "can not have sorts applied without "
-                                      "a limit or offset being supplied.")
+                                      "a limit or offset being supplied."),
+        "permission_denied": "Permission denied."
     }
 
     class Meta(object):
@@ -746,7 +762,8 @@ class BaseResourceABC(SchemaResourceABC, NestableResourceABC):
         """
 
     def __init__(self, context=None, page_max_size=None,
-                 error_messages=None, *args, **kwargs):
+                 error_messages=None, parent_field=None, *args,
+                 **kwargs):
         """Creates a new instance of the model.
 
         :param context: Context used to alter the schema used for this
@@ -766,9 +783,14 @@ class BaseResourceABC(SchemaResourceABC, NestableResourceABC):
         :param error_messages: May optionally be provided to override
             the default error messages for this resource.
         :type error_messages: dict or None
+        :param parent_field: The field that owns this resource, if
+            applicable. Likely some variety of
+            :class:`NestedPermissibleABC`.
+        :type parent_field: Field
 
         """
         self._page_max_size = page_max_size
+        self.parent_field = parent_field
         if self._page_max_size is None and hasattr(self.opts, "page_max_size"):
             self._page_max_size = self.opts.page_max_size
         self._context = context
@@ -808,7 +830,7 @@ class BaseResourceABC(SchemaResourceABC, NestableResourceABC):
         :type subfilters: dict or None
         :param embeds: A list of relationship and relationship field
             names to be included in the result.
-        :type embeds: list or None
+        :type embeds: collection or None
         :param bool partial: Whether partial deserialization is allowed.
         :param instance: Object instance to associate with the schema.
         :param bool strict: If ``True``, will raise an exception when
@@ -822,7 +844,7 @@ class BaseResourceABC(SchemaResourceABC, NestableResourceABC):
         """
         # parse embed information
         # combine subfilters with embeds to take care of implied embeds
-        if isinstance(embeds, list):
+        if isinstance(embeds, collections.Iterable):
             embeds_subfilters = [key for key in embeds]
             if isinstance(subfilters, dict):
                 for key in subfilters:
@@ -1023,7 +1045,9 @@ class BaseResourceABC(SchemaResourceABC, NestableResourceABC):
         :param str key: Name of the field as it was serialized, using
             dot notation for nested fields.
         :return: The key converted from it's dump form to its
-            internally used form.
+            internally used form, or None if it can't successfully be
+            converted.
+        :rtype: str or None
 
         """
         schema = self.schema_cls(**self._get_schema_kwargs(self.schema_cls))
@@ -1116,7 +1140,9 @@ class BaseResourceABC(SchemaResourceABC, NestableResourceABC):
 
         """
         return {
-            "context": self.context
+            "context": self.context,
+            "parent_resource": self,
+            "strict": True  # temp until 3.0 marshmallow upgrade
         }
 
     def _get_embed_info(self, embeds=None, strict=True):
@@ -1124,7 +1150,7 @@ class BaseResourceABC(SchemaResourceABC, NestableResourceABC):
 
         :param embeds: A list of relationship and relationship field
             names to be included in the result.
-        :type embeds: list or None
+        :type embeds: collection or None
         :param bool strict: If ``True``, will raise an exception when
             bad parameters are passed. If ``False``, will quietly ignore
             any bad input and treat it as if none was provided.

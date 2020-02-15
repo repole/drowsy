@@ -4,19 +4,20 @@
 
     Router tests for Drowsy.
 
-    :copyright: (c) 2016-2018 by Nicholas Repole and contributors.
+    :copyright: (c) 2016-2019 by Nicholas Repole and contributors.
                 See AUTHORS for more details.
     :license: MIT - See LICENSE for more details.
 """
 from __future__ import unicode_literals
 import json
-from drowsy.tests.resources import AlbumResource
+from drowsy.tests.resources import (
+    AlbumResource, TrackResource, EmployeeResource)
 from drowsy.exc import (
     UnprocessableEntityError, MethodNotAllowedError, BadRequestError,
     ResourceNotFoundError)
 from drowsy.router import ModelResourceRouter, ResourceRouterABC
 from drowsy.tests.base import DrowsyTests
-from drowsy.tests.models import Track
+from drowsy.tests.models import Album, Track
 
 
 class DrowsyRouterTests(DrowsyTests):
@@ -217,7 +218,7 @@ class DrowsyRouterTests(DrowsyTests):
             path="/albums/1/album_id/toolong"
         )
 
-    def test_router_path_parts_too_long(self):
+    def test_router_get_path_after_missing(self):
         """Test a path with a part after an unfound instance fails."""
         resource = AlbumResource(session=self.db_session)
         router = ModelResourceRouter(
@@ -228,6 +229,82 @@ class DrowsyRouterTests(DrowsyTests):
             path="/albums/9999999/tracks/"
         )
 
+    def test_router_get_empty_non_list_child(self):
+        """Test getting an empty many to one fails."""
+        resource = EmployeeResource(session=self.db_session)
+        router = ModelResourceRouter(session=self.db_session,
+                                     resource=resource)
+        # note that employee 1 has no manager...
+        self.assertRaises(
+            ResourceNotFoundError,
+            router.get,
+            path="/employees/1/manager"
+        )
+
+    def test_router_subquery_parse_error(self):
+        """Test a get with bad subquery params raises an error."""
+        query_params = {
+            "tracks._subquery_": 5
+        }
+        resource = AlbumResource(session=self.db_session)
+        router = ModelResourceRouter(session=self.db_session,
+                                     resource=resource)
+        self.assertRaises(
+            BadRequestError,
+            router.get,
+            path="/album/1",
+            query_params=query_params
+        )
+
+    def test_router_subquery_parse_error_ignore(self):
+        """Test bad subquery params are ignored (non strict)."""
+        query_params = {
+            "tracks._subquery_": 5
+        }
+        resource = AlbumResource(session=self.db_session)
+        router = ModelResourceRouter(session=self.db_session,
+                                     resource=resource)
+        result = router.get(path="/album/1", query_params=query_params,
+                            strict=False)
+        self.assertTrue(result.get("album_id") == 1)
+
+    def test_router_query_filter_parse_error(self):
+        """Test a get with bad query filters raises an error."""
+        resource = AlbumResource(session=self.db_session)
+        query_params = {
+            "query": "[}"
+        }
+        router = ModelResourceRouter(session=self.db_session,
+                                     resource=resource)
+        self.assertRaises(
+            BadRequestError,
+            router.get,
+            path="/albums",
+            query_params=query_params
+        )
+
+    def test_router_query_filter_parse_error_ignore(self):
+        """Test a get with bad query filters is ignored (non strict)."""
+        resource = AlbumResource(session=self.db_session)
+        query_params = {
+            "query": "[}"
+        }
+        router = ModelResourceRouter(session=self.db_session,
+                                     resource=resource)
+        result = router.get(path="/albums", query_params=query_params,
+                            strict=False)
+        self.assertTrue(len(result) == 347)
+
+    def test_router_generic_fail(self):
+        """Test router fail method with a generic problem."""
+        resource = AlbumResource(session=self.db_session)
+        router = ModelResourceRouter(session=self.db_session,
+                                     resource=resource)
+        self.assertRaises(
+            BadRequestError,
+            router.fail,
+            key="invalid_complex_filters"
+        )
     # POST
 
     def test_router_post(self):
@@ -1036,12 +1113,12 @@ class DrowsyRouterTests(DrowsyTests):
         """Test deleting a subresource list works."""
         query_params = {}
         router = ModelResourceRouter(session=self.db_session, context={})
-        self.assertRaises(
-            MethodNotAllowedError,
-            router.delete,
-            "/albums/1/tracks",
-            query_params=query_params
-        )
+        result = router.delete("albums/1/tracks", query_params=query_params)
+        self.assertTrue(result is None)
+        album = self.db_session.query(Album).filter(
+            Album.album_id == 1
+        ).first()
+        self.assertTrue(len(album.tracks) == 0)
 
     def test_router_delete_subresource_child(self):
         """Test deleting a child subresource works."""

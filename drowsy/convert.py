@@ -4,7 +4,7 @@
 
     Convert SQLAlchemy models into Marshmallow schemas.
 
-    :copyright: (c) 2016-2018 by Nicholas Repole and contributors.
+    :copyright: (c) 2016-2020 by Nicholas Repole and contributors.
                 See AUTHORS for more details.
     :license: MIT - See LICENSE for more details.
 """
@@ -49,7 +49,7 @@ class ModelResourceConverter(ModelConverter):
         """
         super(ModelResourceConverter, self)._add_column_kwargs(
             kwargs, prop.columns[0])
-        # TODO - use different error messages?
+        # PENDING - use different error messages?
         # due to Marshmallow not having i18n support, may have
         # to use different error messages that don't have any
         # variables in them.

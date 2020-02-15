@@ -5,7 +5,7 @@
 
     SQLAlchemy models for the Chinook database.
 
-    :copyright: (c) 2016-2018 by Nicholas Repole and contributors.
+    :copyright: (c) 2016-2019 by Nicholas Repole and contributors.
                 See AUTHORS for more details.
     :license: MIT - See LICENSE for more details.
 """
@@ -92,7 +92,8 @@ class Employee(Base):
     fax = Column("Fax", Unicode(24))
     email = Column("Email", Unicode(60))
 
-    parent = orm.relationship('Employee', remote_side=[employee_id])
+    manager = orm.relationship('Employee', remote_side=[employee_id],
+                               backref="subordinates")
 
 
 class Genre(Base):
@@ -264,8 +265,8 @@ class Node(Base):
     children = orm.relationship(
         'Node',
         secondary=t_NodeToNode,
-        primaryjoin=node_id == t_NodeToNode.c.ChildNodeId,
-        secondaryjoin=node_id == t_NodeToNode.c.NodeId,
+        primaryjoin=node_id == t_NodeToNode.c.NodeId,
+        secondaryjoin=node_id == t_NodeToNode.c.ChildNodeId,
         backref="parents")
 
 
@@ -282,11 +283,11 @@ class CompositeNode(Base):
         'CompositeNode',
         secondary=t_CompositeNodeToCompositeNode,
         primaryjoin=and_(
-            t_CompositeNodeToCompositeNode.c.ChildNodeId == node_id,
-            t_CompositeNodeToCompositeNode.c.ChildCompositeId == composite_id),
-        secondaryjoin=and_(
             t_CompositeNodeToCompositeNode.c.NodeId == node_id,
             t_CompositeNodeToCompositeNode.c.CompositeId == composite_id),
+        secondaryjoin=and_(
+            t_CompositeNodeToCompositeNode.c.ChildNodeId == node_id,
+            t_CompositeNodeToCompositeNode.c.ChildCompositeId == composite_id),
         backref="parents")
 
 

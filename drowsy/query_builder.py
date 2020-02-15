@@ -4,26 +4,31 @@
 
     Tools for building SQLAlchemy queries.
 
-    :copyright: (c) 2016-2018 by Nicholas Repole and contributors.
+    :copyright: (c) 2016-2020 by Nicholas Repole and contributors.
                 See AUTHORS for more details.
     :license: MIT - See LICENSE for more details.
 """
 from collections import defaultdict
-from drowsy.parser import SortInfo, SubfilterInfo, OffsetLimitInfo
 from drowsy.fields import NestedRelated
+from drowsy.log import Loggable
+from drowsy.parser import SortInfo, SubfilterInfo
 from drowsy.utils import get_field_by_dump_name
-from sqlalchemy import func, and_
+from sqlalchemy import and_, func, or_
 from sqlalchemy.inspection import inspect
-from sqlalchemy.orm import aliased, contains_eager, joinedload, \
-    RelationshipProperty
-from sqlalchemy.orm.interfaces import MANYTOMANY, ONETOMANY
+from sqlalchemy.orm import aliased, contains_eager
+from sqlalchemy.orm.interfaces import MANYTOMANY, MANYTOONE, ONETOMANY
 from sqlalchemy.sql.elements import BinaryExpression, BooleanClauseList
 from mqlalchemy import apply_mql_filters, InvalidMQLException
 
 
-class QueryBuilder(object):
+class QueryBuilder(Loggable):
 
     """Utility class for building a SQLAlchemy query."""
+
+    def row_number_supported(self, dialect, dialect_override=False):
+        supported_dialects = ["mssql", "postgresql",
+                              "oracle"]  # , "sqlite" TESTING
+        return dialect_override or dialect in supported_dialects
 
     def _get_order_bys(self, record_class, sorts, convert_key_names_func):
         """Helper method for applying sorts.
@@ -38,13 +43,10 @@ class QueryBuilder(object):
         :type convert_key_names_func: callable
         :raise AttributeError: If a sort with an invalid attr name is
             provided.
-        :raise TypeError: If a sort not of type
-            :class:`~drowsy.parser.SortInfo` is provided.
         :return: A list of order_by parameters to be applied to a query.
         :rtype: list
 
         """
-        # TODO - ValueError/TypeError?
         result = list()
         for sort in sorts:
             attr_name = convert_key_names_func(sort.attr)
@@ -56,171 +58,6 @@ class QueryBuilder(object):
             else:
                 raise AttributeError("Invalid attribute.")
         return result
-
-    def _get_partition_by_info(self, child, parent, relationship_name):
-        """Get the partition_by needed for row_number in a subquery.
-
-        Also returns the queryable and join condition to use for a
-        MANYTOMANY relationship using an association table.
-
-        :param child: The child entity being subqueried.
-        :type child: :class:`~sqlalchemy.orm.util.AliasedClass`
-        :param parent: The parent of the child entity.
-        :type parent: :class:`~sqlalchemy.orm.util.AliasedClass` or
-            SQLAlchemy model class.
-        :param str relationship_name: Field name of the relationship.
-        :raises ValueError: If the ``child``, ``parent``, and
-            ``relationship_name`` can not be used to produce
-            a valid result.
-        :return: The partition_by, queryable, and join to use
-            for a subquery join and row_number to limit
-            subquery results.
-        :rtype: tuple
-
-        """
-        relationship = getattr(parent, relationship_name)
-        partition_by, queryable, join = (None, None, None)
-        if relationship.prop.direction == MANYTOMANY:
-            # For relationship Node.children:
-            # Given assoc table to child join:
-            # t_NodeToNode.ChildNodeId = Node.NodeId and
-            # t_NodeToNode.ChildCompositeId = Node.CompositeId
-            # and parent to assoc table join:
-            # t_NodeToNode.NodeId = Node.NodeId and
-            # t_NodeToNode.CompositeId = Node.CompositeId
-            # We want to extract:
-            # queryable: t_NodeToNode
-            # join: child.node_id == t_NodeToNode.ChildNodeId and
-            #       child.composite_id == t_NodeToNode.ChildCompositeId
-            # partition_by: t_NodeToNode.NodeId,
-            #               t_NodeToNode.CompositeId
-            # This ultimately allows us to use row_number to limit
-            # a subresource.
-            primary_expressions = []
-            secondary_expressions = []
-            joins = []
-            # Break the primaryjoin and secondaryjoin down
-            # into lists of expressions.
-            if isinstance(relationship.prop.primaryjoin, BinaryExpression):
-                primary_expressions.append(relationship.prop.primaryjoin)
-            elif isinstance(relationship.prop.primaryjoin, BooleanClauseList):
-                primary_expressions = relationship.prop.primaryjoin.clauses
-            if isinstance(relationship.prop.secondaryjoin, BinaryExpression):
-                secondary_expressions.append(relationship.prop.secondaryjoin)
-            elif isinstance(relationship.prop.secondaryjoin, BooleanClauseList):
-                secondary_expressions = relationship.prop.secondaryjoin.clauses
-            # Figure out whether the primary or secondary join is used
-            # on the child side.
-            if relationship.prop.backref is None and (
-                    relationship.prop.back_populates is not None):
-                # is the backref side of the relationship.
-                # secondary join is used for child to assoc.
-                child_expressions = secondary_expressions
-                parent_expressions = primary_expressions
-            else:
-                # not the backref side/no such side exists
-                # primary join used for child to assoc.
-                child_expressions = primary_expressions
-                parent_expressions = secondary_expressions
-            for expression in child_expressions:
-                # Find the association table
-                # Then figure out the join condition
-                left_table = expression.left.table
-                right_table = expression.right.table
-                child_table = inspect(child).mapper.local_table
-                if left_table == child_table:
-                    child_side = expression.left
-                    assoc_side = expression.right
-                    queryable = right_table
-                elif right_table == child_table:
-                    child_side = expression.right
-                    assoc_side = expression.left
-                    queryable = left_table
-                else:
-                    # No tangible reason this should get here...
-                    raise ValueError  # pragma: no cover
-                child_insp = inspect(inspect(child).class_)
-                for column_key in child_insp.columns.keys():
-                    if child_insp.columns[column_key].key == child_side.key:
-                        child_condition = getattr(child, column_key)
-                        joins.append(assoc_side == child_condition)
-            # Now get the partition by...
-            partition_by = []
-            # First, figure out the join conditions
-            for expression in parent_expressions:
-                assoc_side = None
-                if isinstance(expression, BinaryExpression):
-                    # find if left or right is the assoc table
-                    left_table = expression.left.table
-                    right_table = expression.right.table
-                    parent_table = inspect(parent).mapper.local_table
-                    if left_table == parent_table:
-                        # parent_side = expression.left
-                        assoc_side = expression.right
-                    elif right_table == parent_table:
-                        # parent_side = expression.right
-                        assoc_side = expression.left
-                if assoc_side is None:
-                    # Either no assoc_side was found, or
-                    # this wasn't a BinaryExpression
-                    raise ValueError  # pragma: no cover
-                partition_by.append(assoc_side)
-            if not joins or queryable is None or not partition_by:
-                # To reach this, one of the following conditions
-                # must be met:
-                #
-                # 1. partition_by is empty because parent_expressions
-                #    was empty
-                #
-                # 2. queryable is None because child_expressions was
-                #    empty.
-                #
-                # 3. joins is None because something unpredictable
-                #    happened with the child_expressions.
-                raise ValueError  # pragma: no cover
-            if len(joins) == 1:
-                join = joins[0]
-            else:
-                join = and_(*joins)
-        elif relationship.prop.direction == ONETOMANY:
-            # For relationship Album.tracks:
-            # Given primary (assoc table to child):
-            # Album.AlbumId = Track.AlbumId
-            # We want to extract:
-            # queryable: None
-            # join: None
-            # partition_by: track.album_id,
-            # This ultimately allows us to use row_number to limit
-            # a subresource.
-            primary_expressions = []
-            partition_by = []
-            join = None
-            queryable = None
-            # First, figure out the join conditions
-            if isinstance(relationship.prop.primaryjoin, BinaryExpression):
-                primary_expressions.append(relationship.prop.primaryjoin)
-            elif isinstance(relationship.prop.primaryjoin, BooleanClauseList):
-                primary_expressions = relationship.prop.primaryjoin.clauses
-            for expression in primary_expressions:
-                # find if left or right is the assoc table
-                left_table = expression.left.table
-                right_table = expression.right.table
-                child_table = inspect(child).mapper.local_table
-                if left_table == child_table:
-                    child_side = expression.left
-                elif right_table == child_table:
-                    child_side = expression.right
-                else:
-                    # Shouldn't ever get here...
-                    raise ValueError  # pragma: no cover
-                child_insp = inspect(inspect(child).class_)
-                for column_key in child_insp.columns.keys():
-                    if child_insp.columns[column_key].key == child_side.key:
-                        partition_by.append(getattr(child, column_key))
-                if not partition_by:
-                    # Also shouldn't ever get here...
-                    raise ValueError  # pragma: no cover
-        return partition_by, queryable, join
 
     def apply_sorts(self, query, sorts, convert_key_names_func=str):
         """Apply sorts to a provided query.
@@ -331,7 +168,380 @@ class QueryBuilder(object):
             gettext=gettext
         )
 
+
+class ModelResourceQueryBuilder(QueryBuilder):
+
+    """Class for building a SQLAlchemy query by using resources."""
+
+    def build(self, query, resource, filters, subfilters, embeds=None,
+              offset=None, limit=None, sorts=None, strict=True,
+              stack_size_limit=100, dialect_override=False):
+        """Apply joins, load options, and subfilters to a query.
+
+        NOTE: This is heavily dependent on ModelResource, which is
+        more tightly coupled than ideally it'd be. Should figure out
+        how to better separate these concerns.
+
+        :param query: A SQLAlchemy query.
+        :param resource: Base resource containing the sub resources
+            that are to be filtered.
+        :type resource: :class:`~drowsy.resource.BaseModelResource`
+        :param subfilters: Dictionary of filters, with the
+            subresource dot separated name as the key.
+        :type subfilters: dict or None
+        :param embeds: List of subresources and fields to embed.
+        :type embeds: list or None
+        :param bool strict: If ``True``, will raise an exception when
+            bad parameters are passed. If ``False``, will quietly ignore
+            any bad input and treat it as if none was provided.
+        :param stack_size_limit: Used to limit the allowable complexity
+            of the applied filters.
+        :type stack_size_limit: int or None
+        :param bool dialect_override: ``True`` will override any
+            SQL dialect limitations. Mainly used for testing.
+        :return: query with joins, load options, and subresource
+            filters applied as appropriate.
+        :raise BadRequestError: Uses the provided resource to raise
+            an error when subfilters or embeds are unable to be
+            successfully applied.
+        :raise ValueError: Due to programmer error. Generally
+            Only raised if one of the above parameters is
+            of the wrong type.
+
+        """
+        # apply filters
+        # TODO - better planning for new MQLAlchemy
+        try:
+            query = self.apply_filters(
+                query,
+                resource.model,
+                filters=filters,
+                whitelist=resource.whitelist,
+                stack_size_limit=stack_size_limit,
+                convert_key_names_func=resource.convert_key_name,
+                gettext=resource.context.get("gettext", None))
+        except InvalidMQLException as exc:
+            if strict:
+                # TODO - this could be a whitelist permission issue
+                # Currently will raise a BadRequest error...
+                resource.fail("invalid_filters", exc=exc)
+        query = resource.apply_required_filters(query)
+        if subfilters or embeds:
+            # more complex process.
+            # don't apply offset/limit/sorts here
+            # will need to be taken care of by apply_subquery_loads
+            query = self.apply_subquery_loads(
+                query=query,
+                resource=resource,
+                subfilters=subfilters,
+                embeds=embeds,
+                offset=offset,
+                limit=limit,
+                sorts=sorts,
+                strict=strict,
+                dialect_override=dialect_override
+            )
+        else:
+            # simple query, apply offset/limit/sorts now
+            if sorts:
+                for sort in sorts:
+                    if not isinstance(sort, SortInfo):
+                        raise TypeError("Each sort must be of type SortInfo.")
+                    try:
+                        query = self.apply_sorts(
+                            query, [sort], resource.convert_key_name)
+                    except AttributeError:
+                        if strict:
+                            resource.fail("invalid_sort_field", field=sort.attr)
+            try:
+                query = self.apply_offset(query, offset)
+            except ValueError:
+                if strict:
+                    resource.fail("invalid_offset_value", offset=offset)
+            try:
+                query = self.apply_limit(query, limit)
+            except ValueError:
+                if strict:
+                    resource.fail("invalid_limit_value", limit=limit)
+        return query
+
+    def _get_partition_by_info(self, child, parent, relationship_name):
+        """Get the partition_by needed for row_number in a subquery.
+
+        Also returns the queryable and join condition to use for a
+        MANYTOMANY relationship using an association table.
+
+        :param child: The child entity being subqueried.
+        :type child: :class:`~sqlalchemy.orm.util.AliasedClass`
+        :param parent: The parent of the child entity.
+        :type parent: :class:`~sqlalchemy.orm.util.AliasedClass` or
+            SQLAlchemy model class.
+        :param str relationship_name: Field name of the relationship.
+        :raises ValueError: If the ``child``, ``parent``, and
+            ``relationship_name`` can not be used to produce
+            a valid result.
+        :return: The partition_by, queryable, and join to use
+            for a subquery join and row_number to limit
+            subquery results.
+        :rtype: tuple
+
+        """
+        relationship = getattr(parent, relationship_name)
+        partition_by, queryable, join = (None, None, None)
+        if relationship.prop.direction == MANYTOMANY:
+            # For relationship Node.children:
+            # Given assoc table to child join:
+            # t_NodeToNode.ChildNodeId = Node.NodeId and
+            # t_NodeToNode.ChildCompositeId = Node.CompositeId
+            # and parent to assoc table join:
+            # t_NodeToNode.NodeId = Node.NodeId and
+            # t_NodeToNode.CompositeId = Node.CompositeId
+            # We want to extract:
+            # queryable: t_NodeToNode
+            # join: child.node_id == t_NodeToNode.ChildNodeId and
+            #       child.composite_id == t_NodeToNode.ChildCompositeId
+            # partition_by: t_NodeToNode.NodeId,
+            #               t_NodeToNode.CompositeId
+            # This ultimately allows us to use row_number to limit
+            # a subresource.
+            primary_expressions = []
+            secondary_expressions = []
+            joins = []
+            # Break the primaryjoin and secondaryjoin down
+            # into lists of expressions.
+            if isinstance(relationship.prop.primaryjoin, BinaryExpression):
+                primary_expressions.append(relationship.prop.primaryjoin)
+            elif isinstance(relationship.prop.primaryjoin, BooleanClauseList):
+                primary_expressions = relationship.prop.primaryjoin.clauses
+            if isinstance(relationship.prop.secondaryjoin, BinaryExpression):
+                secondary_expressions.append(relationship.prop.secondaryjoin)
+            elif isinstance(relationship.prop.secondaryjoin, BooleanClauseList):
+                secondary_expressions = relationship.prop.secondaryjoin.clauses
+            # default until proven otherwise:
+            parent_expressions = secondary_expressions
+            for expressions in (primary_expressions, secondary_expressions):
+                for expression in expressions:
+                    # Find the association table
+                    # Then figure out the join condition
+                    left_table = expression.left.table
+                    right_table = expression.right.table
+                    child_table = inspect(child).mapper.local_table
+                    if left_table == child_table:
+                        child_side = expression.left
+                        assoc_side = expression.right
+                        queryable = right_table
+                        child_expressions = expressions
+                    elif right_table == child_table:
+                        child_side = expression.right
+                        assoc_side = expression.left
+                        queryable = left_table
+                        child_expressions = expressions
+                    else:
+                        parent_expressions = expressions
+                        continue
+                    if child_expressions == primary_expressions:
+                        parent_expressions = secondary_expressions
+                    else:
+                        parent_expressions = primary_expressions
+                    child_insp = inspect(inspect(child).class_)
+                    for column_key in child_insp.columns.keys():
+                        if child_insp.columns[column_key].key == child_side.key:
+                            child_condition = getattr(child, column_key)
+                            joins.append(assoc_side == child_condition)
+            # Now get the partition by...
+            partition_by = []
+            # First, figure out the join conditions
+            for expression in parent_expressions:
+                assoc_side = None
+                if isinstance(expression, BinaryExpression):
+                    # find if left or right is the assoc table
+                    left_table = expression.left.table
+                    right_table = expression.right.table
+                    parent_table = inspect(parent).mapper.local_table
+                    if left_table == parent_table:
+                        # parent_side = expression.left
+                        assoc_side = expression.right
+                    elif right_table == parent_table:
+                        # parent_side = expression.right
+                        assoc_side = expression.left
+                if assoc_side is None:
+                    # Either no assoc_side was found, or
+                    # this wasn't a BinaryExpression
+                    raise ValueError  # pragma: no cover
+                partition_by.append(assoc_side)
+            if not joins or queryable is None or not partition_by:
+                # To reach this, one of the following conditions
+                # must be met:
+                #
+                # 1. partition_by is empty because parent_expressions
+                #    was empty
+                #
+                # 2. queryable is None because child_expressions was
+                #    empty.
+                #
+                # 3. joins is None because something unpredictable
+                #    happened with the child_expressions.
+                raise ValueError  # pragma: no cover
+            if len(joins) == 1:
+                join = joins[0]
+            else:
+                join = and_(*joins)
+        elif relationship.prop.direction == ONETOMANY:
+            # For relationship Album.tracks:
+            # Given primary (assoc table to child):
+            # Album.AlbumId = Track.AlbumId
+            # We want to extract:
+            # queryable: None
+            # join: None
+            # partition_by: track.album_id,
+            # This ultimately allows us to use row_number to limit
+            # a subresource.
+            primary_expressions = []
+            partition_by = []
+            join = None
+            queryable = None
+            # First, figure out the join conditions
+            if isinstance(relationship.prop.primaryjoin, BinaryExpression):
+                primary_expressions.append(relationship.prop.primaryjoin)
+            elif isinstance(relationship.prop.primaryjoin, BooleanClauseList):
+                primary_expressions = relationship.prop.primaryjoin.clauses
+            for expression in primary_expressions:
+                # find if left or right is the parent side
+                remote_side = relationship.prop.remote_side
+                left_table = expression.left.table
+                right_table = expression.right.table
+                child_table = inspect(child).mapper.local_table
+                if left_table == child_table and right_table == child_table:
+                    if expression.left in remote_side:
+                        child_side = expression.left
+                    else:
+                        child_side = expression.right
+                elif left_table == child_table:
+                    child_side = expression.left
+                elif right_table == child_table:
+                    child_side = expression.right
+                else:
+                    # Shouldn't ever get here...
+                    raise ValueError  # pragma: no cover
+                child_insp = inspect(inspect(child).class_)
+                for column_key in child_insp.columns.keys():
+                    if child_insp.columns[column_key].key == child_side.key:
+                        partition_by.append(getattr(child, column_key))
+                if not partition_by:
+                    # Also shouldn't ever get here...
+                    raise ValueError  # pragma: no cover
+        return partition_by, queryable, join
+
+    def _initiate_subquery(self, query, resource, offset, limit, sorts,
+                           supported, strict=True):
+        """Handles query limit/offset/sorts for different dialects.
+
+        To apply a limit or offset to a query that intends to load
+        nested results, we must either use row_number, or a multi query
+        process to first grab results matching the parent table,
+        and then a separate query to join to those results.
+
+        :param query:
+        :param resource:
+        :param offset:
+        :param limit:
+        :param sorts:
+        :return:
+
+        """
+        record_class = resource.model
+        id_keys = None
+        if sorts:
+            order_bys = []
+            for sort in sorts:
+                try:
+                    order_by = self._get_order_bys(
+                        record_class, [sort], resource.convert_key_name)
+                    order_bys.append(order_by)
+                except AttributeError:
+                    resource.fail()
+        else:
+            order_bys = []
+            schema = resource.make_schema()
+            id_keys = schema.id_keys
+            for attr_name in id_keys:
+                order_bys.append(
+                    getattr(
+                        record_class,
+                        attr_name).asc()
+                )
+        if limit is not None and limit < 0:
+            if strict:
+                resource.fail("invalid_limit_value", limit=limit)
+            limit = None
+        if offset is not None and offset < 0:
+            if strict:
+                resource.fail("invalid_offset_value", offset=offset)
+            limit = None
+        if limit or offset:
+            if supported:
+                # Use row_number to figure out which rows to pull
+                row_number = func.row_number().over(
+                    order_by=order_bys
+                ).label("row_number")
+                query = query.add_column(row_number)
+                # limit and offset handling
+                start = 1
+                if offset is not None:
+                    start = offset + 1
+                end = None
+                if limit is not None:
+                    end = start + limit - 1
+                query = query.from_self()
+                if start:
+                    query = query.filter(row_number >= start)
+                if end:
+                    query = query.filter(row_number <= end)
+                order_bys = [row_number]
+            else:
+                # Unable to use row_number, so unfortunately we have to
+                # run an actual query with limit/offset/order applied,
+                # and use those results to build our new query.
+                # Super inefficient.
+                temp_query = query
+                for order_by in order_bys:
+                    temp_query = temp_query.order_by(order_by)
+                if limit:
+                    temp_query = self.apply_limit(temp_query, limit)
+                if offset:
+                    temp_query = self.apply_offset(temp_query, offset)
+                results = temp_query.all()
+                if not id_keys:
+                    schema = resource.make_schema()
+                    id_keys = schema.id_keys
+                if len(id_keys) > 1:
+                    filters = []
+                    for result in results:
+                        conditions = []
+                        for id_key in id_keys:
+                            conditions.append(
+                                getattr(record_class, id_key) ==
+                                getattr(result, id_key)
+                            )
+                        filters.append(
+                            and_(*conditions)
+                        )
+                    if filters:
+                        query = query.filter(or_(*filters))
+                else:
+                    # in condition
+                    id_key = id_keys[0]
+                    values = [getattr(r, id_keys[0]) for r in results]
+                    if values:
+                        query = query.filter(
+                            getattr(record_class, id_key).in_(values))
+                query = query.from_self()
+        for order_by in order_bys:
+            query = query.order_by(order_by)
+        return query
+
     def apply_subquery_loads(self, query, resource, subfilters, embeds=None,
+                             offset=None, limit=None, sorts=None,
                              strict=True, stack_size_limit=100,
                              dialect_override=False):
         """Apply joins, load options, and subfilters to a query.
@@ -367,13 +577,13 @@ class QueryBuilder(object):
             of the wrong type.
 
         """
-        if embeds is None:
-            embeds = []
-        dialect = resource.session.bind.name
-        supported_dialects = ["mssql", "postgresql",
-                              "oracle"]  # , "sqlite" TESTING
-        if dialect_override:
-            supported_dialects.append(dialect)
+        embeds = embeds or []
+        subfilters = subfilters or {}
+        dialect_supported = self.row_number_supported(
+            dialect=resource.session.bind.name,
+            dialect_override=dialect_override)
+        query = self._initiate_subquery(
+            query, resource, offset, limit, sorts, dialect_supported, strict)
         root = {
             "children": [],
             "parent": None,
@@ -383,12 +593,14 @@ class QueryBuilder(object):
             "order": None,
             "subquery": None,
             "name": "$root",
-            "joined": False
+            "joined": False,
+            "relationship_direction": None
         }
-        leaf_nodes = []
         model_count = defaultdict(int)
         root_resource = resource
-        for subfilter_key in set().union(subfilters.keys(), embeds):
+        embeds = [e for e in embeds if e not in subfilters.keys()]
+        subfilter_keys = embeds + list(subfilters.keys())
+        for subfilter_key in subfilter_keys:
             resource = root_resource
             schema = resource.make_schema()
             split_subfilter_keys = subfilter_key.split(".")
@@ -430,10 +642,12 @@ class QueryBuilder(object):
                         resource_model = schema.opts.model
                         model_count[resource_model] += 1
                         # TODO - embedded_page_max_size for resources too?
-                        if dialect in supported_dialects:
+                        if dialect_supported:
                             default_limit = resource.page_max_size
                         else:
                             default_limit = None
+                        relationship = getattr(last_node["alias"], field.name)
+                        relationship_direction = relationship.prop.direction
                         new_node = {
                             "parent": last_node,
                             "name": field.name,
@@ -452,13 +666,14 @@ class QueryBuilder(object):
                             "children": [],
                             "joined": False,
                             "convert_key_name": resource.convert_key_name,
-                            "whitelist": resource.whitelist
+                            "whitelist": resource.whitelist,
+                            "relationship_direction": relationship_direction
                         }
                         # This takes care of embedding when is_embed
                         new_node["subquery"] = resource.apply_required_filters(
                             query=resource.session.query(new_node["alias"]),
                             alias=new_node["alias"]
-                        ).subquery()
+                        ).subquery(inspect(new_node["alias"]).name)
                         if default_limit is not None and (
                                 user_supplied_limit is not None
                                 and
@@ -531,7 +746,7 @@ class QueryBuilder(object):
                                 last_node["limit"] is not None or
                                 # 1 is not None or  # testing
                                 last_node["offset"] is not None):
-                            if dialect not in supported_dialects and strict:
+                            if not dialect_supported and strict:
                                 # dialect doesn't support limit/offset
                                 # fail accordingly
                                 root_resource.fail(
@@ -539,7 +754,7 @@ class QueryBuilder(object):
                                     subresource_key=subfilter_key)
                                 # if not strict, the below is skipped
                                 # default subquery gets used
-                            elif dialect in supported_dialects:
+                            elif dialect_supported:
                                 # NOTE - We're building up to using
                                 # row_number for limiting/offsetting
                                 # the subresource.
@@ -599,7 +814,7 @@ class QueryBuilder(object):
                                     convert_key_names_func=(
                                         resource.convert_key_name),
                                     stack_size_limit=stack_size_limit
-                                ).subquery()
+                                ).subquery(inspect(last_node["alias"]).name)
                             )
                         except InvalidMQLException as exc:
                             if not strict:
@@ -609,22 +824,6 @@ class QueryBuilder(object):
                                 "invalid_subresource_filters",
                                 exc=exc,
                                 subresource_key=subfilter_key)
-                        # If we made it this far, filters were
-                        # successfully applied.
-                        leaf_nodes.append(last_node)
-                    elif not split_subfilter_keys and is_embed:
-                        leaf_nodes.append(last_node)
-                    elif split_subfilter_keys and is_embed:
-                        # There's still another part of the
-                        # subfilter to account for.
-                        # e.g. split_key = "tracks"
-                        # split_subfilter_keys = "track_id"
-                        next_split_key = split_subfilter_keys[0]
-                        next_field = get_field_by_dump_name(
-                            schema=schema,
-                            dump_name=next_split_key)
-                        if not isinstance(next_field, NestedRelated):
-                            leaf_nodes.append(last_node)
                 else:
                     if is_embed:
                         if not split_subfilter_keys:
@@ -649,34 +848,47 @@ class QueryBuilder(object):
                         root_resource.fail(
                             "invalid_subresource",
                             subresource_key=subfilter_key)
-        # build options
-        subfilter_info = []
+        # build options and joins
         subfilter_options = []
-        for node in leaf_nodes:
-            flow = [node]
-            while node["parent"] is not None:
-                node = node["parent"]
-                if node["name"] != "$root":
-                    flow.insert(0, node)
-            subfilter_info.append(flow)
-        for subfilter in subfilter_info:
-            options = None
-            for node in subfilter:
-                if not node["joined"]:
-                    query = query.outerjoin(
-                        node["subquery"],
-                        getattr(node["parent"]["alias"], node["name"]))
-                    node["joined"] = True
-                if options is None:
-                    options = contains_eager(
-                        node["name"],
-                        alias=node["subquery"])
-                else:
-                    options = options.contains_eager(
-                        node["name"],
-                        alias=node["subquery"])
-            if options:
-                subfilter_options.append(options)
+        nodes = list()
+        node_queue = [root]
+        while node_queue:
+            node = node_queue.pop(0)
+            nodes.append(node)
+            for child in node["children"]:
+                node_queue.append(child)
+        for node in nodes:
+            if node["name"] == "$root":
+                continue
+            relationship = getattr(inspect(node["parent"]["alias"]).class_,
+                                   node["name"])
+            left = node["parent"]["subquery"]
+            if left is None:
+                left = node["parent"]["alias"]
+            join_info = relationship.prop._create_joins(
+                source_selectable=inspect(left).selectable,
+                dest_selectable=inspect(node["subquery"]).selectable,
+                source_polymorphic=True,
+                dest_polymorphic=True,
+                of_type=inspect(node["alias"]).mapper)
+            primaryjoin = join_info[0]
+            secondaryjoin = join_info[1]
+            secondary = join_info[4]
+            if secondary is not None:
+                query = query.outerjoin(secondary, primaryjoin)
+                query = query.outerjoin(node["subquery"], secondaryjoin)
+            else:
+                query = query.outerjoin(node["subquery"], primaryjoin)
+            if node["parent"] and node["parent"].get("option", None):
+                node["option"] = node["parent"]["option"].contains_eager(
+                    node["name"],
+                    alias=node["subquery"])
+            else:
+                node["option"] = contains_eager(
+                    node["name"],
+                    alias=node["subquery"])
+            if not node["children"]:
+                subfilter_options.append(node["option"])
         if subfilter_options:
             query = query.options(*subfilter_options)
         return query

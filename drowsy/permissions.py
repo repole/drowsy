@@ -4,13 +4,14 @@
 
     Classes for building permissions into an API.
 
-    :copyright: (c) 2016-2018 by Nicholas Repole and contributors.
+    :copyright: (c) 2016-2020 by Nicholas Repole and contributors.
                 See AUTHORS for more details.
     :license: MIT - See LICENSE for more details.
 """
+from drowsy.log import Loggable
 
 
-class OpPermissionsABC(object):
+class OpPermissionsABC(Loggable):
 
     """Inherit from this class to implement permissions logic."""
 
@@ -35,9 +36,8 @@ class OpPermissionsABC(object):
             info such as the current user.
         :param kwargs: Any additional arguments that may be used for
             checking permissions.
-        :raise PermissionError: Raised in cases where the provided
-            action is not permissible in the current context.
         :return: ``True`` if no error is raised.
+        :rtype: bool
 
         """
         raise NotImplementedError
@@ -66,9 +66,8 @@ class AllowAllOpPermissions(OpPermissionsABC):
             info such as the current user.
         :param kwargs: Any additional arguments that may be used for
             checking permissions.
-        :raise PermissionError: Raised in cases where the provided
-            action is not permissible in the current context.
         :return: ``True`` if no error is raised.
+        :rtype: bool
 
         """
         return True
@@ -76,7 +75,7 @@ class AllowAllOpPermissions(OpPermissionsABC):
 
 class DisallowAllOpPermissions(OpPermissionsABC):
 
-    """Allows any and all actions on a relationship."""
+    """Disallows any and all actions on a relationship."""
 
     def check(self, operation, obj_data, instance=None, context=None,
               **kwargs):
@@ -97,9 +96,8 @@ class DisallowAllOpPermissions(OpPermissionsABC):
             info such as the current user.
         :param kwargs: Any additional arguments that may be used for
             checking permissions.
-        :raise PermissionError: Raised in cases where the provided
-            action is not permissible in the current context.
         :return: ``True`` if no error is raised.
+        :rtype: bool
 
         """
         return False

@@ -4,21 +4,25 @@
 
     Base classes for building resources and model resources.
 
-    :copyright: (c) 2016-2018 by Nicholas Repole and contributors.
+    :copyright: (c) 2016-2020 by Nicholas Repole and contributors.
                 See AUTHORS for more details.
     :license: MIT - See LICENSE for more details.
 """
 import math
+from marshmallow.exceptions import ValidationError
 from marshmallow.compat import with_metaclass
 from mqlalchemy import InvalidMQLException
 from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy import inspect
 from drowsy import resource_class_registry
 from drowsy.base import BaseResourceABC
-from drowsy.query_builder import QueryBuilder, SortInfo
-from drowsy.exc import BadRequestError
+from drowsy.exc import BadRequestError, PermissionDenied
+from drowsy.fields import Relationship
+from drowsy.log import Loggable
+from drowsy.query_builder import ModelResourceQueryBuilder
 
 
-class PaginationInfo(object):
+class PaginationInfo(Loggable):
 
     """Pagination meta info container."""
 
@@ -284,7 +288,7 @@ class BaseModelResource(BaseResourceABC):
     OPTIONS_CLASS = ResourceOpts
 
     def __init__(self, session, context=None, page_max_size=None,
-                 error_messages=None):
+                 error_messages=None, parent_field=None):
         """Creates a new instance of the model.
 
         :param session: Database session to use for any resource
@@ -308,12 +312,17 @@ class BaseModelResource(BaseResourceABC):
         :param error_messages: May optionally be provided to override
             the default error messages for this resource.
         :type error_messages: dict or None
+        :param parent_field: The field that owns this resource, if
+            applicable. Likely some variety of
+            :class:`NestedPermissibleABC`.
+        :type parent_field: Field
 
         """
         super(BaseModelResource, self).__init__(
             context=context,
             page_max_size=page_max_size,
-            error_messages=error_messages)
+            error_messages=error_messages,
+            parent_field=parent_field)
         self._session = session
 
     def _get_schema_kwargs(self, schema_cls):
@@ -394,12 +403,27 @@ class BaseModelResource(BaseResourceABC):
 
     @property
     def query_builder(self):
-        """Returns a QueryBuilder object.
+        """Returns a ModelResourceQueryBuilder object.
 
         This exists mainly for inheritance purposes.
 
         """
-        return QueryBuilder()
+        return ModelResourceQueryBuilder()
+
+    def _convert_nested_opts(self, nested_opts):
+        """Converts the key names for user supplied nested opts.
+
+        :param dict nested_opts: Dictionary of nested load options.
+        :return: An equivalent dictionary with key names converted from
+            the user supplied key to one that can be used internally.
+
+        """
+        if not isinstance(nested_opts, dict):
+            raise TypeError("Supplied nested_opts must be a dict.")
+        new_nested_opts = {}
+        for key in nested_opts:
+            new_nested_opts[self.convert_key_name(key)] = nested_opts[key]
+        return new_nested_opts
 
     def _get_ident_filters(self, ident):
         """Generate MQLAlchemy filters using a resource identity.
@@ -468,7 +492,7 @@ class BaseModelResource(BaseResourceABC):
         return query
 
     def _get_query(self, session, filters, subfilters=None, embeds=None,
-                   strict=True):
+                   limit=None, offset=None, sorts=None, strict=True):
         """Used to generate a query for this request.
 
         :param session: See :meth:`get` for more info.
@@ -500,29 +524,19 @@ class BaseModelResource(BaseResourceABC):
         else:
             query = session
         # apply filters
-        # TODO - better planning for new MQLAlchemy
-        try:
-            query = self.query_builder.apply_filters(
-                query,
-                self.model,
-                filters=filters,
-                whitelist=self.whitelist,
-                stack_size_limit=100,
-                convert_key_names_func=self.convert_key_name,
-                gettext=self.context.get("gettext", None))
-        except InvalidMQLException as exc:
-            if strict:
-                self.fail("invalid_filters", exc=exc)
-        # apply subfilters and embeds
-        # errors handled with resource.fail in query_builder
-        if subfilters:
-            query = self.query_builder.apply_subquery_loads(
-                query=query,
-                resource=self,
-                subfilters=subfilters,
-                embeds=embeds
-            )
         query = self.apply_required_filters(query)
+        query = self.query_builder.build(
+            query=query,
+            resource=self,
+            filters=filters,
+            subfilters=subfilters,
+            embeds=embeds,
+            offset=offset,
+            limit=limit,
+            sorts=sorts,
+            strict=strict,
+            stack_size_limit=100,
+            dialect_override=False)
         return query
 
     @property
@@ -569,7 +583,7 @@ class BaseModelResource(BaseResourceABC):
         :type fields: list or None
         :param embeds: A list of relationship and relationship field
             names to be included in the result.
-        :type embeds: list or None
+        :type embeds: collection or None
         :param session: Optional sqlalchemy session override. May also
             be a partially formed SQLAlchemy query, allowing for
             sub-resource queries by using
@@ -609,16 +623,20 @@ class BaseModelResource(BaseResourceABC):
                 subfilters=subfilters,
                 embeds=embeds)
         except (ValueError, TypeError):
+            # TODO - Better error
             self.fail("resource_not_found", ident=ident)
-        instance = query.first()
-        if instance is not None:
-            return schema.dump(instance).data
+        instance = query.all()
+        if instance:
+            return schema.dump(instance[0]).data
         self.fail("resource_not_found", ident=ident)
 
-    def post(self, data):
+    def post(self, data, nested_opts=None):
         """Create a new resource and store it in the db.
 
         :param dict data: Data used to create a new resource.
+        :param dict|None nested_opts: Any explicit nested load options.
+            These can be used to control whether a nested resource
+            collection should be replaced entirely or only modified.
         :raise UnprocessableEntityError: If the supplied data cannot be
             processed.
         :raise MethodNotAllowedError: If this method hasn't been marked
@@ -631,27 +649,40 @@ class BaseModelResource(BaseResourceABC):
         # NOTE: No risk of BadRequestError here due to no embeds or
         # fields being passed to make_schema
         schema = self.make_schema(partial=False)
-        instance = self.model()
-        instance, errors = schema.load(
-            data, session=self.session, instance=instance)
-        if errors:
+        nested_opts = nested_opts or {}
+        try:
+            instance, dummy_errors = schema.load(
+                data,
+                session=self.session,
+                nested_opts=self._convert_nested_opts(nested_opts),
+                action="create")
+        except PermissionDenied:
             self.session.rollback()
-            self.fail("validation_failure", errors=errors)
-        else:
-            self.session.add(instance)
-            try:
-                self.session.commit()
-            except SQLAlchemyError:
-                self.session.rollback()
-                self.fail("commit_failure")
-            return schema.dump(instance).data
+            self.fail("permission_denied")
+        except ValidationError as exc:
+            self.session.rollback()
+            self.fail("validation_failure", errors=exc.messages)
+        self.session.add(instance)
+        try:
+            self.session.commit()
+        except SQLAlchemyError:  # pragma: no cover
+            self.session.rollback()
+            self.fail("commit_failure")
+        ident = []
+        for key in schema.id_keys:
+            ident.append(getattr(instance, key))
+        ident = tuple(ident)
+        return self.get(ident, embeds=self._get_embed_history(schema))
 
-    def put(self, ident, data):
+    def put(self, ident, data, nested_opts=None):
         """Replace the current object with the supplied one.
 
         :param ident: A value used to identify this resource.
             See :meth:`get` for more info.
         :param dict data: Data used to replace the resource.
+        :param dict|None nested_opts: Any explicit nested load options.
+            These can be used to control whether a nested resource
+            collection should be replaced entirely or only modified.
         :raise ResourceNotFoundError: If no such resource exists.
         :raise UnprocessableEntityError: If the supplied data cannot be
             processed.
@@ -662,32 +693,44 @@ class BaseModelResource(BaseResourceABC):
 
         """
         self._check_method_allowed("PUT")
-        obj = data
+        nested_opts = nested_opts or {}
         instance = self._get_instance(ident)
+        if not instance:
+            self.fail("resource_not_found", ident=ident)
         # NOTE: No risk of BadRequestError here due to no embeds or
         # fields being passed to make_schema
         schema = self.make_schema(
             partial=False,
             instance=instance)
-        instance, errors = schema.load(
-            obj, session=self.session)
-        if errors:
+        try:
+            schema.load(
+                data,
+                instance=instance,
+                session=self.session,
+                nested_opts=self._convert_nested_opts(nested_opts),
+                action="update")
+        except PermissionDenied:
             self.session.rollback()
-            self.fail("validation_failure", errors=errors)
-        if instance:
-            try:
-                self.session.commit()
-            except SQLAlchemyError:  # pragma: no cover
-                self.session.rollback()
-                self.fail("commit_failure")
-            return schema.dump(instance).data
+            self.fail("permission_denied")
+        except ValidationError as exc:
+            self.session.rollback()
+            self.fail("validation_failure", errors=exc.messages)
+        try:
+            self.session.commit()
+        except SQLAlchemyError:  # pragma: no cover
+            self.session.rollback()
+            self.fail("commit_failure")
+        return self.get(ident, embeds=self._get_embed_history(schema))
 
-    def patch(self, ident, data):
+    def patch(self, ident, data, nested_opts=None):
         """Update the identified resource with the supplied data.
 
         :param ident: A value used to identify this resource.
             See :meth:`get` for more info.
         :param dict data: Data used to update the resource.
+        :param dict|None nested_opts: Any explicit nested load options.
+            These can be used to control whether a nested resource
+            collection should be replaced entirely or only modified.
         :raise ResourceNotFoundError: If no such resource exists.
         :raise UnprocessableEntityError: If the supplied data cannot be
             processed.
@@ -697,26 +740,63 @@ class BaseModelResource(BaseResourceABC):
         :rtype: dict
 
         """
+        # TODO - Refactor - Only three lines here different from put.
         self._check_method_allowed("PATCH")
-        obj = data
+        nested_opts = nested_opts or {}
         instance = self._get_instance(ident)
         # NOTE: No risk of BadRequestError here due to no embeds or
         # fields being passed to make_schema
         schema = self.make_schema(
             partial=True,
             instance=instance)
-        instance, errors = schema.load(
-            obj, session=self.session)
-        if errors:
+        try:
+            schema.load(
+                data,
+                instance=instance,
+                session=self.session,
+                nested_opts=self._convert_nested_opts(nested_opts),
+                action="update")
+        except PermissionDenied:
             self.session.rollback()
-            self.fail("validation_failure", errors=errors)
-        if instance:
-            try:
-                self.session.commit()
-            except SQLAlchemyError:  # pragma: no cover
-                self.session.rollback()
-                self.fail("commit_failure")
-            return schema.dump(instance).data
+            self.fail("permission_denied")
+        except ValidationError as exc:
+            self.session.rollback()
+            self.fail("validation_failure", errors=exc.messages)
+        try:
+            self.session.commit()
+        except SQLAlchemyError:  # pragma: no cover
+            self.session.rollback()
+            self.fail("commit_failure")
+        return self.get(ident, embeds=self._get_embed_history(schema))
+
+    def _get_embed_history(self, schema, key=None):
+        """Figure out what fields were embedded from write operation.
+
+        We perform a GET after an individual resource write in order to
+        safely make sure only accessible data is returned, but need to
+        reverse engineer which fields were embedded along the way.
+
+        :param schema:
+        :param key:
+
+        """
+        results = set()
+        key = key or ""
+        found = False
+        for field_key in schema.fields:
+            field = schema.fields[field_key]
+            if isinstance(field, Relationship) and field.embedded:
+                child_key = field.load_from or field.name
+                children = self._get_embed_history(field.schema, child_key)
+                for child in children:
+                    if key:
+                        results.add(".".join([key, child]))
+                    else:
+                        results.add(child)
+                found = True
+        if not found and key:
+            results.add(key)
+        return results
 
     def delete(self, ident):
         """Delete the identified resource.
@@ -732,6 +812,14 @@ class BaseModelResource(BaseResourceABC):
         self._check_method_allowed("DELETE")
         instance = self._get_instance(ident)
         if instance:
+            schema = self.make_schema(
+                partial=True,
+                instance=instance)
+            try:
+                schema.check_permission(
+                    data={}, instance=instance, action="delete")
+            except PermissionDenied:
+                self.fail("permission_denied")
             self.session.delete(instance)
             try:
                 self.session.commit()
@@ -756,7 +844,7 @@ class BaseModelResource(BaseResourceABC):
         :type fields: list or None
         :param embeds: A list of relationship and relationship field
             names to be included in the result.
-        :type embeds: list or None
+        :type embeds: collection or None
         :param sorts: Sorts to be applied to this query.
         :type sorts: list of :class:`SortInfo`, or None
         :param offset: Standard SQL offset to be applied to the query.
@@ -798,23 +886,7 @@ class BaseModelResource(BaseResourceABC):
             session=session,
             filters=filters
         ).count()
-        query = self._get_query(
-            session=session,
-            filters=filters,
-            subfilters=subfilters,
-            embeds=embeds)
-        # sort
-        if sorts:
-            for sort in sorts:
-                if not isinstance(sort, SortInfo):
-                    raise TypeError("Each sort must be of type SortInfo.")
-                try:
-                    query = self.query_builder.apply_sorts(
-                        query, [sort], self.convert_key_name)
-                except AttributeError:
-                    if strict:
-                        self.fail("invalid_sort_field", field=sort.attr)
-        # offset/limit
+        # set up offset/limit
         if (limit is not None and
                 isinstance(self.page_max_size, int) and
                 limit > self.page_max_size):
@@ -825,25 +897,27 @@ class BaseModelResource(BaseResourceABC):
             limit = self.page_max_size
         if not offset:
             offset = 0
-        try:
-            query = self.query_builder.apply_offset(query, offset)
-        except ValueError:
-            if strict:
-                self.fail("invalid_offset_value", offset=offset)
-        try:
-            query = self.query_builder.apply_limit(query, limit)
-        except ValueError:
-            if strict:
-                self.fail("invalid_limit_value", limit=limit)
+        query = self._get_query(
+            session=session,
+            filters=filters,
+            subfilters=subfilters,
+            embeds=embeds,
+            limit=limit,
+            offset=offset,
+            sorts=sorts,
+            strict=strict)
         records = query.all()
         # get result
         dump = schema.dump(records, many=True)
         return ResourceCollection(dump.data, count)
 
-    def post_collection(self, data):
+    def post_collection(self, data, nested_opts=None):
         """Create multiple resources in the collection of resources.
 
         :param list data: List of resources to be created.
+        :param dict|None nested_opts: Any explicit nested load options.
+            These can be used to control whether a nested resource
+            collection should be replaced entirely or only modified.
         :raise UnprocessableEntityError: If the supplied data cannot be
             processed.
         :raise MethodNotAllowedError: If this method hasn't been marked
@@ -852,35 +926,55 @@ class BaseModelResource(BaseResourceABC):
 
         """
         self._check_method_allowed("POST")
+        nested_opts = nested_opts or {}
         if not isinstance(data, list):
             self.fail("invalid_collection_input", data=data)
-        for obj in data:
+        errors = {}
+        validation_failure = False
+        permission_failure = False
+        for i, obj in enumerate(data):
             # NOTE: No risk of BadRequestError here due to no embeds or
             # fields being passed to make_schema
             schema = self.make_schema(partial=False)
-            instance, errors = schema.load(obj, self.session)
-            if not errors:
+            try:
+                instance, dummy_errors = schema.load(
+                    obj,
+                    session=self.session,
+                    nested_opts=self._convert_nested_opts(nested_opts),
+                    action="create")
                 self.session.add(instance)
-            else:
-                self.session.rollback()
-                self.fail("validation_failure", errors=errors)
+            except PermissionDenied as exc:
+                errors[i] = exc.messages
+                permission_failure = True
+            except ValidationError as exc:
+                errors[i] = exc.messages
+                validation_failure = True
+        if permission_failure:
+            self.session.rollback()
+            self.fail("permission_denied", errors=errors)
+        elif validation_failure:
+            self.session.rollback()
+            self.fail("validation_failure", errors=errors)
         try:
             self.session.commit()
         except SQLAlchemyError:  # pragma: no cover
             self.session.rollback()
             self.fail("commit_failure")
 
-    def put_collection(self, data):
+    def put_collection(self, data, nested_opts=None):
         """Raises an error since this method has no obvious use.
 
         :param list data: A list of object data. Would theoretically
             be used to replace the entire collection.
+        :param dict|None nested_opts: Any explicit nested load options.
+            These can be used to control whether a nested resource
+            collection should be replaced entirely or only modified.
         :raise MethodNowAllowedError: When not overridden.
 
         """
         self.fail("method_not_allowed", method="PUT", data=data)
 
-    def patch_collection(self, data):
+    def patch_collection(self, data, nested_opts=None):
         """Update a collection of resources.
 
         Individual items may be updated accordingly as part of the
@@ -891,6 +985,9 @@ class BaseModelResource(BaseResourceABC):
             the collection; otherwise the object must already be in the
             collection. If ``$op`` is set to ``"remove"``, it is
             accordingly removed from the collection.
+        :param dict|None nested_opts: Any explicit nested load options.
+            These can be used to control whether a nested resource
+            collection should be replaced entirely or only modified.
         :raise UnprocessableEntityError: If the supplied data cannot be
             processed.
         :raise MethodNotAllowedError: If this method hasn't been marked
@@ -899,39 +996,56 @@ class BaseModelResource(BaseResourceABC):
 
         """
         self._check_method_allowed("PATCH")
+        nested_opts = nested_opts or {}
+        errors = {}
+        permission_failure = False
+        validation_failure = False
         if not isinstance(data, list):
             self.fail("invalid_collection_input")
-        for obj in data:
-            if obj.get("$op") == "add":
-                # basically a post
-                # NOTE: No risk of BadRequestError here due to no embeds
-                # or fields being passed to make_schema
-                schema = self.make_schema(partial=False)
-                instance, errors = schema.load(obj, self.session)
-                if not errors:
+        for i, obj in enumerate(data):
+            try:
+                if obj.get("$op") == "add":
+                    # basically a post
+                    # NOTE: No risk of BadRequestError here due to no embeds
+                    # or fields being passed to make_schema
+                    schema = self.make_schema(partial=False)
+                    action = "create"
+                elif obj.get("$op") == "remove":
+                    # basically a delete
+                    schema = self.make_schema(partial=True)
+                    action = "delete"
+                else:
+                    schema = self.make_schema(partial=True)
+                    action = "update"
+                instance, dummy_errors = schema.load(
+                    obj,
+                    session=self.session,
+                    nested_opts=self._convert_nested_opts(nested_opts),
+                    action=action)
+                if action == "create":
                     self.session.add(instance)
-                else:
-                    self.session.rollback()
-                    self.fail("validation_failure", errors=errors)
-            elif obj.get("$op") == "remove":
-                # basically a delete
-                # NOTE: No risk of BadRequestError here due to no embeds
-                # or fields being passed to make_schema
-                schema = self.make_schema(partial=True)
-                instance, errors = schema.load(obj, self.session)
-                if not errors:
-                    self.session.delete(instance)
-                else:
-                    self.session.rollback()
-                    self.fail("validation_failure", errors=errors)
-            else:
-                # NOTE: No risk of BadRequestError here due to no embeds
-                # or fields being passed to make_schema
-                schema = self.make_schema(partial=True)
-                instance, errors = schema.load(obj, self.session)
-                if errors:
-                    self.session.rollback()
-                    self.fail("validation_failure", errors=errors)
+                if action == "delete":
+                    if inspect(instance).persistent:
+                        self.session.delete(instance)
+                    else:
+                        # TODO - Not sure how to handle.
+                        # Should probably have schema.load raise a
+                        # validation error when deleting a non
+                        # persistent object.
+                        # Biggest hold up is proper i18n support there.
+                        pass
+            except PermissionDenied as exc:
+                errors[i] = exc.messages
+                permission_failure = True
+            except ValidationError as exc:
+                errors[i] = exc.messages
+                validation_failure = True
+        if permission_failure:
+            self.session.rollback()
+            self.fail("permission_denied", errors=errors)
+        elif validation_failure:
+            self.session.rollback()
+            self.fail("validation_failure", errors=errors)
         try:
             self.session.commit()
         except SQLAlchemyError:  # pragma: no cover
@@ -964,7 +1078,18 @@ class BaseModelResource(BaseResourceABC):
             session=session,
             filters=filters,
             strict=strict)
-        query.delete()
+        instances = query.all()
+        for instance in instances:
+            # NOTE: No risk of BadRequestError here due to no embeds
+            # or fields being passed to make_schema
+            schema = self.make_schema(partial=True)
+            try:
+                schema.check_permission(data={}, instance=instance,
+                                        action="delete")
+            except PermissionDenied:
+                self.session.rollback()
+                self.fail("permission_denied")
+            self.session.delete(instance)
         try:
             self.session.commit()
         except SQLAlchemyError:  # pragma: no cover

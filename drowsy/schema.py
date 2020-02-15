@@ -4,19 +4,41 @@
 
     Classes for building REST API friendly, model based schemas.
 
-    :copyright: (c) 2016-2018 by Nicholas Repole and contributors.
+    :copyright: (c) 2016-2020 by Nicholas Repole and contributors.
                 See AUTHORS for more details.
     :license: MIT - See LICENSE for more details.
 """
-from marshmallow.base import FieldABC, SchemaABC
 from marshmallow.compat import basestring
 from marshmallow.decorators import post_load
+from marshmallow.exceptions import ValidationError
 from marshmallow.schema import Schema, SchemaOpts
 from marshmallow_sqlalchemy.fields import get_primary_keys
 from marshmallow_sqlalchemy.schema import ModelSchema, ModelSchemaOpts
-from mqlalchemy.utils import dummy_gettext
+from sqlalchemy import inspect
 from drowsy.convert import ModelResourceConverter
+from drowsy.exc import MISSING_ERROR_MESSAGE, PermissionDenied
 from drowsy.fields import EmbeddableMixinABC
+from drowsy.log import Loggable
+from drowsy.utils import get_error_message
+
+
+class NestedOpts(object):
+
+    """Options for how to load a nested schema.
+
+    Currently only used to determine whether an entire nested collection
+    should be replaced, or appended/removed from on load.
+
+    """
+
+    def __init__(self, partial=False):
+        """Initialize load options for a nested schema.
+
+        :param bool partial: ``True`` if the entire nested collection
+            should be replaced on load.
+
+        """
+        self.partial = partial
 
 
 class ResourceSchemaOpts(SchemaOpts):
@@ -40,6 +62,10 @@ class ResourceSchemaOpts(SchemaOpts):
                     # Give a class to be used for initializing
                     # new instances for this resource.
                     instance_cls = User
+                    # Custom schema level error messages
+                    error_messages = {
+                        "permission_denied": "Don't do that."
+                    }
 
     """
     def __init__(self, meta):
@@ -52,6 +78,7 @@ class ResourceSchemaOpts(SchemaOpts):
         super(ResourceSchemaOpts, self).__init__(meta)
         self.id_keys = getattr(meta, 'id_keys', None)
         self.instance_cls = getattr(meta, 'instance_cls', None)
+        self.error_messages = getattr(meta, "error_messages", None)
 
 
 class ModelResourceSchemaOpts(ModelSchemaOpts, ResourceSchemaOpts):
@@ -98,7 +125,7 @@ class ModelResourceSchemaOpts(ModelSchemaOpts, ResourceSchemaOpts):
             meta, 'model', getattr(self, "instance_cls", None))
 
 
-class ResourceSchema(Schema):
+class ResourceSchema(Schema, Loggable):
     """Schema meant to be used with a `Resource`.
 
     Enables sub-resource embedding, context processing, error
@@ -106,11 +133,17 @@ class ResourceSchema(Schema):
 
     """
 
+    default_error_messages = {
+        "item_already_exists": "The item being created already exists.",
+        "permission_denied": "You do not have permission to take that action."
+    }
+
     OPTIONS_CLASS = ResourceSchemaOpts
 
     def __init__(self,  extra=None, only=(), exclude=(), prefix='',
                  strict=False, many=False, context=None, load_only=(),
-                 dump_only=(), partial=False, instance=None):
+                 dump_only=(), partial=False, instance=None,
+                 parent_resource=None, nested_opts=None, error_messages=None):
         """Sets additional member vars on top of `ResourceSchema`.
 
         Also runs :meth:`process_context` upon completion.
@@ -135,14 +168,24 @@ class ResourceSchema(Schema):
         :type context: dict or None
         :param load_only: Fields to be skipped during serialization.
         :type load_only: tuple or list
-        :param dump_only: Fields to be skipped during deserialization.
-        :type dump_only: tuple or list
+        :param tuple|list dump_only: Fields to be skipped during
+            deserialization.
         :param bool partial: Ignores missing fields when deserializing
             if ``True``.
         :param instance: Object instance data should be loaded into.
             If ``None`` is provided, an instance will either be
             determined using the provided data via :meth:`get_instance`,
             or if that fails a new instance will be created.
+        :param parent_resource: The parent resource that owns this
+            schema.
+        :type parent_resource: :class:`~drowsy.base.BaseResourceABC` or
+            None
+        :param nested_opts: Dictionary of :class:`NestedOpts`, where the
+            top level key is a field name for a nested field, and the
+            value for that key is a :class:`NestedOpts` instance. Used
+            to determine if the entire nested collection is to be
+            replaced, or simply appended to/removed from on load.
+        :type nested_opts: dict<str, NestedOpts>
 
         """
         super(ResourceSchema, self).__init__(
@@ -156,10 +199,61 @@ class ResourceSchema(Schema):
             load_only=load_only,
             dump_only=dump_only,
             partial=partial)
+        self.parent_resource = parent_resource
         self.instance = instance
         self._fields_by_dump_to = None
         self._fields_by_load_from = None
+        self.nested_opts = nested_opts
+        self.embedded = {}
+        messages = {}
+        for cls in reversed(self.__class__.__mro__):
+            messages.update(getattr(cls, 'default_error_messages', {}))
+        if isinstance(self.opts.error_messages, dict):
+            messages.update(self.opts.error_messages)
+        messages.update(error_messages or {})
+        self.error_messages = messages
         self.process_context()
+
+    @property
+    def root_error_key(self):
+        """Dict key for schema level errors not pertaining to a field.
+
+        Need a place to store schema level errors in a returned error
+        dict; this defines what key to use for such errors.
+
+        :return: Name of a schema level error to be included in a dict
+            of schema field errors.
+        :rtype: str
+
+        """
+        return "_schema_"
+
+    def _get_error_message(self, key, **kwargs):
+        """Get an error message based on a key name.
+
+        If the error message is a callable, kwargs are passed
+        to that callable.
+
+        If ``self.context`` has a ``"gettext" key set to a callable,
+        that callable will be passed the resulting string and any
+        key word args for the sake of translation.
+
+        :param str key: Key used to access the error messages dict.
+        :param dict kwargs: Any additional arguments that may be passed
+            to a callable error message, or used to translate and/or
+            format an error message string.
+
+        """
+        try:
+            return get_error_message(
+                error_messages=self.error_messages,
+                key=key,
+                gettext=self.context.get("gettext", None),
+                **kwargs)
+        except KeyError:
+            class_name = self.__class__.__name__
+            msg = MISSING_ERROR_MESSAGE.format(class_name=class_name, key=key)
+            raise AssertionError(msg)
 
     @property
     def fields_by_load_from(self):
@@ -202,10 +296,10 @@ class ResourceSchema(Schema):
         instance, but not to populate it.
 
         :param dict data: Data associated with this instance.
-        :return: An object instance.
+        :return: An object instance if it already exists, or None.
 
         """
-        return self.opts.instance_cls()
+        return None
 
     def embed(self, items):
         """Embed the list of field names provided.
@@ -277,32 +371,153 @@ class ResourceSchema(Schema):
             return instance
         return self.opts.instance_cls(**data)
 
-    def load(self, data, instance=None, *args, **kwargs):
+    def load(self, data, many=None, instance=None, nested_opts=None,
+             action=None, *args, **kwargs):
         """Deserialize the provided data into an object.
 
-        :param dict data: Data to be loaded into an instance.
+        :param dict|list<dict> data: Data to be loaded into an instance.
+        :param bool|None many: `True` if loading a collection. `None`
+            defers to the schema default, other values will act as an
+            override.
         :param instance: Object instance that data should be loaded
             into. If ``None`` is provided at this point or when the
             class was initialized, an instance will either be determined
             using the provided data via :meth:`get_instance`, or if that
             fails a new instance will be created.
+        :param nested_opts: Dictionary of :class:`NestedOpts`, where the
+            top level key is a field name for a nested field, and the
+            value for that key is a :class:`NestedOpts` instance. Used
+            to determine if the entire nested collection is to be
+            replaced, or simply appended to/removed from on load.
+            Overwrites the value set in the schema initializer.
+        :type nested_opts: dict<str, NestedOpts>
+        :param str|None action: Used as part of a permissions check.
+            Possible values include `"create"` if a new object is
+            being created, `"update"` is an existing object is being
+            updated, or `"delete"` if the object is to be deleted.
+            If `None` is provided, the method will deduce the action
+            based on whether an existing instance is found in the
+            database (`"update"`) or not (`"create"`). If loading a
+            collection, any value passed will be applied to all
+            objects.
         :return: An instance with the provided data loaded into it.
+        :raise ValidationError: If any errors are encountered.
+        :raise PermissionDenied: If any of the actions being taken are
+            not allowed.
 
         """
-        for key in data:
-            if (key in self.fields and
-                    isinstance(self.fields[key], (EmbeddableMixinABC,))):
-                self.embed([key])
-        # make sure self.instance isn't None
-        if instance is not None:
-            self.instance = instance
-        elif self.instance is None:
-            self.instance = self.get_instance(data)
-            if self.instance is None:
-                self.instance = self.opts.instance_cls()
-        kwargs["instance"] = self.instance
-        return super(ResourceSchema, self).load(
-            data, *args, **kwargs)
+        # inherit nested opts from parent if not already set
+        many = many if many is not None else self.many
+        supplied_action = action
+        if not many:
+            data = [data]
+        self.nested_opts = nested_opts or self.nested_opts
+        if (not self.nested_opts and
+                self.parent_resource and
+                getattr(self.parent_resource, "parent_field", None) and
+                getattr(self.parent_resource.parent_field, "parent", None) and
+                getattr(self.parent_resource.parent_field.parent,
+                        "nested_opts", None)):
+            self.nested_opts = {}
+            parent_schema = self.parent_resource.parent_field.parent
+            parent_nested_opts = parent_schema.nested_opts
+            for key in parent_nested_opts:
+                child_key = ".".join(key.split(".")[1:])
+                if child_key:
+                    self.nested_opts[child_key] = parent_nested_opts[key]
+        results = []
+        errors = {}
+        failure = False
+        for i, obj in enumerate(data):
+            # embeds
+            for key in obj:
+                if (key in self.fields and
+                        isinstance(self.fields[key], (EmbeddableMixinABC,))):
+                    self.embed([key])
+            # Handle self.instance and determine the action type
+            self.instance = instance or self.get_instance(obj)
+            persistent = False
+            if self.instance is not None and inspect(self.instance).persistent:
+                persistent = True
+            if supplied_action is None:
+                if self.instance is None or not persistent:
+                    action = "create"
+                else:
+                    action = "update"
+            else:
+                action = supplied_action
+            try:
+                if action == "create" and persistent:
+                    self.handle_preexisting_create(obj)
+                self.check_permission(obj, instance, action)
+                if self.instance is None:
+                    self.instance = self.opts.instance_cls()
+                kwargs["instance"] = self.instance
+                result, error = super(ResourceSchema, self).load(
+                    obj, many=False, *args, **kwargs)
+                results.append(result)
+                if error:
+                    errors[i] = error
+                    failure = True
+            except PermissionDenied as exc:
+                if many:
+                    # Limit returned error info to only the permission
+                    # problem.
+                    exc.valid_data = []
+                    exc.messages = {i: exc.messages}
+                    exc.data = data
+                # Always hard break on a PermissionDenied error
+                raise exc
+            except ValidationError as exc:
+                results.append({})
+                errors[i] = exc.messages
+                failure = True
+        if not many:
+            results = results[0]
+            errors = errors.get(0)
+            data = data[0]
+        if not failure or not self.strict:
+            return results, errors
+        else:
+            raise ValidationError(message=errors, data=data,
+                                  valid_data=results)
+
+    def handle_preexisting_create(self, data):
+        """Handles trying to create an object that already exists.
+
+        You'll have to override this if you want to treat the
+        ``"create"`` action like ``"update"`` on a pre-existing object.
+
+        :param dict data: The user supplied data that triggered this
+            issue.
+        :return: None
+        :raise ValidationError: If not allowed.
+
+        """
+        message = {
+            self.root_error_key: self._get_error_message("item_already_exists")
+        }
+        raise ValidationError(message=message, data=data)
+
+    def check_permission(self, data, instance, action):
+        """Checks if this action is permissible to attempt.
+
+        Does nothing by default, but can be overriden to check if a
+        create, update, or delete action is permissible before
+        performing any other validation or attempting the action.
+
+        :param dict data: The user supplied data to be deserialized.
+        :param instance: A pre-existing instance the data is to be
+            deserialized into. Should be ``None`` if not updating an
+            existing object.
+        :param str action: Either ``"create"``, ``"update"``, or
+            ``"delete"``.
+        :return: None
+        :raise PermissionDenied: If the action being taken is not
+            allowed.
+
+        """
+        pass
 
     def process_context(self):
         """Override to modify a schema based on context."""
@@ -321,7 +536,8 @@ class ModelResourceSchema(ResourceSchema, ModelSchema):
 
     def __init__(self,  extra=None, only=(), exclude=(), prefix='',
                  strict=False, many=False, context=None, load_only=(),
-                 dump_only=(), partial=False, instance=None, session=None):
+                 dump_only=(), partial=False, instance=None,
+                 parent_resource=None, nested_opts=None, session=None):
         """Sets additional member vars on top of `ModelSchema`.
 
         Also runs :meth:`process_context` upon completion.
@@ -354,6 +570,16 @@ class ModelResourceSchema(ResourceSchema, ModelSchema):
             into. If ``None`` is provided, an instance will either be
             determined using the provided data via :meth:`get_instance`,
             or if that fails a new instance will be created.
+        :param parent_resource: The parent resource that owns this
+            schema.
+        :type parent_resource: :class:`~drowsy.base.ModelResource` or
+            None
+        :param nested_opts: Dictionary of :class:`NestedOpts`, where the
+            top level key is a field name for a nested field, and the
+            value for that key is a :class:`NestedOpts` instance. Used
+            to determine if the entire nested collection is to be
+            replaced, or simply appended to/removed from on load.
+        :type nested_opts: dict<str, NestedOpts>
         :param session: SQLAlchemy database session.
 
         """
@@ -368,7 +594,9 @@ class ModelResourceSchema(ResourceSchema, ModelSchema):
             load_only=load_only,
             dump_only=dump_only,
             partial=partial,
-            instance=instance
+            instance=instance,
+            parent_resource=parent_resource,
+            nested_opts=nested_opts
         )
         # Though ModelSchema init does get called,
         # the session portion of things doesn't make
@@ -391,9 +619,12 @@ class ModelResourceSchema(ResourceSchema, ModelSchema):
             for key in keys
         }
         if None not in filters.values():
-            return self.session.query(
+            query = self.session.query(
                 self.opts.model
-            ).filter_by(
+            )
+            if self.parent_resource:
+                query = self.parent_resource.apply_required_filters(query)
+            return query.filter_by(
                 **filters
             ).first()
         return None
@@ -415,7 +646,7 @@ class ModelResourceSchema(ResourceSchema, ModelSchema):
     def load(self, data, session=None, instance=None, *args, **kwargs):
         """Deserialize the provided data into a SQLAlchemy object.
 
-        :param dict data: Data to be loaded into an instance.
+        :param dict|list<dict> data: Data to be loaded into an instance.
         :param session: Optional database session. Will be used in place
             of ``self.session`` if provided.
         :param instance: SQLAlchemy model instance data should be loaded

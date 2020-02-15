@@ -4,7 +4,7 @@
 
     Functions for parsing query info from url parameters.
 
-    :copyright: (c) 2016-2018 by Nicholas Repole and contributors.
+    :copyright: (c) 2016-2020 by Nicholas Repole and contributors.
                 See AUTHORS for more details.
     :license: MIT - See LICENSE for more details.
 """
@@ -13,10 +13,11 @@ from drowsy.utils import get_error_message
 from drowsy.exc import (
     ParseError, FilterParseError, OffsetLimitParseError,
     MISSING_ERROR_MESSAGE)
+from drowsy.log import Loggable
 import json
 
 
-class SortInfo(object):
+class SortInfo(Loggable):
     """Used to transport info regarding sorts around."""
 
     def __init__(self, attr=None, direction="ASC"):
@@ -40,7 +41,7 @@ class SortInfo(object):
         self.direction = direction
 
 
-class OffsetLimitInfo(object):
+class OffsetLimitInfo(Loggable):
     """Used to transport info regarding offsets and limits around."""
 
     def __init__(self, offset=None, limit=None):
@@ -198,7 +199,7 @@ class SubfilterInfo(OffsetLimitInfo):
         self._sorts = value
 
 
-class QueryParamParser(object):
+class QueryParamParser(Loggable):
 
     """Utility class used to parse query parameters."""
 

@@ -4,7 +4,7 @@
 
     Parser tests for Drowsy.
 
-    :copyright: (c) 2018 by Nicholas Repole and contributors.
+    :copyright: (c) 2016-2019 by Nicholas Repole and contributors.
                 See AUTHORS for more details.
     :license: MIT - See LICENSE for more details.
 """
@@ -12,13 +12,14 @@ from __future__ import unicode_literals
 from marshmallow import fields
 from marshmallow.exceptions import ValidationError
 from drowsy.convert import ModelResourceConverter
-from drowsy.schema import ResourceSchema
+from drowsy.exc import PermissionDenied
+from drowsy.schema import NestedOpts, ResourceSchema
 from drowsy.tests.base import DrowsyTests
-import drowsy.tests.resources
 from drowsy.tests.schemas import (
-    AlbumSchema, AlbumBadIdKeysSchema, AlbumCamelSchema, ArtistSchema,
+    AlbumSchema, AlbumCamelSchema, ArtistSchema,
     CustomerSchema, TrackPermissionsSchema, TrackSchema
 )
+import drowsy.tests.resources
 from drowsy.tests.models import Album, Track
 
 
@@ -36,7 +37,7 @@ class DrowsySchemaTests(DrowsyTests):
         class TestSchema(ResourceSchema):
             class Meta:
                 instance_cls = Album
-        self.assertTrue(isinstance(TestSchema().get_instance({}), Album))
+        self.assertIsNone(TestSchema().get_instance({}))
 
     def test_schema_default_id_keys(self):
         """Test a ResourceSchema handles given id_keys properly."""
@@ -78,7 +79,7 @@ class DrowsySchemaTests(DrowsyTests):
                 id_keys = ["album_id"]
 
             def get_instance(self, data):
-                """Allows testing of the resource property.."""
+                """Allows testing of the resource property."""
                 return None
         schema = TestSchema()
         result = schema.make_instance({"album_id": 1, "title": "test"})
@@ -171,6 +172,33 @@ class DrowsySchemaTests(DrowsyTests):
         result, errors = schema.load(data, partial=True)
         self.assertTrue(result.album.album_id == 347)
 
+    def test_many_load(self):
+        """Test loading many objects at once works."""
+        data = [
+            {"track_id": 1, "name": "test1"},
+            {"track_id": 2, "name": "test2"},
+            {"track_id": 3, "name": "test3"},
+            {"track_id": 4, "name": "test4"},
+            {"track_id": 5, "name": "test5"}
+        ]
+        schema = TrackSchema(session=self.db_session, many=True)
+        result, errors = schema.load(data, partial=True, many=True)
+        self.assertTrue(len(result) == 5 and len(errors.keys()) == 0)
+
+    def test_many_load_failure(self):
+        """Test loading many objects with bad data fails accordingly."""
+        data = [
+            {"track_id": 1, "name": 1},
+            {"track_id": 2, "name": 2},
+            {"track_id": 3, "name": "test3"},
+            {"track_id": 4, "name": "test4"},
+            {"track_id": 5, "name": "test5"}
+        ]
+        schema = TrackSchema(session=self.db_session, many=True)
+        result, errors = schema.load(data, partial=True, many=True)
+        self.assertTrue(len(errors.keys()) == 2)
+        self.assertTrue(0 in errors and 1 in errors)
+
     def test_base_instance_relationship_set_child(self):
         """Test setting a child when loading with a base instance."""
         album = self.db_session.query(Album).filter(
@@ -225,23 +253,6 @@ class DrowsySchemaTests(DrowsyTests):
             data
         )
 
-    def test_relationship_invalid_add(self):
-        """Test trying to add a child to it's own parent fails."""
-        data = {
-            "album_id": 1,
-            "tracks": [{
-                "track_id": 1,
-                "$op": "add"
-            }]
-        }
-        schema = AlbumSchema(
-            session=self.db_session, partial=True, strict=True)
-        self.assertRaises(
-            ValidationError,
-            schema.load,
-            data
-        )
-
     def test_relationship_invalid_op(self):
         """Test an invalid operation on a relationship fails."""
         data = {
@@ -258,3 +269,46 @@ class DrowsySchemaTests(DrowsyTests):
             schema.load,
             data
         )
+
+    def test_instance_relationship_nested_opts(self):
+        """Test nested opts enable complete relation replacement."""
+        data = {
+            "album_id": 2,
+            "tracks": [
+                {"track_id": 1}
+            ]
+        }
+        nested_opts = {"tracks": NestedOpts(partial=False)}
+        schema = AlbumSchema(session=self.db_session, nested_opts=nested_opts,
+                             partial=True)
+        result, errors = schema.load(data)
+        self.assertTrue(result.tracks[0].track_id == 1)
+        self.assertTrue(len(result.tracks) == 1)
+
+    def test_nested_relationship_nested_opts(self):
+        """Test nested opts enable complete relation replacement."""
+        data = {
+            "album_id": 2,
+            "tracks": [
+                {"track_id": 1,
+                 "playlists": [
+                     {"playlist_id": 1}
+                 ]}
+            ]
+        }
+        nested_opts = {
+            "tracks": NestedOpts(partial=False),
+            "tracks.playlists": NestedOpts(partial=False)}
+        schema = AlbumSchema(session=self.db_session, nested_opts=nested_opts,
+                             partial=True)
+        result, errors = schema.load(data)
+        self.assertTrue(len(result.tracks[0].playlists) == 1)
+
+    def test_permission_denied(self):
+        """Test permission denied errors work as expected."""
+        data = {
+            "album_id": 340,
+            "title": "Denied"
+        }
+        schema = AlbumSchema(session=self.db_session, partial=True)
+        self.assertRaises(PermissionDenied, schema.load, data)

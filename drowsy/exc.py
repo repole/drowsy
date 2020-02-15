@@ -4,10 +4,11 @@
 
     Exceptions for Drowsy.
 
-    :copyright: (c) 2016-2018 by Nicholas Repole and contributors.
+    :copyright: (c) 2016-2020 by Nicholas Repole and contributors.
                 See AUTHORS for more details.
     :license: MIT - See LICENSE for more details.
 """
+from marshmallow.exceptions import ValidationError
 
 MISSING_ERROR_MESSAGE = (
     "An error was raised by `{class_name}` with the key `{key}`, "
@@ -52,6 +53,24 @@ class UnprocessableEntityError(DrowsyError):
         super(UnprocessableEntityError, self).__init__(code, message, **kwargs)
 
 
+class PermissionDeniedError(DrowsyError):
+
+    """Exception for when provided data is unable to be deserialized."""
+
+    def __init__(self, code, message, errors, **kwargs):
+        """Initializes a new permission denied error.
+
+        :param str code: Error code for easier lookup.
+        :param str message: Description of the error.
+        :param dict errors: A field by field breakdown of errors.
+        :param dict kwargs: Any additional arguments may be stored along
+            with the message and errors as well.
+
+        """
+        self.errors = errors
+        super(PermissionDeniedError, self).__init__(code, message, **kwargs)
+
+
 class BadRequestError(DrowsyError):
 
     """Exception for when a request is unable to be processed."""
@@ -93,3 +112,9 @@ class FilterParseError(ParseError):
 
     pass
 
+
+class PermissionDenied(ValidationError):
+
+    """Generic exception class for an unauthorized action."""
+
+    pass

@@ -9,6 +9,7 @@
     :license: MIT - See LICENSE for more details.
 """
 from drowsy.convert import CamelModelResourceConverter
+from drowsy.exc import PermissionDenied
 from drowsy.fields import Relationship
 from drowsy.permissions import DisallowAllOpPermissions
 from drowsy.schema import ModelResourceSchema
@@ -73,6 +74,23 @@ class AlbumSchema(ModelResourceSchema):
     class Meta:
         model = Album
         id_keys = ["album_id"]
+
+    def check_permission(self, data, instance, action):
+        """Checks if this action is permissible to attempt.
+
+        :param dict data: The user supplied data to be deserialized.
+        :param instance: A pre-existing instance the data is to be
+            deserialized into. Should be ``None`` if not updating an
+            existing object.
+        :param str action: Either ``"create"``, ``"update"``, or
+            ``"delete"``.
+        :return: None
+        :raise PermissionDenied: If the action being taken is not
+            allowed.
+
+        """
+        if data.get("album_id") == 340 and data.get("title") == "Denied":
+            raise PermissionDenied("Don't do that.")
 
 
 class ArtistSchema(ModelResourceSchema):
