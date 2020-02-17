@@ -11,19 +11,17 @@
     :license: MIT - See LICENSE for more details.
 """
 import collections
-import sys
-from marshmallow.compat import basestring
 from marshmallow.fields import Field, Nested, missing_
 from marshmallow.utils import is_collection
 from marshmallow.validate import ValidationError
 from drowsy import resource_class_registry
-from drowsy.compat import suppress
+from contextlib import suppress
 from drowsy.exc import (
     BadRequestError, UnprocessableEntityError, MethodNotAllowedError,
     ResourceNotFoundError, MISSING_ERROR_MESSAGE)
 from drowsy.log import Loggable
 from drowsy.permissions import AllowAllOpPermissions
-from drowsy.utils import get_error_message, get_field_by_dump_name
+from drowsy.utils import get_error_message, get_field_by_data_key
 
 
 class EmbeddableMixinABC(Field):
@@ -200,7 +198,7 @@ class NestedPermissibleABC(Nested, Loggable):
                 if isinstance(self.nested, type) and \
                         issubclass(self.nested, BaseResourceABC):
                     resource_cls = self.nested
-                elif isinstance(self.nested, basestring):
+                elif isinstance(self.nested, str):
                     resource_cls = resource_class_registry.get_class(
                         self.nested)
                 else:
@@ -376,7 +374,7 @@ class NestedPermissibleABC(Nested, Loggable):
 
         """
         try:
-            self.fail(key, **kwargs)
+            raise self.make_error(key, **kwargs)
         except ValidationError as exc:
             if index is not None:
                 errors[index] = {"$op": exc.messages}
@@ -413,13 +411,15 @@ class NestedPermissibleABC(Nested, Loggable):
 
         """
         permissions = self.permissions_cls(**self._get_permission_cls_kwargs())
-        strict = self.parent.strict
+        # TODO - Sort out strict stuff
+        strict = False
         result = None
         parent = self.parent.instance
         if self.many:
             obj_datum = value
             if not is_collection(value):
-                self.fail('type', input=value, type=value.__class__.__name__)
+                raise self.make_error('type', input=value,
+                                      type=value.__class__.__name__)
             else:
                 nested_opts = self.parent.nested_opts or {}
                 nested_opt = nested_opts.get(self.name)
@@ -434,7 +434,7 @@ class NestedPermissibleABC(Nested, Loggable):
         # each item in value is a sub instance
         for i, obj_data in enumerate(obj_datum):
             if not isinstance(obj_data, dict):
-                self.fail(
+                raise self.make_error(
                     'type',
                     input=obj_data,
                     type=obj_data.__class__.__name__)
@@ -459,19 +459,21 @@ class NestedPermissibleABC(Nested, Loggable):
                                  operation=operation,
                                  index=i if self.many else None,
                                  errors=errors,
-                                 strict=strict,
+                                 strict=True,
                                  instance=instance):
+                loaded_instance = None
                 if is_new_obj:
                     try:
-                        loaded_instance, sub_errors = self._load_new_instance(
-                            obj_data)
+                        loaded_instance = self._load_new_instance(obj_data)
                         instance = loaded_instance
+                        sub_errors = {}
                     except ValidationError as exc:
                         sub_errors = exc.messages
                 else:
                     try:
-                        loaded_instance, sub_errors = (
+                        loaded_instance = (
                             self._load_existing_instance(obj_data, instance))
+                        sub_errors = {}
                     except ValidationError as exc:
                         sub_errors = exc.messages
                 if sub_errors:
@@ -479,28 +481,26 @@ class NestedPermissibleABC(Nested, Loggable):
                         errors[i] = sub_errors
                     else:
                         errors = sub_errors
-                    if strict:
-                        raise ValidationError(errors)
-                    else:  # pragma: no cover
-                        # This line is hit in testing
-                        # but cpython's optimizer skips it
-                        continue
+                    continue
                 if (instance is None and self.many) or (
                         instance != loaded_instance):  # pragma: no cover
                     # This acts as a fail safe
                     try:
-                        self.fail("invalid_operation", **kwargs)
+                        raise self.make_error("invalid_operation", **kwargs)
                     except ValidationError as exc:
                         errors[i] = exc.messages
-                        if strict:
-                            raise ValidationError(errors)
+                        if self.many:
+                            errors[i] = sub_errors
+                        else:
+                            errors = sub_errors
+                        continue
                 result = self._perform_operation(
                     operation=operation,
                     parent=parent,
                     instance=loaded_instance,
                     index=i,
                     errors=errors,
-                    strict=strict)
+                    strict=True)
         if errors:
             raise ValidationError(errors)
         return result or getattr(parent, self.name)
@@ -911,7 +911,7 @@ class BaseResourceABC(SchemaResourceABC, NestableResourceABC):
         """
         # NOTE: No risk of BadRequestError here due to no embeds or
         # fields being passed to make_schema
-        field = get_field_by_dump_name(self.schema, dump_name=name)
+        field = get_field_by_data_key(self.schema, data_key=name)
         if isinstance(field, NestedPermissibleABC):
             return field.resource
         raise ValueError("The provided name is not a valid subresource.")
@@ -1030,7 +1030,7 @@ class BaseResourceABC(SchemaResourceABC, NestableResourceABC):
                         from drowsy.compat import suppress
                         with suppress(ValueError, TypeError):
                             subresource = self.make_subresource(
-                                field.dump_to or key)
+                                field.data_key or key)
                             return subresource.whitelist(".".join(split_keys))
                     # attempting to use the subresource didn't work
                     # fall back to simply using the field's schema
@@ -1055,7 +1055,7 @@ class BaseResourceABC(SchemaResourceABC, NestableResourceABC):
         result_keys = []
         while split_keys:
             key = split_keys.pop(0)
-            field = get_field_by_dump_name(schema, key)
+            field = get_field_by_data_key(schema, key)
             if field is not None:
                 result_keys.append(field.name)
                 if not split_keys:
@@ -1067,7 +1067,7 @@ class BaseResourceABC(SchemaResourceABC, NestableResourceABC):
                         from drowsy.compat import suppress
                         with suppress(ValueError, TypeError):
                             subresource = self.make_subresource(
-                                field.dump_to or key)
+                                field.data_key or key)
                             result_keys += subresource.convert_key_name(
                                 ".".join(split_keys)
                             ).split(".")
@@ -1093,11 +1093,7 @@ class BaseResourceABC(SchemaResourceABC, NestableResourceABC):
 
         """
         if callable(self._page_max_size):
-            if sys.version_info.major == 2:  # pragma: no cover
-                func = self._page_max_size.__func__
-            else:
-                func = self._page_max_size
-            return func(self)
+            return self._page_max_size(self)
         elif self._page_max_size is not None:
             if self._page_max_size == 0:
                 return None
@@ -1141,8 +1137,7 @@ class BaseResourceABC(SchemaResourceABC, NestableResourceABC):
         """
         return {
             "context": self.context,
-            "parent_resource": self,
-            "strict": True  # temp until 3.0 marshmallow upgrade
+            "parent_resource": self
         }
 
     def _get_embed_info(self, embeds=None, strict=True):

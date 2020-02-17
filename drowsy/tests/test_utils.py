@@ -12,7 +12,7 @@ from __future__ import unicode_literals
 from mqlalchemy.utils import dummy_gettext
 from drowsy.tests.base import DrowsyTests
 from drowsy.tests.schemas import MsAlbumSchema
-from drowsy.utils import get_field_by_dump_name, get_error_message
+from drowsy.utils import get_field_by_data_key, get_error_message
 
 
 class DrowsyUtilsTests(DrowsyTests):
@@ -30,10 +30,10 @@ class DrowsyUtilsTests(DrowsyTests):
             1
         )
 
-    def test_get_field_by_dump_name(self):
-        """Test get_field_by_dump_name works with old style Schema."""
+    def test_get_field_by_data_key(self):
+        """Test get_field_by_data_key works with old style Schema."""
         self.assertTrue(
-            get_field_by_dump_name(schema=MsAlbumSchema(), dump_name="albumId")
+            get_field_by_data_key(schema=MsAlbumSchema(), data_key="albumId")
         )
 
     def test_get_error_message(self):

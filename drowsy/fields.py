@@ -8,9 +8,8 @@
                 See AUTHORS for more details.
     :license: MIT - See LICENSE for more details.
 """
-from marshmallow.compat import basestring
 from marshmallow.fields import Field, missing_
-from marshmallow.utils import get_value
+from marshmallow.utils import EXCLUDE, get_value
 from marshmallow_sqlalchemy.fields import Related, ensure_list
 from sqlalchemy.inspection import inspect
 from drowsy.base import EmbeddableMixinABC, NestedPermissibleABC
@@ -32,7 +31,7 @@ class EmbeddableRelationshipMixin(EmbeddableMixinABC):
         url = ""
         if self.parent and "self" in self.parent.fields:
             url += self.parent.fields["self"].serialize("self", obj)
-        relationship_name = self.dump_to or self.name
+        relationship_name = self.data_key or self.name
         url += "/" + relationship_name
         return url
 
@@ -76,7 +75,7 @@ class EmbeddableRelationshipMixin(EmbeddableMixinABC):
         # an error.
         if self.required and not self.parent.partial:
             self.embedded = True
-        elif isinstance(value, basestring):
+        elif isinstance(value, str):
             self.embedded = False
         return super(EmbeddableRelationshipMixin, self).deserialize(
             value, *args, **kwargs
@@ -312,7 +311,8 @@ class NestedRelated(NestedPermissibleABC, Related):
             session=self.session,
             instance=instance,
             partial=True,
-            many=False)
+            many=False,
+            unknown=EXCLUDE)
 
     def _load_new_instance(self, obj_data):
         """Deserialize the provided data into a new SQLAlchemy instance.
@@ -327,7 +327,8 @@ class NestedRelated(NestedPermissibleABC, Related):
             session=self.session,
             instance=self.related_model(),
             partial=False,
-            many=False)
+            many=False,
+            unknown=EXCLUDE)
 
 
 class Relationship(EmbeddableRelationshipMixin, NestedRelated):
@@ -364,7 +365,7 @@ class APIUrl(Field, Loggable):
         self.endpoint_name = endpoint_name
         self.base_url = base_url
 
-    def serialize(self, attr, obj, accessor=None):
+    def serialize(self, attr, obj, accessor=None, **kwargs):
         """Serialize an API url.
 
         :param str attr: The attribute name of this field. Unused.
@@ -384,6 +385,6 @@ class APIUrl(Field, Loggable):
         result += "/" + self.endpoint_name
         for column in id_keys:
             if hasattr(obj, column):
-                val = accessor_func(column, obj, missing_)
+                val = accessor_func(obj, column, missing_)
                 result += "/" + str(val)
         return result

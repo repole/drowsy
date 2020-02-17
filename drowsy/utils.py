@@ -4,11 +4,10 @@
 
     Utility functions for Drowsy.
 
-    :copyright: (c) 2016-2018 by Nicholas Repole and contributors.
+    :copyright: (c) 2016-2020 by Nicholas Repole and contributors.
                 See AUTHORS for more details.
     :license: MIT - See LICENSE for more details.
 """
-from marshmallow.compat import basestring
 
 
 def get_error_message(error_messages, key, gettext=None, **kwargs):
@@ -39,31 +38,31 @@ def get_error_message(error_messages, key, gettext=None, **kwargs):
     """
     error = error_messages[key]
     msg = error if not callable(error) else error(**kwargs)
-    if isinstance(msg, basestring):
+    if isinstance(msg, str):
         if callable(gettext):
             return gettext(msg, **kwargs)
         return msg % kwargs
     return msg
 
 
-def get_field_by_dump_name(schema, dump_name):
-    """Helper method to get a field from schema by dump name.
+def get_field_by_data_key(schema, data_key):
+    """Helper method to get a field from schema by data_key name.
 
     :param schema: Instantiated schema.
     :type schema: :class:`~marshmallow.schema.Schema`
-    :param str dump_name: Name as the field as it was serialized.
+    :param str data_key: Name as the field as it was serialized.
     :return: The schema field if found, None otherwise.
     :rtype: :class:`~marshmallow.fields.Field` or None
 
     """
     field = None
-    if hasattr(schema, "fields_by_dump_to"):
-        if dump_name in schema.fields_by_dump_to:
-            field = schema.fields_by_dump_to[dump_name]
+    if hasattr(schema, "fields_by_data_key"):
+        if data_key in schema.fields_by_data_key:
+            field = schema.fields_by_data_key[data_key]
     else:
         for field_name in schema.fields:
-            field_dump_name = schema.fields[field_name].dump_to or field_name
-            if field_dump_name == dump_name:
+            field_data_name = schema.fields[field_name].data_key or field_name
+            if field_data_name == data_key:
                 field = schema.fields[field_name]
                 break
     return field

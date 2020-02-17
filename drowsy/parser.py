@@ -8,7 +8,6 @@
                 See AUTHORS for more details.
     :license: MIT - See LICENSE for more details.
 """
-from marshmallow.compat import basestring
 from drowsy.utils import get_error_message
 from drowsy.exc import (
     ParseError, FilterParseError, OffsetLimitParseError,
@@ -31,9 +30,9 @@ class SortInfo(Loggable):
             are not of the specified type.
 
         """
-        if not isinstance(attr, basestring):
+        if not isinstance(attr, str):
             raise TypeError("attr must be a string.")
-        if not isinstance(direction, basestring):
+        if not isinstance(direction, str):
             raise TypeError("direction must be a string.")
         if direction != "DESC" and direction != "ASC":
             raise ValueError("direction must be ASC or DESC.")
@@ -743,7 +742,7 @@ class ModelQueryParamParser(QueryParamParser):
             value = [value]
         result = []
         for item in value:
-            if isinstance(item, basestring) and item.startswith("{"):
+            if isinstance(item, str) and item.startswith("{"):
                 try:
                     query = json.loads(item)
                     if attr_name:

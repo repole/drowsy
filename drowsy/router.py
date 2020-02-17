@@ -12,21 +12,22 @@
     :license: MIT - See LICENSE for more details.
 """
 import inflection
-from marshmallow.fields import MISSING_ERROR_MESSAGE, Field, Nested
-from drowsy.resource_class_registry import RegistryError
+from marshmallow.fields import Field, Nested
+from marshmallow_sqlalchemy.schema import (
+    SQLAlchemyAutoSchema, SQLAlchemySchema)
 from mqlalchemy import convert_to_alchemy_type
-from drowsy.parser import ModelQueryParamParser
+from drowsy.base import NestedPermissibleABC
 from drowsy.exc import (
     BadRequestError,  FilterParseError, MethodNotAllowedError,
-    OffsetLimitParseError, ParseError, ResourceNotFoundError,
-    UnprocessableEntityError)
+    MISSING_ERROR_MESSAGE, OffsetLimitParseError, ParseError,
+    ResourceNotFoundError, UnprocessableEntityError)
 from drowsy.log import Loggable
-import drowsy.resource_class_registry as class_registry
-from drowsy.utils import get_error_message
+from drowsy.parser import ModelQueryParamParser
 from drowsy.resource import BaseModelResource
-from drowsy.base import NestedPermissibleABC
+import drowsy.resource_class_registry as class_registry
+from drowsy.resource_class_registry import RegistryError
 from drowsy.schema import NestedOpts
-from marshmallow_sqlalchemy.schema import ModelSchema
+from drowsy.utils import get_error_message
 
 
 class ResourceRouterABC(Loggable):
@@ -467,7 +468,7 @@ class ModelResourceRouter(ResourceRouterABC):
         """
         result = super(ModelResourceRouter, self)._get_schema_kwargs(
             schema_cls)
-        if issubclass(schema_cls, ModelSchema):
+        if issubclass(schema_cls, (SQLAlchemySchema, SQLAlchemyAutoSchema)):
             result["session"] = self.session
         return result
 
@@ -635,7 +636,7 @@ class ModelResourceRouter(ResourceRouterABC):
             str(parent_resource.__class__),
             str(resource).__class__)
         if isinstance(path_part, NestedPermissibleABC):
-            relation_name = path_part.load_from or path_part.name
+            relation_name = path_part.data_key or path_part.name
             if isinstance(data, list):
                 # Will attempt to add multiple items to the relation
                 try:
@@ -709,7 +710,7 @@ class ModelResourceRouter(ResourceRouterABC):
         elif isinstance(path_part, Field):
             # Post/Put/Patch to a single field.
             # Set the value, and return it.
-            field_name = path_part.load_from or path_part.name
+            field_name = path_part.data_key or path_part.name
             data = {
                 field_name: data
             }
@@ -935,7 +936,7 @@ class ModelResourceRouter(ResourceRouterABC):
                 path_part, NestedPermissibleABC):
             # Simple property, such as album_id
             # return only the value
-            field_name = path_part.load_from or path_part.name
+            field_name = path_part.data_key or path_part.name
             result = resource.get(
                 ident=ident,
                 fields=[field_name],
@@ -1043,7 +1044,7 @@ class ModelResourceRouter(ResourceRouterABC):
                 path_part, NestedPermissibleABC):
             # Simple property, such as album_id
             # set the value
-            field_name = path_part.load_from or path_part.name
+            field_name = path_part.data_key or path_part.name
             data = {
                 field_name: None
             }

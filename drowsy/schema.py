@@ -8,12 +8,14 @@
                 See AUTHORS for more details.
     :license: MIT - See LICENSE for more details.
 """
-from marshmallow.compat import basestring
+import typing
 from marshmallow.decorators import post_load
 from marshmallow.exceptions import ValidationError
 from marshmallow.schema import Schema, SchemaOpts
+from marshmallow.utils import EXCLUDE
 from marshmallow_sqlalchemy.fields import get_primary_keys
-from marshmallow_sqlalchemy.schema import ModelSchema, ModelSchemaOpts
+from marshmallow_sqlalchemy.schema import (
+    SQLAlchemyAutoSchema, SQLAlchemyAutoSchemaOpts)
 from sqlalchemy import inspect
 from drowsy.convert import ModelResourceConverter
 from drowsy.exc import MISSING_ERROR_MESSAGE, PermissionDenied
@@ -68,20 +70,23 @@ class ResourceSchemaOpts(SchemaOpts):
                     }
 
     """
-    def __init__(self, meta):
+    def __init__(self, meta, ordered=False):
         """Handle the meta class attached to a `ResourceSchema`.
 
         :param meta: The meta class attached to a
             :class:`~drowsy.resource.ResourceSchema`.
+        :param bool ordered: If `True`, order serialization output
+            according to the order in which fields were declared.
+            Output of `Schema.dump` will be a `collections.OrderedDict`.
 
         """
-        super(ResourceSchemaOpts, self).__init__(meta)
+        super(ResourceSchemaOpts, self).__init__(meta, ordered)
         self.id_keys = getattr(meta, 'id_keys', None)
         self.instance_cls = getattr(meta, 'instance_cls', None)
         self.error_messages = getattr(meta, "error_messages", None)
 
 
-class ModelResourceSchemaOpts(ModelSchemaOpts, ResourceSchemaOpts):
+class ModelResourceSchemaOpts(SQLAlchemyAutoSchemaOpts, ResourceSchemaOpts):
     """Meta class options for use with a ``ModelResourceSchema``.
 
     Defaults ``model_converter`` to
@@ -109,18 +114,21 @@ class ModelResourceSchemaOpts(ModelSchemaOpts, ResourceSchemaOpts):
 
     """
 
-    def __init__(self, meta):
+    def __init__(self, meta, ordered=False):
         """Handle the meta class attached to a `ModelResourceSchema`.
 
         :param meta: The meta class attached to a
             :class:`~drowsy.resource.ModelResourceSchema`.
+        :param bool ordered: If `True`, order serialization output
+            according to the order in which fields were declared.
+            Output of `Schema.dump` will be a `collections.OrderedDict`.
 
         """
-        super(ModelResourceSchemaOpts, self).__init__(meta)
-        # overwrite default model_converter from ModelSchemaOpts
+        super(ModelResourceSchemaOpts, self).__init__(meta, ordered)
+        # overwrite default converter from SQLAlchemyAutoSchemaOpts
         self.model_converter = getattr(
             meta, 'model_converter', ModelResourceConverter)
-        # overwrite default model_converter from ResourceSchemaOpts
+        # overwrite default instance_cls from ResourceSchemaOpts
         self.instance_cls = getattr(
             meta, 'model', getattr(self, "instance_cls", None))
 
@@ -140,26 +148,20 @@ class ResourceSchema(Schema, Loggable):
 
     OPTIONS_CLASS = ResourceSchemaOpts
 
-    def __init__(self,  extra=None, only=(), exclude=(), prefix='',
-                 strict=False, many=False, context=None, load_only=(),
-                 dump_only=(), partial=False, instance=None,
+    opts = None  # type: ResourceSchemaOpts
+
+    def __init__(self,  only=None, exclude=(), many=False, context=None,
+                 load_only=(), dump_only=(), partial=False, instance=None,
                  parent_resource=None, nested_opts=None, error_messages=None):
         """Sets additional member vars on top of `ResourceSchema`.
 
         Also runs :meth:`process_context` upon completion.
 
-        :param extra: Additional attributes to be added to the
-            serialized result.
-        :type extra: dict or None
         :param only: Fields to be included in the serialized result.
-        :type only: tuple or list
+        :type only: tuple or list or None
         :param exclude: Fields to be excluded from the serialized
             result.
         :type exclude: tuple or list
-        :param str prefix: Prefix to be prepended to serialized field
-            names.
-        :param bool strict: Raises exceptions on validation if
-            ``True``.
         :param bool many: ``True`` if loading a collection of items.
         :param context: Dictionary of values relevant to the current
             execution context. Should have a `gettext` key and
@@ -189,11 +191,8 @@ class ResourceSchema(Schema, Loggable):
 
         """
         super(ResourceSchema, self).__init__(
-            extra=extra,
             only=only,
             exclude=exclude,
-            prefix=prefix,
-            strict=strict,
             many=many,
             context=context,
             load_only=load_only,
@@ -201,8 +200,7 @@ class ResourceSchema(Schema, Loggable):
             partial=partial)
         self.parent_resource = parent_resource
         self.instance = instance
-        self._fields_by_dump_to = None
-        self._fields_by_load_from = None
+        self._fields_by_data_key = None
         self.nested_opts = nested_opts
         self.embedded = {}
         messages = {}
@@ -256,38 +254,21 @@ class ResourceSchema(Schema, Loggable):
             raise AssertionError(msg)
 
     @property
-    def fields_by_load_from(self):
-        """Get a dictionary of fields with load_from as the keys.
+    def fields_by_data_key(self):
+        """Get a dictionary of fields with data_key as the keys.
 
         :return: Dictionary of fields with the keys coming from
-            field.load_from.
+            field.data_key.
         :rtype: dict
 
         """
-        if (not hasattr(self, "_fields_by_load_from") or
-                self._fields_by_load_from is None):
-            self._fields_by_load_from = {}
+        if (not hasattr(self, "_fields_by_data_key") or
+                self._fields_by_data_key is None):
+            self._fields_by_data_key = {}
             for key in self.fields:
                 field = self.fields[key]
-                self._fields_by_load_from[field.load_from or key] = field
-        return self._fields_by_load_from
-
-    @property
-    def fields_by_dump_to(self):
-        """Get a dictionary of fields with dump_to as the keys.
-
-        :return: Dictionary of fields with the keys coming from
-            field.dump_to.
-        :rtype: dict
-
-        """
-        if (not hasattr(self, "_fields_by_dump_to") or
-                self._fields_by_dump_to is None):
-            self._fields_by_dump_to = {}
-            for key in self.fields:
-                field = self.fields[key]
-                self._fields_by_dump_to[field.dump_to or key] = field
-        return self._fields_by_dump_to
+                self._fields_by_data_key[field.data_key or key] = field
+        return self._fields_by_data_key
 
     def get_instance(self, data):
         """Used primarily to retrieve a pre-existing instance.
@@ -313,7 +294,7 @@ class ResourceSchema(Schema, Loggable):
             the specified field to embed.
 
         """
-        if isinstance(items, basestring):
+        if isinstance(items, str):
             items = [items]
         for item in items:
             split_names = item.split(".")
@@ -323,11 +304,11 @@ class ResourceSchema(Schema, Loggable):
                               EmbeddableMixinABC):
                     field = self.fields[split_name]
                     field.embedded = True
-                    if (hasattr(field, "schema") and
-                            isinstance(field.schema, ResourceSchema) and
-                            split_names):
-                        field.schema.process_context()
-                        field.schema.embed([".".join(split_names)])
+                    if hasattr(field, "schema"):
+                        if (isinstance(field.schema, ResourceSchema) and
+                                split_names):
+                            field.schema.process_context()
+                            field.schema.embed([".".join(split_names)])
                 else:
                     # NOTE: Since we have no way of telling how far
                     # down the chain we are, a top level attr could
@@ -356,7 +337,7 @@ class ResourceSchema(Schema, Loggable):
         return []
 
     @post_load
-    def make_instance(self, data):
+    def make_instance(self, data, **kwargs):
         """Deserialize the provided data into an object instance.
 
         :param data: The data to be deserialized into an instance.
@@ -371,8 +352,8 @@ class ResourceSchema(Schema, Loggable):
             return instance
         return self.opts.instance_cls(**data)
 
-    def load(self, data, many=None, instance=None, nested_opts=None,
-             action=None, *args, **kwargs):
+    def load(self, data, *, many=None, instance=None, nested_opts=None,
+             action=None, **kwargs):
         """Deserialize the provided data into an object.
 
         :param dict|list<dict> data: Data to be loaded into an instance.
@@ -453,12 +434,10 @@ class ResourceSchema(Schema, Loggable):
                 if self.instance is None:
                     self.instance = self.opts.instance_cls()
                 kwargs["instance"] = self.instance
-                result, error = super(ResourceSchema, self).load(
-                    obj, many=False, *args, **kwargs)
+                kwargs["unknown"] = EXCLUDE
+                result = super(ResourceSchema, self).load(
+                    obj, many=False, **kwargs)
                 results.append(result)
-                if error:
-                    errors[i] = error
-                    failure = True
             except PermissionDenied as exc:
                 if many:
                     # Limit returned error info to only the permission
@@ -476,8 +455,8 @@ class ResourceSchema(Schema, Loggable):
             results = results[0]
             errors = errors.get(0)
             data = data[0]
-        if not failure or not self.strict:
-            return results, errors
+        if not failure:
+            return results
         else:
             raise ValidationError(message=errors, data=data,
                                   valid_data=results)
@@ -524,7 +503,7 @@ class ResourceSchema(Schema, Loggable):
         pass
 
 
-class ModelResourceSchema(ResourceSchema, ModelSchema):
+class ModelResourceSchema(ResourceSchema, SQLAlchemyAutoSchema):
     """Schema meant to be used with a `ModelResource`.
 
     Enables sub-resource embedding, context processing, error
@@ -534,11 +513,12 @@ class ModelResourceSchema(ResourceSchema, ModelSchema):
 
     OPTIONS_CLASS = ModelResourceSchemaOpts
 
-    def __init__(self,  extra=None, only=(), exclude=(), prefix='',
-                 strict=False, many=False, context=None, load_only=(),
-                 dump_only=(), partial=False, instance=None,
+    opts = None  # type: ModelResourceSchemaOpts
+
+    def __init__(self,  only=None, exclude=(), many=False, context=None,
+                 load_only=(), dump_only=(), partial=False, instance=None,
                  parent_resource=None, nested_opts=None, session=None):
-        """Sets additional member vars on top of `ModelSchema`.
+        """Sets additional member vars on top of `SQLAlchemyAutoSchema`.
 
         Also runs :meth:`process_context` upon completion.
 
@@ -546,14 +526,10 @@ class ModelResourceSchema(ResourceSchema, ModelSchema):
             serialized result.
         :type extra: dict or None
         :param only: Fields to be included in the serialized result.
-        :type only: tuple or list
+        :type only: tuple or list or None
         :param exclude: Fields to be excluded from the serialized
             result.
         :type exclude: tuple or list
-        :param str prefix: Prefix to be prepended to serialized field
-            names.
-        :param bool strict: Raises exceptions on validation if
-            ``True``.
         :param bool many: ``True`` if loading a collection of items.
         :param context: Dictionary of values relevant to the current
             execution context. Should have a `gettext` key and
@@ -584,11 +560,8 @@ class ModelResourceSchema(ResourceSchema, ModelSchema):
 
         """
         super(ModelResourceSchema, self).__init__(
-            extra=extra,
             only=only,
             exclude=exclude,
-            prefix=prefix,
-            strict=strict,
             many=many,
             context=context,
             load_only=load_only,
@@ -598,7 +571,7 @@ class ModelResourceSchema(ResourceSchema, ModelSchema):
             parent_resource=parent_resource,
             nested_opts=nested_opts
         )
-        # Though ModelSchema init does get called,
+        # Though SQLAlchemyAutoSchema init does get called,
         # the session portion of things doesn't make
         # it through to that point, so we set it here.
         # If Marshmallow's Schema class played nice with
@@ -643,7 +616,8 @@ class ModelResourceSchema(ResourceSchema, ModelSchema):
             return [col.key for col in get_primary_keys(self.opts.model)]
         return result
 
-    def load(self, data, session=None, instance=None, *args, **kwargs):
+    def load(self, data, *, many=None, instance=None, nested_opts=None,
+             action=None, session=None, **kwargs):
         """Deserialize the provided data into a SQLAlchemy object.
 
         :param dict|list<dict> data: Data to be loaded into an instance.
@@ -660,6 +634,9 @@ class ModelResourceSchema(ResourceSchema, ModelSchema):
         # Adding things to kwargs to play nice with super...
         kwargs["session"] = session or self.session
         kwargs["instance"] = instance
+        kwargs["unknown"] = EXCLUDE
         with kwargs["session"].no_autoflush:
             # prevent bad child data from causing a premature flush
-            return super(ModelResourceSchema, self).load(data, *args, **kwargs)
+            return super(ModelResourceSchema, self).load(
+                data, many=many, action=action, nested_opts=nested_opts,
+                **kwargs)

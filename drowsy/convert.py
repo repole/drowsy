@@ -145,7 +145,8 @@ class ModelResourceConverter(ModelConverter):
         """
         return underscore(pluralize(model_name))
 
-    def fields_for_model(self, model, include_fk=False, fields=None,
+    def fields_for_model(self, model, *, include_fk=False,
+                         include_relationships=False, fields=None,
                          exclude=None, base_fields=None, dict_cls=dict):
         """Generate fields for the provided model.
 
@@ -153,6 +154,8 @@ class ModelResourceConverter(ModelConverter):
             correspond to.
         :param bool include_fk: ``True`` if fields should be generated
             for foreign keys, ``False`` otherwise.
+        :param bool include_relationships: ``True`` if relationship
+            fields should be generated, ``False`` otherwise.
         :param fields: A collection of field names to generate.
         :type fields: :class:`~collections.Iterable` or None
         :param exclude: A collection of field names not to generate.
@@ -169,6 +172,7 @@ class ModelResourceConverter(ModelConverter):
         result = super(ModelResourceConverter, self).fields_for_model(
             model=model,
             include_fk=include_fk,
+            include_relationships=include_relationships,
             fields=fields,
             exclude=exclude,
             base_fields=base_fields,
@@ -195,8 +199,7 @@ class CamelModelResourceConverter(ModelResourceConverter):
         """
         super(CamelModelResourceConverter, self)._add_column_kwargs(
             kwargs, prop)
-        kwargs["load_from"] = camelize(prop.key, uppercase_first_letter=False)
-        kwargs["dump_to"] = camelize(prop.key, uppercase_first_letter=False)
+        kwargs["data_key"] = camelize(prop.key, uppercase_first_letter=False)
 
     def _add_relationship_kwargs(self, kwargs, prop):
         """Update the provided kwargs based on the relationship given.
@@ -212,8 +215,7 @@ class CamelModelResourceConverter(ModelResourceConverter):
         """
         super(CamelModelResourceConverter, self)._add_relationship_kwargs(
             kwargs, prop)
-        kwargs["load_from"] = camelize(prop.key, uppercase_first_letter=False)
-        kwargs["dump_to"] = camelize(prop.key, uppercase_first_letter=False)
+        kwargs["data_key"] = camelize(prop.key, uppercase_first_letter=False)
 
     @staticmethod
     def _model_name_to_endpoint_name(model_name):

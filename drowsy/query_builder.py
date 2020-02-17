@@ -12,7 +12,7 @@ from collections import defaultdict
 from drowsy.fields import NestedRelated
 from drowsy.log import Loggable
 from drowsy.parser import SortInfo, SubfilterInfo
-from drowsy.utils import get_field_by_dump_name
+from drowsy.utils import get_field_by_data_key
 from sqlalchemy import and_, func, or_
 from sqlalchemy.inspection import inspect
 from sqlalchemy.orm import aliased, contains_eager
@@ -624,9 +624,9 @@ class ModelResourceQueryBuilder(QueryBuilder):
             while split_subfilter_keys and not failed:
                 failed = False
                 split_key = split_subfilter_keys.pop(0)
-                field = get_field_by_dump_name(
+                field = get_field_by_data_key(
                     schema=schema,
-                    dump_name=split_key)
+                    data_key=split_key)
                 if isinstance(field, NestedRelated):
                     # TODO - Should this be field.name?
                     resource = resource.make_subresource(name=split_key)
@@ -870,7 +870,7 @@ class ModelResourceQueryBuilder(QueryBuilder):
                 dest_selectable=inspect(node["subquery"]).selectable,
                 source_polymorphic=True,
                 dest_polymorphic=True,
-                of_type=inspect(node["alias"]).mapper)
+                of_type_mapper=inspect(node["alias"]).mapper)
             primaryjoin = join_info[0]
             secondaryjoin = join_info[1]
             secondary = join_info[4]

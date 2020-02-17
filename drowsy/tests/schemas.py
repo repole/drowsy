@@ -24,48 +24,57 @@ from marshmallow_sqlalchemy.schema import ModelSchema
 class InvoiceLineSchema(ModelResourceSchema):
     class Meta:
         model = InvoiceLine
+        include_relationships = True
 
 
 class InvoiceSchema(ModelResourceSchema):
     class Meta:
         model = Invoice
+        include_relationships = True
     invoice_lines = fields.Nested("InvoiceLineSchema", many=True)
 
 
 class EmployeeSchema(ModelResourceSchema):
     class Meta:
         model = Employee
+        include_relationships = True
 
 
 class CustomerSchema(ModelResourceSchema):
     class Meta:
         model = Customer
+        include_relationships = True
     phone = fields.String(load_only=True)
 
 
 class PlaylistSchema(ModelResourceSchema):
     class Meta:
         model = Playlist
+        include_relationships = True
 
 
 class MediaTypeSchema(ModelResourceSchema):
     class Meta:
         model = MediaType
+        include_relationships = True
 
 
 class GenreSchema(ModelResourceSchema):
     class Meta:
         model = Genre
+        include_relationships = True
 
 
 class TrackSchema(ModelResourceSchema):
     class Meta:
         model = Track
+        include_relationships = True
 
 
 class TrackPermissionsSchema(ModelResourceSchema):
     class Meta:
         model = Track
+        include_relationships = True
     album = Relationship(
         "AlbumResource", many=False, permissions_cls=DisallowAllOpPermissions)
 
@@ -73,6 +82,7 @@ class TrackPermissionsSchema(ModelResourceSchema):
 class AlbumSchema(ModelResourceSchema):
     class Meta:
         model = Album
+        include_relationships = True
         id_keys = ["album_id"]
 
     def check_permission(self, data, instance, action):
@@ -96,6 +106,7 @@ class AlbumSchema(ModelResourceSchema):
 class ArtistSchema(ModelResourceSchema):
     class Meta:
         model = Artist
+        include_relationships = True
     albums = Relationship(
         "AlbumResource", many=True, permissions_cls=DisallowAllOpPermissions)
 
@@ -103,21 +114,25 @@ class ArtistSchema(ModelResourceSchema):
 class NodeSchema(ModelResourceSchema):
     class Meta:
         model = Node
+        include_relationships = True
 
 
 class CompositeNodeSchema(ModelResourceSchema):
     class Meta:
         model = CompositeNode
+        include_relationships = True
 
 
 class CompositeOneSchema(ModelResourceSchema):
     class Meta:
         model = CompositeOne
+        include_relationships = True
 
 
 class CompositeManySchema(ModelResourceSchema):
     class Meta:
         model = CompositeMany
+        include_relationships = True
 
 
 class TestCamelModelResourceConverter(CamelModelResourceConverter):
@@ -146,58 +161,66 @@ class TestCamelModelResourceConverter(CamelModelResourceConverter):
 class InvoiceLineCamelSchema(ModelResourceSchema):
     class Meta:
         model = InvoiceLine
+        include_relationships = True
         model_converter = TestCamelModelResourceConverter
 
 
 class InvoiceCamelSchema(ModelResourceSchema):
     class Meta:
         model = Invoice
+        include_relationships = True
         model_converter = TestCamelModelResourceConverter
     invoice_lines = fields.Nested(
-        "InvoiceLineCamelSchema", many=True, dump_to="invoiceLines",
-        load_from="invoiceLines")
+        "InvoiceLineCamelSchema", many=True, data_key="invoiceLines")
 
 
 class EmployeeCamelSchema(ModelResourceSchema):
     class Meta:
         model = Employee
+        include_relationships = True
         model_converter = TestCamelModelResourceConverter
 
 
 class CustomerCamelSchema(ModelResourceSchema):
     class Meta:
         model = Customer
+        include_relationships = True
         model_converter = TestCamelModelResourceConverter
-    phone = fields.String(load_only=True, dump_to="phone", load_from="phone")
+    phone = fields.String(load_only=True, data_key="phone")
 
 
 class PlaylistCamelSchema(ModelResourceSchema):
     class Meta:
         model = Playlist
+        include_relationships = True
         model_converter = TestCamelModelResourceConverter
 
 
 class MediaTypeCamelSchema(ModelResourceSchema):
     class Meta:
         model = MediaType
+        include_relationships = True
         model_converter = TestCamelModelResourceConverter
 
 
 class GenreCamelSchema(ModelResourceSchema):
     class Meta:
         model = Genre
+        include_relationships = True
         model_converter = TestCamelModelResourceConverter
 
 
 class TrackCamelSchema(ModelResourceSchema):
     class Meta:
         model = Track
+        include_relationships = True
         model_converter = TestCamelModelResourceConverter
 
 
 class AlbumCamelSchema(ModelResourceSchema):
     class Meta:
         model = Album
+        include_relationships = True
         model_converter = TestCamelModelResourceConverter
         id_keys = ["album_id"]
 
@@ -205,40 +228,47 @@ class AlbumCamelSchema(ModelResourceSchema):
 class ArtistCamelSchema(ModelResourceSchema):
     class Meta:
         model = Artist
+        include_relationships = True
         model_converter = TestCamelModelResourceConverter
 
 
 class NodeCamelSchema(ModelResourceSchema):
     class Meta:
         model = Node
+        include_relationships = True
         model_converter = TestCamelModelResourceConverter
 
 
 class CompositeNodeCamelSchema(ModelResourceSchema):
     class Meta:
         model = CompositeNode
+        include_relationships = True
         model_converter = TestCamelModelResourceConverter
 
 
 class CompositeOneCamelSchema(ModelResourceSchema):
     class Meta:
         model = CompositeOne
+        include_relationships = True
         model_converter = TestCamelModelResourceConverter
 
 
 class CompositeManyCamelSchema(ModelResourceSchema):
     class Meta:
         model = CompositeMany
+        include_relationships = True
         model_converter = TestCamelModelResourceConverter
 
 
 class MsAlbumSchema(ModelSchema):
     class Meta:
         model = Album
-    album_id = fields.Integer(dump_to="albumId", load_from="albumId")
+        include_relationships = True
+    album_id = fields.Integer(data_key="albumId")
 
 
 class AlbumBadIdKeysSchema(ModelResourceSchema):
     class Meta:
         model = Album
+        include_relationships = True
         id_keys = ["test"]

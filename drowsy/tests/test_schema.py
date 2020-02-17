@@ -27,11 +27,6 @@ class DrowsySchemaTests(DrowsyTests):
 
     """Test drowsy schema classes are working as expected."""
 
-    def test_schema_fields_by_load_from(self):
-        """Test getting fields by their load_from value."""
-        schema = AlbumCamelSchema(session=self.db_session)
-        self.assertTrue("albumId" in schema.fields_by_load_from)
-
     def test_schema_default_get_instance(self):
         """Test a ResourceSchema handles get_instance properly."""
         class TestSchema(ResourceSchema):
@@ -97,7 +92,11 @@ class DrowsySchemaTests(DrowsyTests):
                 {"album_id": 1}
             ]
         }
-        result, errors = schema.load(data=data)
+        errors = {}
+        try:
+            schema.load(data=data)
+        except ValidationError as exc:
+            errors = exc.messages
         self.assertTrue(errors["albums"][0]["$op"][0])
 
     def test_schema_disallow_all_op_permissions(self):
@@ -107,13 +106,16 @@ class DrowsySchemaTests(DrowsyTests):
             "track_id": 1,
             "album": {"album_id": 1}
         }
-        result, errors = schema.load(data=data)
+        errors = {}
+        try:
+            schema.load(data=data)
+        except ValidationError as exc:
+            errors = exc.messages
         self.assertTrue(errors["album"])
 
     def test_schema_disallow_all_op_permissions_strict(self):
         """Make sure permission denial works."""
-        schema = TrackPermissionsSchema(session=self.db_session, partial=True,
-                                        strict=True)
+        schema = TrackPermissionsSchema(session=self.db_session, partial=True)
         data = {
             "track_id": 1,
             "album": {"album_id": 1}
@@ -130,21 +132,12 @@ class DrowsySchemaTests(DrowsyTests):
         data = {
             "tracks": [{"bytes": "TEST"}]
         }
-        result, errors = schema.load(data=data)
+        errors = {}
+        try:
+            schema.load(data=data)
+        except ValidationError as exc:
+            errors = exc.messages
         self.assertTrue(errors["tracks"][0]["bytes"])
-
-    def test_schema_relationship_bad_data_strict(self):
-        """Test bad data given to a relationship when strict fails."""
-        schema = AlbumSchema(session=self.db_session, strict=True,
-                             partial=True)
-        data = {
-            "artist": {"artist_id": "TEST"}
-        }
-        self.assertRaises(
-            ValidationError,
-            schema.load,
-            data=data
-        )
 
     def test_convert_property2field_instance(self):
         """Test property2field can return a column type."""
@@ -169,7 +162,7 @@ class DrowsySchemaTests(DrowsyTests):
             }
         }
         schema = TrackSchema(session=self.db_session)
-        result, errors = schema.load(data, partial=True)
+        result = schema.load(data, partial=True)
         self.assertTrue(result.album.album_id == 347)
 
     def test_many_load(self):
@@ -182,8 +175,8 @@ class DrowsySchemaTests(DrowsyTests):
             {"track_id": 5, "name": "test5"}
         ]
         schema = TrackSchema(session=self.db_session, many=True)
-        result, errors = schema.load(data, partial=True, many=True)
-        self.assertTrue(len(result) == 5 and len(errors.keys()) == 0)
+        result = schema.load(data, partial=True, many=True)
+        self.assertTrue(len(result) == 5)
 
     def test_many_load_failure(self):
         """Test loading many objects with bad data fails accordingly."""
@@ -195,7 +188,11 @@ class DrowsySchemaTests(DrowsyTests):
             {"track_id": 5, "name": "test5"}
         ]
         schema = TrackSchema(session=self.db_session, many=True)
-        result, errors = schema.load(data, partial=True, many=True)
+        errors = {}
+        try:
+            schema.load(data, partial=True, many=True)
+        except ValidationError as exc:
+            errors = exc.messages
         self.assertTrue(len(errors.keys()) == 2)
         self.assertTrue(0 in errors and 1 in errors)
 
@@ -217,7 +214,7 @@ class DrowsySchemaTests(DrowsyTests):
             "unit_price": 1.0
         }
         schema = TrackSchema(session=self.db_session)
-        result, errors = schema.load(data, partial=True, instance=instance)
+        result = schema.load(data, partial=True, instance=instance)
         self.assertTrue(result.album.album_id == 1)
 
     def test_base_instance_relationship_add_child(self):
@@ -233,7 +230,7 @@ class DrowsySchemaTests(DrowsyTests):
             ]
         }
         schema = AlbumSchema(session=self.db_session, partial=True)
-        result, errors = schema.load(data, instance=instance)
+        result = schema.load(data, instance=instance)
         self.assertTrue(result.tracks[0].track_id == 1)
 
     def test_relationship_invalid_remove(self):
@@ -246,7 +243,7 @@ class DrowsySchemaTests(DrowsyTests):
             }]
         }
         schema = AlbumSchema(
-            session=self.db_session, partial=True, strict=True)
+            session=self.db_session, partial=True)
         self.assertRaises(
             ValidationError,
             schema.load,
@@ -263,7 +260,7 @@ class DrowsySchemaTests(DrowsyTests):
             }]
         }
         schema = AlbumSchema(
-            session=self.db_session, partial=True, strict=True)
+            session=self.db_session, partial=True)
         self.assertRaises(
             ValidationError,
             schema.load,
@@ -281,7 +278,7 @@ class DrowsySchemaTests(DrowsyTests):
         nested_opts = {"tracks": NestedOpts(partial=False)}
         schema = AlbumSchema(session=self.db_session, nested_opts=nested_opts,
                              partial=True)
-        result, errors = schema.load(data)
+        result = schema.load(data)
         self.assertTrue(result.tracks[0].track_id == 1)
         self.assertTrue(len(result.tracks) == 1)
 
@@ -301,7 +298,7 @@ class DrowsySchemaTests(DrowsyTests):
             "tracks.playlists": NestedOpts(partial=False)}
         schema = AlbumSchema(session=self.db_session, nested_opts=nested_opts,
                              partial=True)
-        result, errors = schema.load(data)
+        result = schema.load(data)
         self.assertTrue(len(result.tracks[0].playlists) == 1)
 
     def test_permission_denied(self):

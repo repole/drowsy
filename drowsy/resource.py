@@ -10,7 +10,6 @@
 """
 import math
 from marshmallow.exceptions import ValidationError
-from marshmallow.compat import with_metaclass
 from mqlalchemy import InvalidMQLException
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy import inspect
@@ -441,7 +440,7 @@ class BaseModelResource(BaseResourceABC):
         schema = self.make_schema()
         for i, field_name in enumerate(schema.id_keys):
             field = schema.fields.get(field_name)
-            filter_name = field.dump_to or field_name
+            filter_name = field.data_key or field_name
             filters[filter_name] = ident[i]
         return filters
 
@@ -627,7 +626,7 @@ class BaseModelResource(BaseResourceABC):
             self.fail("resource_not_found", ident=ident)
         instance = query.all()
         if instance:
-            return schema.dump(instance[0]).data
+            return schema.dump(instance[0])
         self.fail("resource_not_found", ident=ident)
 
     def post(self, data, nested_opts=None):
@@ -651,7 +650,7 @@ class BaseModelResource(BaseResourceABC):
         schema = self.make_schema(partial=False)
         nested_opts = nested_opts or {}
         try:
-            instance, dummy_errors = schema.load(
+            instance = schema.load(
                 data,
                 session=self.session,
                 nested_opts=self._convert_nested_opts(nested_opts),
@@ -741,6 +740,7 @@ class BaseModelResource(BaseResourceABC):
 
         """
         # TODO - Refactor - Only three lines here different from put.
+        # TODO - deleting a subresource calls patch, odd error potential
         self._check_method_allowed("PATCH")
         nested_opts = nested_opts or {}
         instance = self._get_instance(ident)
@@ -786,7 +786,7 @@ class BaseModelResource(BaseResourceABC):
         for field_key in schema.fields:
             field = schema.fields[field_key]
             if isinstance(field, Relationship) and field.embedded:
-                child_key = field.load_from or field.name
+                child_key = field.data_key or field.name
                 children = self._get_embed_history(field.schema, child_key)
                 for child in children:
                     if key:
@@ -909,7 +909,7 @@ class BaseModelResource(BaseResourceABC):
         records = query.all()
         # get result
         dump = schema.dump(records, many=True)
-        return ResourceCollection(dump.data, count)
+        return ResourceCollection(dump, count)
 
     def post_collection(self, data, nested_opts=None):
         """Create multiple resources in the collection of resources.
@@ -937,7 +937,7 @@ class BaseModelResource(BaseResourceABC):
             # fields being passed to make_schema
             schema = self.make_schema(partial=False)
             try:
-                instance, dummy_errors = schema.load(
+                instance = schema.load(
                     obj,
                     session=self.session,
                     nested_opts=self._convert_nested_opts(nested_opts),
@@ -1017,7 +1017,7 @@ class BaseModelResource(BaseResourceABC):
                 else:
                     schema = self.make_schema(partial=True)
                     action = "update"
-                instance, dummy_errors = schema.load(
+                instance = schema.load(
                     obj,
                     session=self.session,
                     nested_opts=self._convert_nested_opts(nested_opts),
@@ -1097,5 +1097,5 @@ class BaseModelResource(BaseResourceABC):
             self.fail("commit_failure")
 
 
-class ModelResource(with_metaclass(ResourceMeta, BaseModelResource)):
-    __doc__ = BaseModelResource.__doc__
+class ModelResource(BaseModelResource, metaclass=ResourceMeta):
+    pass
