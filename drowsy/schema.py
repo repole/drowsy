@@ -212,19 +212,26 @@ class ResourceSchema(Schema, Loggable):
         self.error_messages = messages
         self.process_context()
 
-    @property
-    def root_error_key(self):
-        """Dict key for schema level errors not pertaining to a field.
+    def make_error(self, key, data=None, **kwargs):
+        """Raises an exception based on the ``key`` provided.
 
-        Need a place to store schema level errors in a returned error
-        dict; this defines what key to use for such errors.
-
-        :return: Name of a schema level error to be included in a dict
-            of schema field errors.
-        :rtype: str
+        :param str key: Failure type, used to choose an error message.
+        :param data: The data that caused this issue
+        :type data: dict or None
+        :param kwargs: Any additional arguments that may be used for
+            generating an error message.
+        :return: `PermissionDenied` exception if ``key`` is
+            ``"permission_denied"``, otherwise a `ValidationError`.
 
         """
-        return "_schema_"
+        if key == "permission_denied":
+            return PermissionDenied(
+                message=self._get_error_message(key, **kwargs),
+                data=data)
+        else:
+            return ValidationError(
+                message=self._get_error_message(key, **kwargs),
+                data=data)
 
     def _get_error_message(self, key, **kwargs):
         """Get an error message based on a key name.
@@ -473,10 +480,7 @@ class ResourceSchema(Schema, Loggable):
         :raise ValidationError: If not allowed.
 
         """
-        message = {
-            self.root_error_key: self._get_error_message("item_already_exists")
-        }
-        raise ValidationError(message=message, data=data)
+        raise self.make_error("item_already_exists", data=data)
 
     def check_permission(self, data, instance, action):
         """Checks if this action is permissible to attempt.

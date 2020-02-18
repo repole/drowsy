@@ -84,6 +84,9 @@ class AlbumSchema(ModelResourceSchema):
         model = Album
         include_relationships = True
         id_keys = ["album_id"]
+        error_messages = {
+            "permission_denied": "Overrides original error."
+        }
 
     def check_permission(self, data, instance, action):
         """Checks if this action is permissible to attempt.
@@ -100,7 +103,7 @@ class AlbumSchema(ModelResourceSchema):
 
         """
         if data.get("album_id") == 340 and data.get("title") == "Denied":
-            raise PermissionDenied("Don't do that.")
+            raise self.make_error("permission_denied")
 
 
 class ArtistSchema(ModelResourceSchema):

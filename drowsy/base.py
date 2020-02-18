@@ -464,6 +464,8 @@ class NestedPermissibleABC(Nested, Loggable):
                 loaded_instance = None
                 if is_new_obj:
                     try:
+                        # TODO - Need some check here to ensure that
+                        # this is infact a newly created instance.
                         loaded_instance = self._load_new_instance(obj_data)
                         instance = loaded_instance
                         sub_errors = {}
@@ -866,7 +868,7 @@ class BaseResourceABC(SchemaResourceABC, NestableResourceABC):
                 converted_field = self.convert_key_name(field)
                 if converted_field is None:
                     if strict:
-                        self.fail("invalid_field", field=field)
+                        raise self.make_error("invalid_field", field=field)
                 elif converted_field:
                     converted_fields.append(converted_field)
         if converted_fields:
@@ -896,8 +898,9 @@ class BaseResourceABC(SchemaResourceABC, NestableResourceABC):
                 # _get_embed_info should catch this
                 # keeping here as a safeguard
                 if strict:
-                    self.fail("invalid_embed",
-                              embed=embed_name_mapping[converted_embed])
+                    raise self.make_error(
+                        "invalid_embed",
+                        embed=embed_name_mapping[converted_embed])
         self._schema = schema
         return schema
 
@@ -916,8 +919,8 @@ class BaseResourceABC(SchemaResourceABC, NestableResourceABC):
             return field.resource
         raise ValueError("The provided name is not a valid subresource.")
 
-    def fail(self, key, errors=None, exc=None, **kwargs):
-        """Raises an exception based on the ``key`` provided.
+    def make_error(self, key, errors=None, exc=None, **kwargs):
+        """Returns an exception based on the ``key`` provided.
 
         :param str key: Failure type, used to choose an error message.
         :param errors: May be used by the raised exception.
@@ -927,34 +930,33 @@ class BaseResourceABC(SchemaResourceABC, NestableResourceABC):
         :type exc: :exc:`Exception` or None
         :param kwargs: Any additional arguments that may be used for
             generating an error message.
-        :raise UnprocessableEntityError: If ``key`` is
+        :return: `UnprocessableEntityError` If ``key`` is
             ``"validation_failure"``. Note that in this case, errors
-            should preferably be provided.
-        :raise BadRequestError: The default error type raised in all
-            other cases.
+            should preferably be provided. In all other cases a
+            `BadRequestError` is returned.
 
         """
         unproccessable_errors = {"validation_failure", "commit_failure",
                                  "invalid_collection_input"}
         if key in unproccessable_errors:
-            raise UnprocessableEntityError(
+            return UnprocessableEntityError(
                 code=key,
                 message=self._get_error_message(key, **kwargs),
                 errors=errors or {},
                 **kwargs)
         elif key == "resource_not_found":
-            raise ResourceNotFoundError(
+            return ResourceNotFoundError(
                 code=key,
                 message=self._get_error_message(key, **kwargs),
                 **kwargs
             )
         elif key == "method_not_allowed":
-            raise MethodNotAllowedError(
+            return MethodNotAllowedError(
                 code=key,
                 message=self._get_error_message(key, **kwargs),
                 **kwargs)
         else:
-            raise BadRequestError(
+            return BadRequestError(
                 code=key,
                 message=self._get_error_message(key, **kwargs),
                 **kwargs)
@@ -1170,7 +1172,7 @@ class BaseResourceABC(SchemaResourceABC, NestableResourceABC):
             embed_name_mapping[converted_embed] = embed
             if converted_embed is None:
                 if strict:
-                    self.fail("invalid_embed", embed=embed)
+                    raise self.make_error("invalid_embed", embed=embed)
             elif converted_embed:
                 # used so if a fields param is provided, embeds are
                 # still included.

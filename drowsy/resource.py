@@ -337,8 +337,8 @@ class BaseModelResource(BaseResourceABC):
         result["session"] = self.session
         return result
 
-    def fail(self, key, errors=None, exc=None, **kwargs):
-        """Raises an exception based on the ``key`` provided.
+    def make_error(self, key, errors=None, exc=None, **kwargs):
+        """Returns an exception based on the ``key`` provided.
 
         :param str key: Failure type, used to choose an error message.
         :param errors: May be used by the raised exception.
@@ -351,11 +351,10 @@ class BaseModelResource(BaseResourceABC):
         :type exc: :exc:`Exception` or None
         :param kwargs: Any additional arguments that may be used for
             generating an error message.
-        :raise UnprocessableEntityError: If ``key`` is
+        :return: `UnprocessableEntityError` If ``key`` is
             ``"validation_failure"``. Note that in this case, errors
-            should preferably be provided.
-        :raise BadRequestError: The default error type raised in all
-            other cases.
+            should preferably be provided. In all other cases a
+            `BadRequestError` is returned.
 
         """
         if key == "invalid_filters" or key == "invalid_subresource_filters":
@@ -366,11 +365,11 @@ class BaseModelResource(BaseResourceABC):
                     message = str(exc)
             else:
                 message = self._get_error_message(key, **kwargs)
-            raise BadRequestError(
+            return BadRequestError(
                 code=key,
                 message=message,
                 **kwargs)
-        return super(BaseModelResource, self).fail(
+        return super(BaseModelResource, self).make_error(
             key=key,
             errors=errors,
             exc=exc,
@@ -468,7 +467,7 @@ class BaseModelResource(BaseResourceABC):
             query = self.apply_required_filters(query)
         # TODO - Clean up exceptions after MQLAlchemy update.
         except (TypeError, ValueError, InvalidMQLException):
-            self.fail("resource_not_found", ident=ident)
+            raise self.make_error("resource_not_found", ident=ident)
         return query.first()
 
     def apply_required_filters(self, query, alias=None):
@@ -565,7 +564,7 @@ class BaseModelResource(BaseResourceABC):
         if method.upper() in self.options or (
                 method.upper() == "OPTIONS"):
             return True
-        self.fail("method_not_allowed", method=method.upper())
+        raise self.make_error("method_not_allowed", method=method.upper())
 
     def get(self, ident, subfilters=None, fields=None, embeds=None,
             session=None, strict=True, head=False):
@@ -623,11 +622,11 @@ class BaseModelResource(BaseResourceABC):
                 embeds=embeds)
         except (ValueError, TypeError):
             # TODO - Better error
-            self.fail("resource_not_found", ident=ident)
+            raise self.make_error("resource_not_found", ident=ident)
         instance = query.all()
         if instance:
             return schema.dump(instance[0])
-        self.fail("resource_not_found", ident=ident)
+        raise self.make_error("resource_not_found", ident=ident)
 
     def post(self, data, nested_opts=None):
         """Create a new resource and store it in the db.
@@ -657,16 +656,16 @@ class BaseModelResource(BaseResourceABC):
                 action="create")
         except PermissionDenied:
             self.session.rollback()
-            self.fail("permission_denied")
+            raise self.make_error("permission_denied")
         except ValidationError as exc:
             self.session.rollback()
-            self.fail("validation_failure", errors=exc.messages)
+            raise self.make_error("validation_failure", errors=exc.messages)
         self.session.add(instance)
         try:
             self.session.commit()
         except SQLAlchemyError:  # pragma: no cover
             self.session.rollback()
-            self.fail("commit_failure")
+            raise self.make_error("commit_failure")
         ident = []
         for key in schema.id_keys:
             ident.append(getattr(instance, key))
@@ -695,7 +694,7 @@ class BaseModelResource(BaseResourceABC):
         nested_opts = nested_opts or {}
         instance = self._get_instance(ident)
         if not instance:
-            self.fail("resource_not_found", ident=ident)
+            raise self.make_error("resource_not_found", ident=ident)
         # NOTE: No risk of BadRequestError here due to no embeds or
         # fields being passed to make_schema
         schema = self.make_schema(
@@ -710,15 +709,15 @@ class BaseModelResource(BaseResourceABC):
                 action="update")
         except PermissionDenied:
             self.session.rollback()
-            self.fail("permission_denied")
+            raise self.make_error("permission_denied")
         except ValidationError as exc:
             self.session.rollback()
-            self.fail("validation_failure", errors=exc.messages)
+            raise self.make_error("validation_failure", errors=exc.messages)
         try:
             self.session.commit()
         except SQLAlchemyError:  # pragma: no cover
             self.session.rollback()
-            self.fail("commit_failure")
+            raise self.make_error("commit_failure")
         return self.get(ident, embeds=self._get_embed_history(schema))
 
     def patch(self, ident, data, nested_opts=None):
@@ -758,15 +757,15 @@ class BaseModelResource(BaseResourceABC):
                 action="update")
         except PermissionDenied:
             self.session.rollback()
-            self.fail("permission_denied")
+            raise self.make_error("permission_denied")
         except ValidationError as exc:
             self.session.rollback()
-            self.fail("validation_failure", errors=exc.messages)
+            raise self.make_error("validation_failure", errors=exc.messages)
         try:
             self.session.commit()
         except SQLAlchemyError:  # pragma: no cover
             self.session.rollback()
-            self.fail("commit_failure")
+            raise self.make_error("commit_failure")
         return self.get(ident, embeds=self._get_embed_history(schema))
 
     def _get_embed_history(self, schema, key=None):
@@ -819,15 +818,15 @@ class BaseModelResource(BaseResourceABC):
                 schema.check_permission(
                     data={}, instance=instance, action="delete")
             except PermissionDenied:
-                self.fail("permission_denied")
+                raise self.make_error("permission_denied")
             self.session.delete(instance)
             try:
                 self.session.commit()
             except SQLAlchemyError:  # pragma: no cover
                 self.session.rollback()
-                self.fail("commit_failure")
+                raise self.make_error("commit_failure")
         else:
-            self.fail("resource_not_found", ident=ident)
+            raise self.make_error("resource_not_found", ident=ident)
 
     def get_collection(self, filters=None, subfilters=None, fields=None,
                        embeds=None, sorts=None, offset=None, limit=None,
@@ -891,9 +890,10 @@ class BaseModelResource(BaseResourceABC):
                 isinstance(self.page_max_size, int) and
                 limit > self.page_max_size):
             if strict:
-                self.fail("limit_too_high",
-                          limit=limit,
-                          max_page_size=self.page_max_size)
+                raise self.make_error(
+                    "limit_too_high",
+                    limit=limit,
+                    max_page_size=self.page_max_size)
             limit = self.page_max_size
         if not offset:
             offset = 0
@@ -928,7 +928,7 @@ class BaseModelResource(BaseResourceABC):
         self._check_method_allowed("POST")
         nested_opts = nested_opts or {}
         if not isinstance(data, list):
-            self.fail("invalid_collection_input", data=data)
+            raise self.make_error("invalid_collection_input", data=data)
         errors = {}
         validation_failure = False
         permission_failure = False
@@ -951,15 +951,15 @@ class BaseModelResource(BaseResourceABC):
                 validation_failure = True
         if permission_failure:
             self.session.rollback()
-            self.fail("permission_denied", errors=errors)
+            raise self.make_error("permission_denied", errors=errors)
         elif validation_failure:
             self.session.rollback()
-            self.fail("validation_failure", errors=errors)
+            raise self.make_error("validation_failure", errors=errors)
         try:
             self.session.commit()
         except SQLAlchemyError:  # pragma: no cover
             self.session.rollback()
-            self.fail("commit_failure")
+            raise self.make_error("commit_failure")
 
     def put_collection(self, data, nested_opts=None):
         """Raises an error since this method has no obvious use.
@@ -972,7 +972,7 @@ class BaseModelResource(BaseResourceABC):
         :raise MethodNowAllowedError: When not overridden.
 
         """
-        self.fail("method_not_allowed", method="PUT", data=data)
+        raise self.make_error("method_not_allowed", method="PUT", data=data)
 
     def patch_collection(self, data, nested_opts=None):
         """Update a collection of resources.
@@ -1001,7 +1001,7 @@ class BaseModelResource(BaseResourceABC):
         permission_failure = False
         validation_failure = False
         if not isinstance(data, list):
-            self.fail("invalid_collection_input")
+            raise self.make_error("invalid_collection_input")
         for i, obj in enumerate(data):
             try:
                 if obj.get("$op") == "add":
@@ -1042,15 +1042,15 @@ class BaseModelResource(BaseResourceABC):
                 validation_failure = True
         if permission_failure:
             self.session.rollback()
-            self.fail("permission_denied", errors=errors)
+            raise self.make_error("permission_denied", errors=errors)
         elif validation_failure:
             self.session.rollback()
-            self.fail("validation_failure", errors=errors)
+            raise self.make_error("validation_failure", errors=errors)
         try:
             self.session.commit()
         except SQLAlchemyError:  # pragma: no cover
             self.session.rollback()
-            self.fail("commit_failure")
+            raise self.make_error("commit_failure")
 
     def delete_collection(self, filters=None, session=None, strict=True):
         """Delete all filter matching members of the collection.
@@ -1088,13 +1088,13 @@ class BaseModelResource(BaseResourceABC):
                                         action="delete")
             except PermissionDenied:
                 self.session.rollback()
-                self.fail("permission_denied")
+                raise self.make_error("permission_denied")
             self.session.delete(instance)
         try:
             self.session.commit()
         except SQLAlchemyError:  # pragma: no cover
             self.session.rollback()
-            self.fail("commit_failure")
+            raise self.make_error("commit_failure")
 
 
 class ModelResource(BaseModelResource, metaclass=ResourceMeta):

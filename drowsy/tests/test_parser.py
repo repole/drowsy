@@ -26,7 +26,7 @@ class DrowsyParserTests(DrowsyTests):
         parser = ModelQueryParamParser(query_params={})
         self.assertRaises(
             AssertionError,
-            parser.fail,
+            parser.make_error,
             key="test"
         )
 

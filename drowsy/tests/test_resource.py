@@ -457,7 +457,7 @@ class DrowsyResourceTests(DrowsyTests):
         """Test that error message overrides are handled properly."""
         resource = EmployeeResource(session=self.db_session)
         try:
-            resource.fail(key="invalid_field")
+            raise resource.make_error(key="invalid_field")
         except BadRequestError as exc:
             self.assertTrue(exc.code == "invalid_field")
             self.assertTrue(exc.message == "Test invalid_field message.")
@@ -477,19 +477,15 @@ class DrowsyResourceTests(DrowsyTests):
         resource = EmployeeResource(session=self.db_session)
         self.assertRaises(
             AssertionError,
-            resource.fail,
+            resource.make_error,
             key="test"
         )
 
     def test_resource_fail_invalid_filters(self):
         """Test resource failure with invalid_filters and no exc."""
         resource = EmployeeResource(session=self.db_session)
-        self.assertRaisesCode(
-            BadRequestError,
-            "invalid_filters",
-            resource.fail,
-            key="invalid_filters"
-        )
+        error = resource.make_error("invalid_filters")
+        self.assertTrue(isinstance(error, BadRequestError))
 
     def test_resource_whitelist(self):
         """Test that a multi level whitelist check works."""

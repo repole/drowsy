@@ -86,7 +86,7 @@ class DrowsyRouterTests(DrowsyTests):
         router = ModelResourceRouter(session=self.db_session)
         self.assertRaises(
             AssertionError,
-            router.fail,
+            router.make_error,
             key="test"
         )
 
@@ -300,11 +300,9 @@ class DrowsyRouterTests(DrowsyTests):
         resource = AlbumResource(session=self.db_session)
         router = ModelResourceRouter(session=self.db_session,
                                      resource=resource)
-        self.assertRaises(
-            BadRequestError,
-            router.fail,
-            key="invalid_complex_filters"
-        )
+        error = router.make_error("invalid_complex_filters")
+        self.assertTrue(isinstance(error, BadRequestError))
+
     # POST
 
     def test_router_post(self):

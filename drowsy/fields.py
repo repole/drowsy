@@ -219,6 +219,12 @@ class NestedRelated(NestedPermissibleABC, Related):
             instance could be found.
 
         """
+        # TODO - What if get_instance returns None due to permissions
+        # The object itself would still exist in DB, but our nested
+        # field would try to create it anyways. This will result in an
+        # error, but it won't be very informative...
+        # Maybe that's ok, since such a scenario would almost certainly
+        # involve a malicious actor.
         with self.session.no_autoflush:
             # If the parent object hasn't yet been persisted,
             # autoflush can cause an error since it is yet

@@ -77,32 +77,31 @@ class ResourceRouterABC(Loggable):
         """Return the context used for this request."""
         return self.resource.context
 
-    def fail(self, key, **kwargs):
-        """Raises an exception based on the ``key`` provided.
+    def make_error(self, key, **kwargs):
+        """Returns an exception based on the ``key`` provided.
 
         :param str key: Failure type, used to choose an error message.
         :param kwargs: Any additional arguments that may be used for
             generating an error message.
-        :raise OffsetLimitParseError: Raised in cases where there was
-            an issue parsing the offset, limit, or page value.
-        :raise DrowsyError: Raised in all other cases.
+        :return: `ResourceNotFoundError`, `MethodNotAllowedError`, or
+            defaults to `BadRequestError`.
 
         """
         message = self._get_error_message(key, **kwargs)
         self.logger.info("Routing unsuccessful, key=%s", key)
         self.logger.debug("Error message: %s", message)
         if key == "resource_not_found":
-            raise ResourceNotFoundError(
+            return ResourceNotFoundError(
                 code=key,
                 message=message,
                 **kwargs)
         elif key == "method_not_allowed":
-            raise MethodNotAllowedError(
+            return MethodNotAllowedError(
                 code=key,
                 message=message,
                 **kwargs)
         else:
-            raise BadRequestError(
+            return BadRequestError(
                 code=key,
                 message=message,
                 **kwargs)
@@ -204,11 +203,12 @@ class ResourceRouterABC(Loggable):
                         # should be the last part of the path
                         # fail if not, otherwise return the result
                         if len(split_path):
-                            self.fail("resource_not_found", path=path)
+                            raise self.make_error("resource_not_found",
+                                                  path=path)
                         result.append(field)
                         return result
                 else:
-                    self.fail("resource_not_found", path=path)
+                    raise self.make_error("resource_not_found", path=path)
             # check if this resource has an identifier or not
             id_keys = resource.schema_cls(
                 **self._get_resource_kwargs(resource.schema_cls)).id_keys
@@ -219,7 +219,7 @@ class ResourceRouterABC(Loggable):
                 # e.g. /resource/<key_one_of_two/
                 # resource that has a multi key identifier;
                 # only one provided
-                self.fail("resource_not_found", path=path)
+                raise self.make_error("resource_not_found", path=path)
             else:
                 # append the given identifier
                 ident = ()
@@ -406,7 +406,8 @@ class ResourceRouterABC(Loggable):
         elif method.lower() == "options":
             return self.options(path)
         else:
-            self.fail("method_not_allowed", path=path, method=method.upper())
+            raise self.make_error("method_not_allowed", path=path,
+                                  method=method.upper())
 
 
 class ModelResourceRouter(ResourceRouterABC):
@@ -508,7 +509,7 @@ class ModelResourceRouter(ResourceRouterABC):
                 except RegistryError:
                     self.logger.debug(
                         "Unable to find resource due to Registry error.")
-                    self.fail("resource_not_found")
+                    raise self.make_error("resource_not_found")
         return self.resource
 
     def _get_path_objects(self, path):
@@ -561,12 +562,13 @@ class ModelResourceRouter(ResourceRouterABC):
                     if not path_part.many:
                         instance = getattr(instance, path_part.name)
                         if instance is None:
-                            self.fail("resource_not_found", path=path)
+                            raise self.make_error("resource_not_found",
+                                                  path=path)
                 else:
                     # resource property
                     if len(path_parts):  # pragma: no cover
                         # failsafe, should get caught by _get_path_info
-                        self.fail("resource_not_found", path=path)
+                        raise self.make_error("resource_not_found", path=path)
                     field = path_part
             elif isinstance(path_part, BaseModelResource):
                 resource = path_part
@@ -589,13 +591,13 @@ class ModelResourceRouter(ResourceRouterABC):
                             model_attr == value)
                     instance = query_session.first()
                     if instance is None:
-                        self.fail("resource_not_found", path=path)
+                        raise self.make_error("resource_not_found", path=path)
                 # if this is the end of the path, don't need instance
         if resource is None:  # pragma: no cover
             # _get_path_info should catch this type of error first.
             # keeping this as a failsafe in case _get_path_info is
             # overridden.
-            self.fail("resource_not_found", path=path)
+            raise self.make_error("resource_not_found", path=path)
         # TODO - This is pretty ugly. Needs to be tightened up.
         return {
             "parent_resource": parent_resource,
@@ -773,7 +775,7 @@ class ModelResourceRouter(ResourceRouterABC):
             if result:
                 return result
         # failsafe only hit if _subfield_update fails unexpectedly
-        self.fail(  # pragma: no cover
+        raise self.make_error(  # pragma: no cover
             "method_not_allowed",
             path=path,
             method="PUT")
@@ -825,7 +827,7 @@ class ModelResourceRouter(ResourceRouterABC):
                 path=path)
             if result:
                 return result
-        self.fail(  # pragma: no cover
+        raise self.make_error(  # pragma: no cover
             "method_not_allowed",
             path=path,
             method="PATCH"
@@ -875,7 +877,7 @@ class ModelResourceRouter(ResourceRouterABC):
                 path=path)
             if result:
                 return result
-        self.fail("method_not_allowed", path=path, method="POST")
+        raise self.make_error("method_not_allowed", path=path, method="POST")
 
     def options(self, path):
         """Generic API router for OPTIONS requests.
@@ -945,7 +947,8 @@ class ModelResourceRouter(ResourceRouterABC):
                 head=head)
             if result is not None and field_name in result:
                 return result[field_name]
-            self.fail("resource_not_found", path=path)  # pragma: no cover
+            raise self.make_error(
+                "resource_not_found", path=path)  # pragma: no cover
         if isinstance(path_part, Field) or isinstance(
                 path_part, BaseModelResource):
             # resource collection
@@ -996,7 +999,7 @@ class ModelResourceRouter(ResourceRouterABC):
                     head=head)
                 if len(result) != 1:  # pragma: no cover
                     # failsafe, _get_path_objects will catch this first.
-                    self.fail("resource_not_found", path=path)
+                    raise self.make_error("resource_not_found", path=path)
                 return result[0]
         elif isinstance(path_part, tuple):
             # path part is a resource identifier
@@ -1009,7 +1012,8 @@ class ModelResourceRouter(ResourceRouterABC):
                 strict=strict,
                 session=query_session,
                 head=head)
-        self.fail("resource_not_found", path=path)  # pragma: no cover
+        raise self.make_error(
+            "resource_not_found", path=path)  # pragma: no cover
 
     def delete(self, path, query_params=None):
         """Generic API router for DELETE requests.
@@ -1054,7 +1058,7 @@ class ModelResourceRouter(ResourceRouterABC):
             if result is not None and field_name in result:
                 return result[field_name]
             # failsafe, should be caught by _get_path_objects
-            self.fail(
+            raise self.make_error(
                 "resource_not_found", path=path)  # pragma: no cover
         elif isinstance(path_part, NestedPermissibleABC):
             # subresource
@@ -1090,4 +1094,5 @@ class ModelResourceRouter(ResourceRouterABC):
             # path part is a resource identifier
             # individual instance
             return resource.delete(ident=path_part)
-        self.fail("resource_not_found", path=path)  # pragma: no cover
+        raise self.make_error(
+            "resource_not_found", path=path)  # pragma: no cover

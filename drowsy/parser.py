@@ -276,17 +276,16 @@ class QueryParamParser(Loggable):
         """
         self._context = val
 
-    def fail(self, key, **kwargs):
-        """Raises an exception based on the ``key`` provided.
+    def make_error(self, key, **kwargs):
+        """Return an exception based on the ``key`` provided.
 
         :param str key: Failure type, used to choose an error message.
         :param kwargs: Any additional arguments that may be used for
             generating an error message.
-        :raise FilterParseError: Raised in cases where there was an
-            issue parsing a filter.
-        :raise OffsetLimitParseError: Raised in cases where there was
-            an issue parsing the offset, limit, or page value.
-        :raise ParseError: Raised in all other cases.
+        :return: `FilterParseError`in cases where there was an
+            issue parsing a filter. `OffsetLimitParseError` in cases
+            where there was an issue parsing the offset, limit, or page
+            value. `ParseError` raised in all other cases.
 
         """
         offset_limit_parse_keys = {
@@ -294,17 +293,17 @@ class QueryParamParser(Loggable):
             "invalid_page_value", "page_no_max", "page_negative",
             "invalid_sublimit_value", "invalid_suboffset_value"}
         if key in offset_limit_parse_keys:
-            raise OffsetLimitParseError(
+            return OffsetLimitParseError(
                 code=key,
                 message=self._get_error_message(key, **kwargs),
                 **kwargs)
         elif key == "invalid_complex_filters":
-            raise FilterParseError(
+            return FilterParseError(
                 code=key,
                 message=self._get_error_message(key, **kwargs),
                 **kwargs)
         else:
-            raise ParseError(
+            return ParseError(
                 code=key,
                 message=self._get_error_message(key, **kwargs),
                 **kwargs)
@@ -434,7 +433,7 @@ class QueryParamParser(Loggable):
                         raise ValueError
                 except (ValueError, TypeError):
                     if strict:
-                        self.fail(
+                        raise self.make_error(
                             key="invalid_limit_value",
                             limit=self.query_params.get(limit_query_name))
         # parse page
@@ -447,13 +446,13 @@ class QueryParamParser(Loggable):
             except (ValueError, TypeError):
                 page = None
                 if strict:
-                    self.fail(
+                    raise self.make_error(
                         "invalid_page_value",
                         page=self.query_params.get(page_query_name, None))
             if page > 1 and page_max_size is None and limit is None:
                 page = None
                 if strict:
-                    self.fail("page_no_max")
+                    raise self.make_error("page_no_max")
         # defaults
         offset = 0
         if offset_query_name is not None:
@@ -465,14 +464,14 @@ class QueryParamParser(Loggable):
                 except (ValueError, TypeError):
                     offset = 0
                     if strict:
-                        self.fail(
+                        raise self.make_error(
                             "invalid_offset_value",
                             offset=self.query_params.get(offset_query_name))
         if page_max_size and limit > page_max_size:
             # make sure an excessively high limit can't be set
             limit = page_max_size
             if strict:
-                self.fail("limit_too_high",
+                raise self.make_error("limit_too_high",
                           limit=self.query_params.get(limit_query_name, None),
                           max_page_size=page_max_size)
         if page is not None and page > 1:
@@ -544,7 +543,7 @@ class ModelQueryParamParser(QueryParamParser):
                     parse_type: key_value,
                     "subresource": key
                 }
-                self.fail(code, **kwargs)
+                raise self.make_error(code, **kwargs)
             return
         while key_parts:
             key_part = key_parts.pop(0)
@@ -553,7 +552,7 @@ class ModelQueryParamParser(QueryParamParser):
             else:
                 if key_parts:
                     if strict:
-                        self.fail(
+                        raise self.make_error(
                             "invalid_subresource_path",
                             subresource_path=key)
                     else:
@@ -752,13 +751,15 @@ class ModelQueryParamParser(QueryParamParser):
                         result.append(query)
                 except (TypeError, ValueError):
                     if strict:
-                        self.fail("invalid_complex_filters", qparam=attr_name)
+                        raise self.make_error("invalid_complex_filters",
+                                              qparam=attr_name)
             else:
                 if attr_name:
                     result.append(
                         {attr_name: {comparator: item}})
                 else:
-                    self.fail("invalid_complex_filters", qparam=attr_name)
+                    raise self.make_error("invalid_complex_filters",
+                                          qparam=attr_name)
         return result
 
     def parse_filters(self, model_class, complex_query_name="query",
@@ -834,7 +835,8 @@ class ModelQueryParamParser(QueryParamParser):
                         result["$and"].append(query)
                     except (TypeError, ValueError):
                         if strict:
-                            self.fail("invalid_complex_filters", qparam=key)
+                            raise self.make_error("invalid_complex_filters",
+                                                  qparam=key)
             elif not only_parse_complex:
                 # how much to remove from end of key to get the attr_name.
                 # default values:

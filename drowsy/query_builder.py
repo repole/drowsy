@@ -224,7 +224,7 @@ class ModelResourceQueryBuilder(QueryBuilder):
             if strict:
                 # TODO - this could be a whitelist permission issue
                 # Currently will raise a BadRequest error...
-                resource.fail("invalid_filters", exc=exc)
+                raise resource.make_error("invalid_filters", exc=exc)
         query = resource.apply_required_filters(query)
         if subfilters or embeds:
             # more complex process.
@@ -252,17 +252,20 @@ class ModelResourceQueryBuilder(QueryBuilder):
                             query, [sort], resource.convert_key_name)
                     except AttributeError:
                         if strict:
-                            resource.fail("invalid_sort_field", field=sort.attr)
+                            raise resource.make_error(
+                                "invalid_sort_field", field=sort.attr)
             try:
                 query = self.apply_offset(query, offset)
             except ValueError:
                 if strict:
-                    resource.fail("invalid_offset_value", offset=offset)
+                    raise resource.make_error(
+                        "invalid_offset_value", offset=offset)
             try:
                 query = self.apply_limit(query, limit)
             except ValueError:
                 if strict:
-                    resource.fail("invalid_limit_value", limit=limit)
+                    raise resource.make_error(
+                        "invalid_limit_value", limit=limit)
         return query
 
     def _get_partition_by_info(self, child, parent, relationship_name):
@@ -459,7 +462,8 @@ class ModelResourceQueryBuilder(QueryBuilder):
                         record_class, [sort], resource.convert_key_name)
                     order_bys.append(order_by)
                 except AttributeError:
-                    resource.fail()
+                    # TODO
+                    raise resource.make_error()
         else:
             order_bys = []
             schema = resource.make_schema()
@@ -472,11 +476,12 @@ class ModelResourceQueryBuilder(QueryBuilder):
                 )
         if limit is not None and limit < 0:
             if strict:
-                resource.fail("invalid_limit_value", limit=limit)
+                raise resource.make_error("invalid_limit_value", limit=limit)
             limit = None
         if offset is not None and offset < 0:
             if strict:
-                resource.fail("invalid_offset_value", offset=offset)
+                raise resource.make_error("invalid_offset_value",
+                                          offset=offset)
             limit = None
         if limit or offset:
             if supported:
@@ -679,7 +684,7 @@ class ModelResourceQueryBuilder(QueryBuilder):
                                 and
                                 user_supplied_limit > default_limit):
                             if strict:
-                                root_resource.fail(
+                                raise root_resource.make_error(
                                     "invalid_subresource_limit",
                                     supplied_limit=user_supplied_limit,
                                     max_limit=resource.page_max_size,
@@ -703,7 +708,7 @@ class ModelResourceQueryBuilder(QueryBuilder):
                         if strict and last_node["sorts"] is not None and (
                                 last_node["offset"] is None and
                                 last_node["limit"] is None):
-                            root_resource.fail(
+                            raise root_resource.make_error(
                                 "invalid_subresource_sorts",
                                 subresource_key=subfilter_key)
                         # Start figuring out if we need row_number
@@ -724,7 +729,7 @@ class ModelResourceQueryBuilder(QueryBuilder):
                             if not strict:
                                 failed = True
                                 continue
-                            root_resource.fail(
+                            raise root_resource.make_error(
                                 "invalid_subresource",
                                 subresource_key=subfilter_key
                             )
@@ -735,7 +740,7 @@ class ModelResourceQueryBuilder(QueryBuilder):
                             # This is a MANYTOONE and user supplied
                             # limit or offset. Fail if strict.
                             if strict:
-                                root_resource.fail(
+                                raise root_resource.make_error(
                                     "invalid_subresource_options",
                                     subresource_key=subfilter_key
                                 )
@@ -749,7 +754,7 @@ class ModelResourceQueryBuilder(QueryBuilder):
                             if not dialect_supported and strict:
                                 # dialect doesn't support limit/offset
                                 # fail accordingly
-                                root_resource.fail(
+                                raise root_resource.make_error(
                                     "invalid_subresource_options",
                                     subresource_key=subfilter_key)
                                 # if not strict, the below is skipped
@@ -820,7 +825,7 @@ class ModelResourceQueryBuilder(QueryBuilder):
                             if not strict:
                                 failed = True
                                 continue
-                            root_resource.fail(
+                            raise root_resource.make_error(
                                 "invalid_subresource_filters",
                                 exc=exc,
                                 subresource_key=subfilter_key)
@@ -836,7 +841,7 @@ class ModelResourceQueryBuilder(QueryBuilder):
                                 continue
                             # strict mode
                             # invalid embed, fail accordingly.
-                            root_resource.fail(
+                            raise root_resource.make_error(
                                 "invalid_embed",
                                 embed=subfilter_key
                             )
@@ -845,7 +850,7 @@ class ModelResourceQueryBuilder(QueryBuilder):
                             failed = True
                             continue
                         # subresource isn't valid, fail
-                        root_resource.fail(
+                        raise root_resource.make_error(
                             "invalid_subresource",
                             subresource_key=subfilter_key)
         # build options and joins
