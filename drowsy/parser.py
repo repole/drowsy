@@ -4,10 +4,10 @@
 
     Functions for parsing query info from url parameters.
 
-    :copyright: (c) 2016-2020 by Nicholas Repole and contributors.
-                See AUTHORS for more details.
-    :license: MIT - See LICENSE for more details.
 """
+# :copyright: (c) 2016-2020 by Nicholas Repole and contributors.
+#             See AUTHORS for more details.
+# :license: MIT - See LICENSE for more details.
 from drowsy.utils import get_error_message
 from drowsy.exc import (
     ParseError, FilterParseError, OffsetLimitParseError,
@@ -202,7 +202,7 @@ class QueryParamParser(Loggable):
 
     """Utility class used to parse query parameters."""
 
-    default_error_messages = {
+    _default_error_messages = {
         "invalid_limit_value": ("The limit provided (%(limit)s) is not a "
                                 "non negative integer."),
         "invalid_sublimit_value": ("The limit (%(limit)s) provided for the "
@@ -250,7 +250,7 @@ class QueryParamParser(Loggable):
         # Set up error messages
         messages = {}
         for cls in reversed(self.__class__.__mro__):
-            messages.update(getattr(cls, 'default_error_messages', {}))
+            messages.update(getattr(cls, '_default_error_messages', {}))
         messages.update(error_messages or {})
         self.error_messages = messages
 
@@ -471,9 +471,10 @@ class QueryParamParser(Loggable):
             # make sure an excessively high limit can't be set
             limit = page_max_size
             if strict:
-                raise self.make_error("limit_too_high",
-                          limit=self.query_params.get(limit_query_name, None),
-                          max_page_size=page_max_size)
+                raise self.make_error(
+                    "limit_too_high",
+                    limit=self.query_params.get(limit_query_name, None),
+                    max_page_size=page_max_size)
         if page is not None and page > 1:
             if limit is not None and page_max_size is None:
                 page_max_size = limit
@@ -556,7 +557,7 @@ class ModelQueryParamParser(QueryParamParser):
                             "invalid_subresource_path",
                             subresource_path=key)
                     else:
-                        break
+                        key_parts = []
                 else:
                     subitem_path = ".".join(subquery_path_parts)
                     if not isinstance(

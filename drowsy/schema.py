@@ -4,11 +4,10 @@
 
     Classes for building REST API friendly, model based schemas.
 
-    :copyright: (c) 2016-2020 by Nicholas Repole and contributors.
-                See AUTHORS for more details.
-    :license: MIT - See LICENSE for more details.
 """
-import typing
+# :copyright: (c) 2016-2020 by Nicholas Repole and contributors.
+#             See AUTHORS for more details.
+# :license: MIT - See LICENSE for more details.
 from marshmallow.decorators import post_load
 from marshmallow.exceptions import ValidationError
 from marshmallow.schema import Schema, SchemaOpts
@@ -18,7 +17,7 @@ from marshmallow_sqlalchemy.schema import (
     SQLAlchemyAutoSchema, SQLAlchemyAutoSchemaOpts)
 from sqlalchemy import inspect
 from drowsy.convert import ModelResourceConverter
-from drowsy.exc import MISSING_ERROR_MESSAGE, PermissionDenied
+from drowsy.exc import MISSING_ERROR_MESSAGE, PermissionValidationError
 from drowsy.fields import EmbeddableMixinABC
 from drowsy.log import Loggable
 from drowsy.utils import get_error_message
@@ -141,9 +140,10 @@ class ResourceSchema(Schema, Loggable):
 
     """
 
-    default_error_messages = {
+    _default_error_messages = {
         "item_already_exists": "The item being created already exists.",
-        "permission_denied": "You do not have permission to take that action."
+        "permission_denied": "You do not have permission to take that action.",
+        "invalid_identifier": "The identifier for this resource is invalid."
     }
 
     OPTIONS_CLASS = ResourceSchemaOpts
@@ -205,7 +205,7 @@ class ResourceSchema(Schema, Loggable):
         self.embedded = {}
         messages = {}
         for cls in reversed(self.__class__.__mro__):
-            messages.update(getattr(cls, 'default_error_messages', {}))
+            messages.update(getattr(cls, '_default_error_messages', {}))
         if isinstance(self.opts.error_messages, dict):
             messages.update(self.opts.error_messages)
         messages.update(error_messages or {})
@@ -220,12 +220,12 @@ class ResourceSchema(Schema, Loggable):
         :type data: dict or None
         :param kwargs: Any additional arguments that may be used for
             generating an error message.
-        :return: `PermissionDenied` exception if ``key`` is
+        :return: `PermissionValidationError` exception if ``key`` is
             ``"permission_denied"``, otherwise a `ValidationError`.
 
         """
         if key == "permission_denied":
-            return PermissionDenied(
+            return PermissionValidationError(
                 message=self._get_error_message(key, **kwargs),
                 data=data)
         else:
@@ -285,6 +285,8 @@ class ResourceSchema(Schema, Loggable):
 
         :param dict data: Data associated with this instance.
         :return: An object instance if it already exists, or None.
+        :raise ValidationError: If the ``id_keys`` in ``data`` are of
+            the wrong type.
 
         """
         return None
@@ -390,8 +392,8 @@ class ResourceSchema(Schema, Loggable):
             objects.
         :return: An instance with the provided data loaded into it.
         :raise ValidationError: If any errors are encountered.
-        :raise PermissionDenied: If any of the actions being taken are
-            not allowed.
+        :raise PermissionValidationError: If any of the actions being
+            taken are not allowed.
 
         """
         # inherit nested opts from parent if not already set
@@ -422,19 +424,20 @@ class ResourceSchema(Schema, Loggable):
                 if (key in self.fields and
                         isinstance(self.fields[key], (EmbeddableMixinABC,))):
                     self.embed([key])
-            # Handle self.instance and determine the action type
-            self.instance = instance or self.get_instance(obj)
-            persistent = False
-            if self.instance is not None and inspect(self.instance).persistent:
-                persistent = True
-            if supplied_action is None:
-                if self.instance is None or not persistent:
-                    action = "create"
-                else:
-                    action = "update"
-            else:
-                action = supplied_action
             try:
+                # Handle self.instance and determine the action type
+                self.instance = instance or self.get_instance(obj)
+                persistent = False
+                if self.instance is not None and inspect(
+                        self.instance).persistent:
+                    persistent = True
+                if supplied_action is None:
+                    if self.instance is None or not persistent:
+                        action = "create"
+                    else:
+                        action = "update"
+                else:
+                    action = supplied_action
                 if action == "create" and persistent:
                     self.handle_preexisting_create(obj)
                 self.check_permission(obj, instance, action)
@@ -445,14 +448,14 @@ class ResourceSchema(Schema, Loggable):
                 result = super(ResourceSchema, self).load(
                     obj, many=False, **kwargs)
                 results.append(result)
-            except PermissionDenied as exc:
+            except PermissionValidationError as exc:
                 if many:
                     # Limit returned error info to only the permission
                     # problem.
                     exc.valid_data = []
                     exc.messages = {i: exc.messages}
                     exc.data = data
-                # Always hard break on a PermissionDenied error
+                # Always hard break on a PermissionValidationError
                 raise exc
             except ValidationError as exc:
                 results.append({})
@@ -496,8 +499,8 @@ class ResourceSchema(Schema, Loggable):
         :param str action: Either ``"create"``, ``"update"``, or
             ``"delete"``.
         :return: None
-        :raise PermissionDenied: If the action being taken is not
-            allowed.
+        :raise PermissionValidationError: If the action being taken is
+            not allowed.
 
         """
         pass
@@ -588,14 +591,21 @@ class ModelResourceSchema(ResourceSchema, SQLAlchemyAutoSchema):
         :param dict data: Data associated with this instance.
         :return: An instance fetched from the database
             using the value of the ``id_keys`` in ``data``.
+        :raise ValidationError: If the ``id_keys`` in ``data`` are of
+            the wrong type.
 
         """
         keys = self.id_keys
-        filters = {
-            key: data.get(key)
-            for key in keys
-        }
-        if None not in filters.values():
+        if set(keys).issubset(data.keys()):
+            # data includes primary key columns
+            # attempt to generate filters
+            try:
+                filters = {
+                    key: self.fields[key].deserialize(data.get(key))
+                    for key in keys
+                }
+            except ValidationError:
+                raise self.make_error("invalid_identifier", data=data)
             query = self.session.query(
                 self.opts.model
             )

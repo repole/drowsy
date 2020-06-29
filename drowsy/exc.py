@@ -4,10 +4,10 @@
 
     Exceptions for Drowsy.
 
-    :copyright: (c) 2016-2020 by Nicholas Repole and contributors.
-                See AUTHORS for more details.
-    :license: MIT - See LICENSE for more details.
 """
+# :copyright: (c) 2016-2020 by Nicholas Repole and contributors.
+#             See AUTHORS for more details.
+# :license: MIT - See LICENSE for more details.
 from marshmallow.exceptions import ValidationError
 
 MISSING_ERROR_MESSAGE = (
@@ -113,8 +113,8 @@ class FilterParseError(ParseError):
     pass
 
 
-class PermissionDenied(ValidationError):
+class PermissionValidationError(ValidationError):
 
-    """Generic exception class for an unauthorized action."""
+    """Generic schema exception class for an unauthorized action."""
 
     pass

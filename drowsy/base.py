@@ -6,11 +6,11 @@
 
     Needed to avoid circular imports between resource and field.
 
-    :copyright: (c) 2016-2020 by Nicholas Repole and contributors.
-                See AUTHORS for more details.
-    :license: MIT - See LICENSE for more details.
 """
-import collections
+# :copyright: (c) 2016-2020 by Nicholas Repole and contributors.
+#             See AUTHORS for more details.
+# :license: MIT - See LICENSE for more details.
+import collections.abc
 from marshmallow.fields import Field, Nested, missing_
 from marshmallow.utils import is_collection
 from marshmallow.validate import ValidationError
@@ -18,7 +18,7 @@ from drowsy import resource_class_registry
 from contextlib import suppress
 from drowsy.exc import (
     BadRequestError, UnprocessableEntityError, MethodNotAllowedError,
-    ResourceNotFoundError, MISSING_ERROR_MESSAGE)
+    PermissionDeniedError, ResourceNotFoundError, MISSING_ERROR_MESSAGE)
 from drowsy.log import Loggable
 from drowsy.permissions import AllowAllOpPermissions
 from drowsy.utils import get_error_message, get_field_by_data_key
@@ -241,7 +241,7 @@ class NestedPermissibleABC(Nested, Loggable):
         :rtype: bool
 
         """
-        # TODO - raise PermissionDenied error instead?
+        # TODO - raise PermissionDeniedError instead?
         # Currently bad permissions on a nested op will get treated like
         # any other validation error.
         permissible = permissions.check(
@@ -703,7 +703,7 @@ class BaseResourceABC(SchemaResourceABC, NestableResourceABC):
 
     """Base Schema Resource abstract class to inherit from."""
 
-    default_error_messages = {
+    _default_error_messages = {
         "validation_failure": "Unable to process entity.",
         "invalid_embed": "Invalid embed supplied: %(embed)s",
         "invalid_embeds": "Invalid embed supplied: %(embeds)s",
@@ -729,9 +729,6 @@ class BaseResourceABC(SchemaResourceABC, NestableResourceABC):
         "invalid_subresource_options": ("Limit and offset for this "
                                         "subresource are not supported: "
                                         "%(subresource_key)s"),
-        "invalid_subresource_filters": ("The supplied filters for this "
-                                        "subresource are invalid: "
-                                        "%(subresource_key)s"),
         "invalid_subresource": "%(subresource_key)s is not a subresource.",
         "invalid_subresource_limit": ("The limit (%(supplied_limit)s) given "
                                       "for %(subresource_key)s subresource is "
@@ -740,7 +737,8 @@ class BaseResourceABC(SchemaResourceABC, NestableResourceABC):
         "invalid_subresource_sorts": ("The subresource %(subresource_key)s "
                                       "can not have sorts applied without "
                                       "a limit or offset being supplied."),
-        "permission_denied": "Permission denied."
+        "permission_denied": "Permission denied.",
+        "unexpected_error": "An unexpected error has occurred."
     }
 
     class Meta(object):
@@ -800,7 +798,7 @@ class BaseResourceABC(SchemaResourceABC, NestableResourceABC):
         # Set up error messages
         messages = {}
         for cls in reversed(self.__class__.__mro__):
-            messages.update(getattr(cls, 'default_error_messages', {}))
+            messages.update(getattr(cls, '_default_error_messages', {}))
         if isinstance(self.opts.error_messages, dict):
             messages.update(self.opts.error_messages)
         messages.update(error_messages or {})
@@ -846,7 +844,7 @@ class BaseResourceABC(SchemaResourceABC, NestableResourceABC):
         """
         # parse embed information
         # combine subfilters with embeds to take care of implied embeds
-        if isinstance(embeds, collections.Iterable):
+        if isinstance(embeds, collections.abc.Iterable):
             embeds_subfilters = [key for key in embeds]
             if isinstance(subfilters, dict):
                 for key in subfilters:
@@ -953,6 +951,12 @@ class BaseResourceABC(SchemaResourceABC, NestableResourceABC):
         elif key == "method_not_allowed":
             return MethodNotAllowedError(
                 code=key,
+                message=self._get_error_message(key, **kwargs),
+                **kwargs)
+        elif key == "permission_denied":
+            return PermissionDeniedError(
+                code=key,
+                errors=errors or {},
                 message=self._get_error_message(key, **kwargs),
                 **kwargs)
         else:

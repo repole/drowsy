@@ -7,10 +7,10 @@
     Work in progress, should not be used as anything other than
     a proof of concept at this point.
 
-    :copyright: (c) 2016-2020 by Nicholas Repole and contributors.
-                See AUTHORS for more details.
-    :license: MIT - See LICENSE for more details.
 """
+# :copyright: (c) 2016-2020 by Nicholas Repole and contributors.
+#             See AUTHORS for more details.
+# :license: MIT - See LICENSE for more details.
 import inflection
 from marshmallow.fields import Field, Nested
 from marshmallow_sqlalchemy.schema import (
@@ -34,7 +34,7 @@ class ResourceRouterABC(Loggable):
 
     """Abstract base class for a resource based automatic router."""
 
-    default_error_messages = {
+    _default_error_messages = {
         "resource_not_found": ("No resource matching the provided "
                                "identity could be found."),
         "method_not_allowed": ("The method (%(method)s) used to make this "
@@ -68,7 +68,7 @@ class ResourceRouterABC(Loggable):
         # Set up error messages
         messages = {}
         for cls in reversed(self.__class__.__mro__):
-            messages.update(getattr(cls, 'default_error_messages', {}))
+            messages.update(getattr(cls, '_default_error_messages', {}))
         messages.update(error_messages or {})
         self.error_messages = messages
 

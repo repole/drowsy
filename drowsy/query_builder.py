@@ -4,10 +4,10 @@
 
     Tools for building SQLAlchemy queries.
 
-    :copyright: (c) 2016-2020 by Nicholas Repole and contributors.
-                See AUTHORS for more details.
-    :license: MIT - See LICENSE for more details.
 """
+# :copyright: (c) 2016-2020 by Nicholas Repole and contributors.
+#             See AUTHORS for more details.
+# :license: MIT - See LICENSE for more details.
 from collections import defaultdict
 from drowsy.fields import NestedRelated
 from drowsy.log import Loggable
@@ -16,9 +16,11 @@ from drowsy.utils import get_field_by_data_key
 from sqlalchemy import and_, func, or_
 from sqlalchemy.inspection import inspect
 from sqlalchemy.orm import aliased, contains_eager
-from sqlalchemy.orm.interfaces import MANYTOMANY, MANYTOONE, ONETOMANY
+from sqlalchemy.orm.interfaces import MANYTOMANY, ONETOMANY
 from sqlalchemy.sql.elements import BinaryExpression, BooleanClauseList
-from mqlalchemy import apply_mql_filters, InvalidMQLException
+from mqlalchemy import (
+    apply_mql_filters, InvalidMqlException, MqlFieldError,
+    MqlFieldPermissionError, MqlTooComplex)
 
 
 class QueryBuilder(Loggable):
@@ -26,9 +28,18 @@ class QueryBuilder(Loggable):
     """Utility class for building a SQLAlchemy query."""
 
     def row_number_supported(self, dialect, dialect_override=False):
-        supported_dialects = ["mssql", "postgresql",
-                              "oracle"]  # , "sqlite" TESTING
-        return dialect_override or dialect in supported_dialects
+        """Given a SQL dialect, figure out if row_number is supported.
+
+        :param str dialect: SQL dialect being used, e.g. ``"mssql"``.
+        :param bool dialect_override: Can be used to force this method
+            to return ``True``.
+        :return: ``True`` if the dialect supports ``row_number`` or if
+            ``dialect_override`` is ``True``.
+        :rtype: bool
+
+        """
+        supported_dialects = ["mssql", "postgresql", "oracle"]
+        return dialect_override or dialect.lower() in supported_dialects
 
     def _get_order_bys(self, record_class, sorts, convert_key_names_func):
         """Helper method for applying sorts.
@@ -92,7 +103,8 @@ class QueryBuilder(Loggable):
     def apply_offset(self, query, offset):
         """Applies offset and limit to the query if appropriate.
 
-        :param query: Any desired filters must already have been applied.
+        :param query: Any desired filters must already have been
+            applied.
         :type query: :class:`~sqlalchemy.orm.query.Query`
         :param offset: Integer used to offset the query result.
         :type offset: int or None
@@ -114,9 +126,11 @@ class QueryBuilder(Loggable):
     def apply_limit(self, query, limit):
         """Applies limit to the query if appropriate.
 
-        :param query: Any desired filters must already have been applied.
+        :param query: Any desired filters must already have been
+            applied.
         :type query: :class:`~sqlalchemy.orm.query.Query`
-        :param limit: Integer used to limit the number of results returned.
+        :param limit: Integer used to limit the number of results
+            returned.
         :type limit: int or None
         :raise ValueError: If a non ``None`` limit is provided
             that is converted to a negative integer.
@@ -134,8 +148,8 @@ class QueryBuilder(Loggable):
         return query
 
     def apply_filters(self, query, model_class, filters, whitelist=None,
-                      stack_size_limit=100, convert_key_names_func=str,
-                      gettext=None):
+                      nested_conditions=None, stack_size_limit=100,
+                      convert_key_names_func=str, gettext=None):
         """Apply filters to a query using MQLAlchemy.
 
         :param query: A SQLAlchemy session or query.
@@ -145,6 +159,11 @@ class QueryBuilder(Loggable):
         :param whitelist: Used to determine what attributes are
             acceptable to be queried.
         :type whitelist: callable, list, set, or None
+        :param nested_conditions: Callable accepting one param, or
+            dict, where the key/param is a dot separated relationship
+            name, and the return value is any required SQL expressions
+            for filtering that relationship.
+        :type nested_conditions: callable, dict, or None
         :param stack_size_limit: Used to limit the allowable complexity
             of the applied filters.
         :type stack_size_limit: int or None
@@ -162,6 +181,7 @@ class QueryBuilder(Loggable):
             query,
             model_class,
             filters=filters,
+            nested_conditions=nested_conditions,
             whitelist=whitelist,
             stack_size_limit=stack_size_limit,
             convert_key_names_func=convert_key_names_func,
@@ -173,24 +193,91 @@ class ModelResourceQueryBuilder(QueryBuilder):
 
     """Class for building a SQLAlchemy query by using resources."""
 
+    class SubqueryNode(Loggable):
+
+        """Used for building a query with subresource filters included.
+
+        Not intended for external access.
+
+        """
+
+        def __init__(self, name, alias=None, parent=None, children=None,
+                     subquery=None, limit=None, limit_source=None, offset=None,
+                     sorts=None, convert_key_name=None, whitelist=None,
+                     relationship_direction=None, joined=False, option=None):
+            """
+
+            :param str name: Name of the subresource.
+            :param alias:
+            :type alias:
+            :param parent: The parent of this SubqueryNode. Always has
+                a value, unless this is the root node.
+            :type parent: SubqueryNode or None
+            :param children: Holds any child subresource nodes.
+            :type children: list of SubqueryNode or None
+            :param subquery: An aliased SQLAlchemy select statement.
+            :param limit: Limit the number of results for this
+                subresource.
+            :type limit: int or None
+            :param str limit_source: Whether the limit was provided by
+                the `"user"` or was a "`default`".
+            :param offset: Offset to apply to the query for this node.
+            :type offset: int or None
+            :param sorts: Any sorts to apply to the query for this node.
+            :type sorts: list of :class:`~drowsy.parser.SortInfo`
+            :param convert_key_name: Function for converting from
+                user facing field names to internal field names.
+            :type convert_key_name: callable or None
+            :param whitelist: What fields are acceptable to be queried
+                for this model.
+            :type whitelist: callable or None
+            :param bool joined: ``True`` if the subquery has been
+                joined into our final query.
+            :param relationship_direction:
+            :type relationship_direction:
+            :param option:
+            :type option:
+
+            """
+            self.parent = parent
+            self.name = name
+            self.alias = alias
+            self.children = children or []
+            self.subquery = subquery
+            self.limit = limit
+            self.limit_source = limit_source
+            self.offset = offset
+            self.sorts = sorts
+            self.convert_key_name = convert_key_name
+            self.whitelist = whitelist
+            self.relationship_direction = relationship_direction
+            self.joined = joined
+            self.option = option
+
     def build(self, query, resource, filters, subfilters, embeds=None,
               offset=None, limit=None, sorts=None, strict=True,
               stack_size_limit=100, dialect_override=False):
-        """Apply joins, load options, and subfilters to a query.
-
-        NOTE: This is heavily dependent on ModelResource, which is
-        more tightly coupled than ideally it'd be. Should figure out
-        how to better separate these concerns.
+        """Build a complex query using user supplied parameters.
 
         :param query: A SQLAlchemy query.
         :param resource: Base resource containing the sub resources
             that are to be filtered.
         :type resource: :class:`~drowsy.resource.BaseModelResource`
-        :param subfilters: Dictionary of filters, with the
-            subresource dot separated name as the key.
+        :param filters: The MQLAlchemy style filters to apply.
+        :type filters: dict or None
+        :param subfilters: Dictionary of filters to apply to embedded
+            subresources, with the subresource dot separated name as the
+            key.
         :type subfilters: dict or None
         :param embeds: List of subresources and fields to embed.
         :type embeds: list or None
+        :param offset: Integer used to offset the query result.
+        :type offset: int or None
+        :param limit: Integer used to limit the number of results
+            returned.
+        :type limit: int or None
+        :param sorts: A list of sorts to apply to this query.
+        :type sorts: list of :class:`~drowsy.parser.SortInfo`
         :param bool strict: If ``True``, will raise an exception when
             bad parameters are passed. If ``False``, will quietly ignore
             any bad input and treat it as if none was provided.
@@ -210,21 +297,20 @@ class ModelResourceQueryBuilder(QueryBuilder):
 
         """
         # apply filters
-        # TODO - better planning for new MQLAlchemy
         try:
             query = self.apply_filters(
                 query,
                 resource.model,
                 filters=filters,
+                nested_conditions=resource.get_required_nested_filters,
                 whitelist=resource.whitelist,
                 stack_size_limit=stack_size_limit,
                 convert_key_names_func=resource.convert_key_name,
                 gettext=resource.context.get("gettext", None))
-        except InvalidMQLException as exc:
-            if strict:
-                # TODO - this could be a whitelist permission issue
-                # Currently will raise a BadRequest error...
-                raise resource.make_error("invalid_filters", exc=exc)
+        except InvalidMqlException as exc:
+            self._handle_filter_errors(
+                resource=resource,
+                exc=exc)
         query = resource.apply_required_filters(query)
         if subfilters or embeds:
             # more complex process.
@@ -243,6 +329,10 @@ class ModelResourceQueryBuilder(QueryBuilder):
             )
         else:
             # simple query, apply offset/limit/sorts now
+            if not sorts and offset is not None:
+                sorts = []
+                for key in resource.schema.id_keys:
+                    sorts.append(SortInfo(attr=key))
             if sorts:
                 for sort in sorts:
                     if not isinstance(sort, SortInfo):
@@ -435,6 +525,49 @@ class ModelResourceQueryBuilder(QueryBuilder):
                     raise ValueError  # pragma: no cover
         return partition_by, queryable, join
 
+    def _handle_filter_errors(self, resource, exc, subfilter_key=None):
+        """Helper method to handle raising MQL related errors.
+
+        :param resource: Root resource filters are being applied to.
+        :type resource: :class:`~drowsy.resource.BaseModelResource`
+        :param exc: The exception raised by MQLAlchemy.
+        :type exc: :class:`~mqlalchemy.exc.InvalidMqlException`
+        :param subfilter_key: If the filters were being applied to a
+            subresource, provide the unconverted dot separated name
+            of that subresource.
+        :type subfilter_key: str or None
+        :raise DrowsyError: In all cases.
+
+        """
+        try:
+            raise exc
+        except MqlFieldPermissionError as exc:
+            raise resource.make_error(
+                "filters_permission_error",
+                exc=exc,
+                subresource_key=subfilter_key)
+        except MqlFieldError as exc:
+            if exc.op:
+                raise resource.make_error(
+                    "filters_field_op_error",
+                    exc=exc,
+                    subresource_key=subfilter_key)
+            else:
+                raise resource.make_error(
+                    "filters_field_error",
+                    exc=exc,
+                    subresource_key=subfilter_key)
+        except MqlTooComplex as exc:
+            raise resource.make_error(
+                "filters_too_complex",
+                exc=exc,
+                subresource_key=subfilter_key)
+        except InvalidMqlException as exc:  # pragma: no cover
+            raise resource.make_error(
+                "invalid_filters",
+                exc=exc,
+                subresource_key=subfilter_key)
+
     def _initiate_subquery(self, query, resource, offset, limit, sorts,
                            supported, strict=True):
         """Handles query limit/offset/sorts for different dialects.
@@ -444,30 +577,42 @@ class ModelResourceQueryBuilder(QueryBuilder):
         process to first grab results matching the parent table,
         and then a separate query to join to those results.
 
-        :param query:
-        :param resource:
-        :param offset:
-        :param limit:
-        :param sorts:
-        :return:
+        :param query: A SQLAlchemy query.
+        :param resource: Base resource containing the sub resources
+            that are to be filtered.
+        :type resource: :class:`~drowsy.resource.BaseModelResource`
+        :param offset: Integer used to offset the query result.
+        :type offset: int or None
+        :param limit: Integer used to limit the number of results
+            returned.
+        :type limit: int or None
+        :param sorts: A list of sorts to apply to this query.
+        :type sorts: list of :class:`~drowsy.parser.SortInfo`
+        :param bool supported: ``True`` if ``row_number`` is supported
+            by the SQL engine being used.
+        :param bool strict: If ``True``, will raise an exception when
+            bad parameters are passed. If ``False``, will quietly ignore
+            any bad input and treat it as if none was provided.
+        :return: A query that has had the proper pagination logic
+            applies before any subresources are embedded or filtered.
+        :rtype: :class:`~sqlalchemy.orm.query.Query`
 
         """
         record_class = resource.model
-        id_keys = None
+        schema = resource.make_schema()
+        id_keys = schema.id_keys
         if sorts:
             order_bys = []
             for sort in sorts:
                 try:
-                    order_by = self._get_order_bys(
+                    order_bys = self._get_order_bys(
                         record_class, [sort], resource.convert_key_name)
-                    order_bys.append(order_by)
                 except AttributeError:
-                    # TODO
-                    raise resource.make_error()
+                    if strict:
+                        raise resource.make_error(
+                            "invalid_sort_field", field=sort.attr)
         else:
             order_bys = []
-            schema = resource.make_schema()
-            id_keys = schema.id_keys
             for attr_name in id_keys:
                 order_bys.append(
                     getattr(
@@ -482,14 +627,14 @@ class ModelResourceQueryBuilder(QueryBuilder):
             if strict:
                 raise resource.make_error("invalid_offset_value",
                                           offset=offset)
-            limit = None
+            offset = None
         if limit or offset:
             if supported:
                 # Use row_number to figure out which rows to pull
                 row_number = func.row_number().over(
                     order_by=order_bys
                 ).label("row_number")
-                query = query.add_column(row_number)
+                query = query.add_columns(row_number)
                 # limit and offset handling
                 start = 1
                 if offset is not None:
@@ -516,9 +661,6 @@ class ModelResourceQueryBuilder(QueryBuilder):
                 if offset:
                     temp_query = self.apply_offset(temp_query, offset)
                 results = temp_query.all()
-                if not id_keys:
-                    schema = resource.make_schema()
-                    id_keys = schema.id_keys
                 if len(id_keys) > 1:
                     filters = []
                     for result in results:
@@ -551,19 +693,22 @@ class ModelResourceQueryBuilder(QueryBuilder):
                              dialect_override=False):
         """Apply joins, load options, and subfilters to a query.
 
-        NOTE: This is heavily dependent on ModelResource, which isn't
-        a great indication of good design. Should figure out how to
-        better separate these concerns.
-
         :param query: A SQLAlchemy query.
         :param resource: Base resource containing the sub resources
             that are to be filtered.
         :type resource: :class:`~drowsy.resource.BaseModelResource`
-        :param subfilters: Dictionary of filters, with the
-            subresource dot separated name as the key.
-        :type subfilters: dict or None
+        :param subfilters: Dictionary of filters to apply to embedded
+            subresources, with the subresource dot separated name as the
+            key.
         :param embeds: List of subresources and fields to embed.
         :type embeds: list or None
+        :param offset: Integer used to offset the query result.
+        :type offset: int or None
+        :param limit: Integer used to limit the number of results
+            returned.
+        :type limit: int or None
+        :param sorts: A list of sorts to apply to this query.
+        :type sorts: list of :class:`~drowsy.parser.SortInfo`
         :param bool strict: If ``True``, will raise an exception when
             bad parameters are passed. If ``False``, will quietly ignore
             any bad input and treat it as if none was provided.
@@ -574,6 +719,7 @@ class ModelResourceQueryBuilder(QueryBuilder):
             SQL dialect limitations. Mainly used for testing.
         :return: query with joins, load options, and subresource
             filters applied as appropriate.
+        :rtype: :class:`~sqlalchemy.orm.query.Query`
         :raise BadRequestError: Uses the provided resource to raise
             an error when subfilters or embeds are unable to be
             successfully applied.
@@ -582,6 +728,9 @@ class ModelResourceQueryBuilder(QueryBuilder):
             of the wrong type.
 
         """
+        # NOTE: This is heavily dependent on ModelResource, which isn't
+        # a great indication of good design. Should figure out how to
+        # better separate these concerns.
         embeds = embeds or []
         subfilters = subfilters or {}
         dialect_supported = self.row_number_supported(
@@ -589,18 +738,10 @@ class ModelResourceQueryBuilder(QueryBuilder):
             dialect_override=dialect_override)
         query = self._initiate_subquery(
             query, resource, offset, limit, sorts, dialect_supported, strict)
-        root = {
-            "children": [],
-            "parent": None,
-            "alias": resource.model,
-            "limit": None,
-            "offset": None,
-            "order": None,
-            "subquery": None,
-            "name": "$root",
-            "joined": False,
-            "relationship_direction": None
-        }
+        root = self.SubqueryNode(
+            alias=resource.model,
+            name="$root"
+        )
         model_count = defaultdict(int)
         root_resource = resource
         embeds = [e for e in embeds if e not in subfilters.keys()]
@@ -633,11 +774,10 @@ class ModelResourceQueryBuilder(QueryBuilder):
                     schema=schema,
                     data_key=split_key)
                 if isinstance(field, NestedRelated):
-                    # TODO - Should this be field.name?
                     resource = resource.make_subresource(name=split_key)
                     schema = resource.make_schema()
-                    for node in last_node["children"]:
-                        if node["name"] == field.name:
+                    for node in last_node.children:
+                        if node.name == field.name:
                             # node already exists in last_node children
                             last_node = node
                             # no need to update it, skip the below else
@@ -651,34 +791,32 @@ class ModelResourceQueryBuilder(QueryBuilder):
                             default_limit = resource.page_max_size
                         else:
                             default_limit = None
-                        relationship = getattr(last_node["alias"], field.name)
+                        relationship = getattr(last_node.alias, field.name)
                         relationship_direction = relationship.prop.direction
-                        new_node = {
-                            "parent": last_node,
-                            "name": field.name,
-                            "alias": aliased(
+                        new_node = self.SubqueryNode(
+                            parent=last_node,
+                            name=field.name,
+                            alias=aliased(
                                 resource_model,
                                 name=(
                                     resource_model.__name__ +
                                     str(model_count[resource_model])
                                 )
                             ),
-                            "subquery": None,
-                            "limit": default_limit,
-                            "limit_source": "default",
-                            "offset": user_supplied_offset,
-                            "sorts": user_supplied_sorts,
-                            "children": [],
-                            "joined": False,
-                            "convert_key_name": resource.convert_key_name,
-                            "whitelist": resource.whitelist,
-                            "relationship_direction": relationship_direction
-                        }
+                            limit=default_limit,
+                            limit_source="default",
+                            offset=user_supplied_offset,
+                            sorts=user_supplied_sorts,
+                            children=[],
+                            convert_key_name=resource.convert_key_name,
+                            whitelist=resource.whitelist,
+                            relationship_direction=relationship_direction
+                        )
                         # This takes care of embedding when is_embed
-                        new_node["subquery"] = resource.apply_required_filters(
-                            query=resource.session.query(new_node["alias"]),
-                            alias=new_node["alias"]
-                        ).subquery(inspect(new_node["alias"]).name)
+                        new_node.subquery = resource.apply_required_filters(
+                            query=resource.session.query(new_node.alias),
+                            alias=new_node.alias
+                        ).subquery(inspect(new_node.alias).name)
                         if default_limit is not None and (
                                 user_supplied_limit is not None
                                 and
@@ -691,36 +829,33 @@ class ModelResourceQueryBuilder(QueryBuilder):
                                     subresource_key=subfilter_key)
                             user_supplied_limit = default_limit
                         elif user_supplied_limit is not None:
-                            new_node["limit"] = user_supplied_limit
-                            new_node["limit_source"] = "user"
-                        last_node["children"].append(new_node)
+                            new_node.limit = user_supplied_limit
+                            new_node.limit_source = "user"
+                        last_node.children.append(new_node)
                         last_node = new_node
                     if not split_subfilter_keys and not is_embed:
                         # Default subquery likely to be overridden below
                         # This will get used in situations where
                         # no limit or offset is provided, since
                         # row_number won't be needed for pagination.
-                        subquery = resource.session.query(last_node["alias"])
+                        subquery = resource.session.query(last_node.alias)
                         subquery = resource.apply_required_filters(
                             subquery,
-                            alias=last_node["alias"])
+                            alias=last_node.alias)
                         # Sort should only be provided with offset/limit
-                        if strict and last_node["sorts"] is not None and (
-                                last_node["offset"] is None and
-                                last_node["limit"] is None):
+                        if strict and last_node.sorts is not None and (
+                                last_node.offset is None and
+                                last_node.limit is None):
                             raise root_resource.make_error(
                                 "invalid_subresource_sorts",
                                 subresource_key=subfilter_key)
                         # Start figuring out if we need row_number
-                        queryable = None
-                        partition_by = None
-                        join_condition = None
                         try:
                             partition_by, queryable, join_condition = (
                                 self._get_partition_by_info(
-                                    last_node["alias"],
-                                    last_node["parent"]["alias"],
-                                    last_node["name"]
+                                    last_node.alias,
+                                    last_node.parent.alias,
+                                    last_node.name
                                 )
                             )
                         except ValueError:  # pragma: no cover
@@ -735,8 +870,8 @@ class ModelResourceQueryBuilder(QueryBuilder):
                             )
                         # Check the status of the above partition_by
                         if partition_by is None and (
-                                last_node["limit"] is not None or
-                                last_node["offset"] is not None):
+                                last_node.limit is not None or
+                                last_node.offset is not None):
                             # This is a MANYTOONE and user supplied
                             # limit or offset. Fail if strict.
                             if strict:
@@ -748,9 +883,9 @@ class ModelResourceQueryBuilder(QueryBuilder):
                         # Valid partition by generated,
                         # time to use row_number
                         if partition_by is not None and (
-                                last_node["limit"] is not None or
+                                last_node.limit is not None or
                                 # 1 is not None or  # testing
-                                last_node["offset"] is not None):
+                                last_node.offset is not None):
                             if not dialect_supported and strict:
                                 # dialect doesn't support limit/offset
                                 # fail accordingly
@@ -764,11 +899,11 @@ class ModelResourceQueryBuilder(QueryBuilder):
                                 # row_number for limiting/offsetting
                                 # the subresource.
                                 # Order by to be used in row_number
-                                if last_node["sorts"]:
+                                if last_node.sorts:
                                     # Use sorts from user if provided
                                     order_by = self._get_order_bys(
-                                        last_node["alias"],
-                                        last_node["sorts"],
+                                        last_node.alias,
+                                        last_node.sorts,
                                         resource.convert_key_name
                                     )
                                 else:
@@ -778,11 +913,11 @@ class ModelResourceQueryBuilder(QueryBuilder):
                                     for attr_name in attr_names:
                                         order_by.append(
                                             getattr(
-                                                last_node["alias"],
+                                                last_node.alias,
                                                 attr_name).asc()
                                         )
                                 q1 = resource.session.query(
-                                    last_node["alias"],
+                                    last_node.alias,
                                     func.row_number().over(
                                         partition_by=partition_by,
                                         order_by=order_by
@@ -796,11 +931,11 @@ class ModelResourceQueryBuilder(QueryBuilder):
                                 q1 = q1.subquery("q1")
                                 # limit and offset handling
                                 start = 1
-                                if last_node["offset"] is not None:
-                                    start = last_node["offset"] + 1
+                                if last_node.offset is not None:
+                                    start = last_node.offset + 1
                                 end = None
-                                if last_node["limit"] is not None:
-                                    end = start + last_node["limit"] - 1
+                                if last_node.limit is not None:
+                                    end = start + last_node.limit - 1
                                 subquery = resource.session.query(q1).filter(
                                      q1.c.row_number >= start)
                                 if end is not None:
@@ -809,26 +944,28 @@ class ModelResourceQueryBuilder(QueryBuilder):
                                     )
                         try:
                             subquery = resource.apply_required_filters(
-                                subquery, alias=last_node["alias"])
-                            last_node["subquery"] = (
+                                subquery, alias=last_node.alias)
+                            last_node.subquery = (
                                 self.apply_filters(
                                     query=subquery,
-                                    model_class=last_node["alias"],
+                                    model_class=last_node.alias,
                                     whitelist=resource.whitelist,
+                                    nested_conditions=(
+                                        resource.get_required_nested_filters),
                                     filters=user_supplied_filters,
                                     convert_key_names_func=(
                                         resource.convert_key_name),
                                     stack_size_limit=stack_size_limit
-                                ).subquery(inspect(last_node["alias"]).name)
+                                ).subquery(inspect(last_node.alias).name)
                             )
-                        except InvalidMQLException as exc:
+                        except InvalidMqlException as exc:
                             if not strict:
                                 failed = True
                                 continue
-                            raise root_resource.make_error(
-                                "invalid_subresource_filters",
+                            self._handle_filter_errors(
+                                resource=resource,
                                 exc=exc,
-                                subresource_key=subfilter_key)
+                                subfilter_key=subfilter_key)
                 else:
                     if is_embed:
                         if not split_subfilter_keys:
@@ -860,40 +997,40 @@ class ModelResourceQueryBuilder(QueryBuilder):
         while node_queue:
             node = node_queue.pop(0)
             nodes.append(node)
-            for child in node["children"]:
+            for child in node.children:
                 node_queue.append(child)
         for node in nodes:
-            if node["name"] == "$root":
+            if node.name == "$root":
                 continue
-            relationship = getattr(inspect(node["parent"]["alias"]).class_,
-                                   node["name"])
-            left = node["parent"]["subquery"]
+            relationship = getattr(inspect(node.parent.alias).class_,
+                                   node.name)
+            left = node.parent.subquery
             if left is None:
-                left = node["parent"]["alias"]
+                left = node.parent.alias
             join_info = relationship.prop._create_joins(
                 source_selectable=inspect(left).selectable,
-                dest_selectable=inspect(node["subquery"]).selectable,
+                dest_selectable=inspect(node.subquery).selectable,
                 source_polymorphic=True,
                 dest_polymorphic=True,
-                of_type_mapper=inspect(node["alias"]).mapper)
+                of_type_mapper=inspect(node.alias).mapper)
             primaryjoin = join_info[0]
             secondaryjoin = join_info[1]
             secondary = join_info[4]
             if secondary is not None:
                 query = query.outerjoin(secondary, primaryjoin)
-                query = query.outerjoin(node["subquery"], secondaryjoin)
+                query = query.outerjoin(node.subquery, secondaryjoin)
             else:
-                query = query.outerjoin(node["subquery"], primaryjoin)
-            if node["parent"] and node["parent"].get("option", None):
-                node["option"] = node["parent"]["option"].contains_eager(
-                    node["name"],
-                    alias=node["subquery"])
+                query = query.outerjoin(node.subquery, primaryjoin)
+            if node.parent and node.parent.option:
+                node.option = node.parent.option.contains_eager(
+                    node.name,
+                    alias=node.subquery)
             else:
-                node["option"] = contains_eager(
-                    node["name"],
-                    alias=node["subquery"])
-            if not node["children"]:
-                subfilter_options.append(node["option"])
+                node.option = contains_eager(
+                    node.name,
+                    alias=node.subquery)
+            if not node.children:
+                subfilter_options.append(node.option)
         if subfilter_options:
             query = query.options(*subfilter_options)
         return query

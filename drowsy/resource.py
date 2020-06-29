@@ -4,19 +4,23 @@
 
     Base classes for building resources and model resources.
 
-    :copyright: (c) 2016-2020 by Nicholas Repole and contributors.
-                See AUTHORS for more details.
-    :license: MIT - See LICENSE for more details.
 """
+# :copyright: (c) 2016-2020 by Nicholas Repole and contributors.
+#             See AUTHORS for more details.
+# :license: MIT - See LICENSE for more details.
 import math
 from marshmallow.exceptions import ValidationError
-from mqlalchemy import InvalidMQLException
+from mqlalchemy import (
+    InvalidMqlException, MqlFieldError, MqlFieldPermissionError, MqlTooComplex)
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy import inspect
 from drowsy import resource_class_registry
 from drowsy.base import BaseResourceABC
-from drowsy.exc import BadRequestError, PermissionDenied
-from drowsy.fields import Relationship
+from drowsy.compat import suppress
+from drowsy.exc import (
+    BadRequestError, PermissionValidationError, PermissionDeniedError)
+from drowsy.fields import (
+    EmbeddableMixinABC, NestedPermissibleABC, Relationship)
 from drowsy.log import Loggable
 from drowsy.query_builder import ModelResourceQueryBuilder
 
@@ -284,7 +288,19 @@ class ResourceMeta(type):
 class BaseModelResource(BaseResourceABC):
 
     """Model API Resources should inherit from this object."""
+
     OPTIONS_CLASS = ResourceOpts
+
+    _default_error_messages = {
+        "filters_field_op_error": ("A value of `%(value)s` was provided for "
+                                   "the field `%(field)s` using `%(op)s`."),
+        "filters_field_error": ("A value of `%(value)s` was provided for the "
+                                "field `%(field)s`."),
+        "filters_permission_error": ("You do not have permission to filter "
+                                     "the field `%(field)s`."),
+        "filters_too_complex": ("The filters provided can not be processed "
+                                "due to being overly complex.")
+    }
 
     def __init__(self, session, context=None, page_max_size=None,
                  error_messages=None, parent_field=None):
@@ -345,9 +361,9 @@ class BaseModelResource(BaseResourceABC):
         :type errors: dict or None
         :param exc: If another exception triggered this failure, it may
             be provided for a more informative failure. In the case of
-            an ``InvalidMQLException`` being provided when ``key`` is
-            ``"invalid_filters"``, that error message will override
-            ``self.error_messages["invalid_filters"]``.
+            an ``InvalidMqlException`` being provided, the
+            ``exc.message`` will be used as part of the error message
+            here.
         :type exc: :exc:`Exception` or None
         :param kwargs: Any additional arguments that may be used for
             generating an error message.
@@ -357,12 +373,25 @@ class BaseModelResource(BaseResourceABC):
             `BadRequestError` is returned.
 
         """
-        if key == "invalid_filters" or key == "invalid_subresource_filters":
-            if isinstance(exc, InvalidMQLException):
-                if "subresource_key" in kwargs:
-                    message = kwargs["subresource_key"] + ": " + str(exc)
-                else:
-                    message = str(exc)
+        filter_exceptions = (MqlFieldError, InvalidMqlException, MqlTooComplex)
+        if isinstance(exc, filter_exceptions):
+            if kwargs.get("subresource_key"):
+                prefix = kwargs["subresource_key"] + ": "
+            else:
+                prefix = ""
+            if isinstance(exc, MqlFieldError):
+                if exc.op:
+                    kwargs["op"] = exc.op
+                kwargs["value"] = exc.filter
+                kwargs["field"] = exc.data_key
+                message = prefix + self._get_error_message(key, **kwargs)
+                message += " " + exc.message
+                if isinstance(exc, MqlFieldPermissionError):
+                    return PermissionDeniedError(
+                        code=key,
+                        message=message,
+                        errors={},
+                        **kwargs)
             else:
                 message = self._get_error_message(key, **kwargs)
             return BadRequestError(
@@ -460,33 +489,116 @@ class BaseModelResource(BaseResourceABC):
                 query,
                 model_class=self.model,
                 filters=filters,
+                nested_conditions=self.get_required_nested_filters,
                 whitelist=self.whitelist,
                 stack_size_limit=100,
                 convert_key_names_func=self.convert_key_name,
                 gettext=self.context.get("gettext", None))
             query = self.apply_required_filters(query)
-        # TODO - Clean up exceptions after MQLAlchemy update.
-        except (TypeError, ValueError, InvalidMQLException):
+        except (TypeError, ValueError, InvalidMqlException, BadRequestError):
+            # NOTE - BadRequestError only an issue on filters,
+            # e.g. a bad ident provided.
             raise self.make_error("resource_not_found", ident=ident)
         return query.first()
 
-    def apply_required_filters(self, query, alias=None):
-        """Apply required filters on this query.
+    def get_required_filters(self, alias=None):
+        """Build any required filters for this resource.
 
         Does nothing by default, but can be usefully overridden if you
         want to enforce certain filters on this resource. A simple
         example would be a notifications resource where a filter
         matching the currently logged in user is applied.
 
+        e.g.::
+
+            model = alias or self.model
+            return model.user_id == self.context.get("user_id")
+
+        :param alias: Can optionally be supplied if this resource is
+            being used as a subresource and an alias has been applied.
+        :return: Any valid SQL expression(s), to be passed directly into
+            :meth:`~sqlalchemy.orm.query.Query.filter`. If multiple
+            expressions, they may be returned in a list or tuple.
+            Defaults to ``None``.
+
+        """
+        return None
+
+    def get_required_nested_filters(self, key):
+        """For a given dot separated data key, return required filters.
+
+        Uses :meth:`get_requird_filters` from child resources.
+
+        :param str key: Dot notation field name. For example, if trying
+            to query an album, this may look something like
+            ``"tracks.playlists"``.
+        :return: Any valid SQL expression(s), to be passed directly
+            into :meth:`~sqlalchemy.orm.query.Query.filter`. If multiple
+            expressions, they may be returned in a list or tuple.
+            Defaults to ``None``.
+
+        """
+        schema = self.schema_cls(**self._get_schema_kwargs(self.schema_cls))
+        split_keys = key.split(".")
+        if len(split_keys) == 1 and split_keys[0] == "":
+            return None
+        while split_keys:
+            key = split_keys.pop(0)
+            if key in schema.fields:
+                field = schema.fields[key]
+                if isinstance(field, EmbeddableMixinABC):
+                    schema.embed([key])
+                if isinstance(field, NestedPermissibleABC):
+                    with suppress(ValueError, TypeError):
+                        subresource = self.make_subresource(
+                            field.data_key or key)
+                        if not split_keys:
+                            if hasattr(subresource,
+                                       "get_required_filters") and callable(
+                                subresource.get_required_filters
+                            ):
+                                return subresource.get_required_filters()
+                            # Subresource doesn't use required filtering
+                            return None
+                        # not the final resource, continue traversing
+                        schema = subresource.schema
+                        continue
+                    # attempting to use the subresource didn't work
+                    # Note - We have the following options:
+                    # 1. Error out
+                    # 2. Fail quietly and return None
+                    return None
+                else:
+                    # Note - Could be an error
+                    # Defaulting to failing quietly
+                    return None
+        return None  # pragma no cover
+
+    def apply_required_filters(self, query, alias=None):
+        """Apply required filters on this query.
+
+        Applies the result of :meth:`get_required_filters` directly to
+        the provided ``query``.
+
+        If you're looking to define any required filters for a
+        resource, you'll want to override :meth:`get_required_filters`
+        rather than this method. Doing so ensures those filters are
+        applied when the resource is used as a child resource as well.
+
         :param query: An already partially constructed sqlalchemy query.
         :type query: :class:`~sqlalchemy.orm.query.Query`
         :param alias: Can optionally be used if this resource is being
             used as a subresource and an alias has been applied.
-        :type alias:
         :return: A potentially modified query object.
         :rtype: :class:`~sqlalchemy.orm.query.Query`
 
         """
+        filters = self.get_required_filters(alias=alias)
+        if filters:
+            if isinstance(filters, list) or isinstance(filters, tuple):
+                return query.filter(*filters)
+            else:
+                return query.filter(filters)
         return query
 
     def _get_query(self, session, filters, subfilters=None, embeds=None,
@@ -517,7 +629,7 @@ class BaseModelResource(BaseResourceABC):
             :class:`~sqlalchemy.orm.query.Query`
 
         """
-        if hasattr(session, "query"):
+        if hasattr(session, "query") and callable(session.query):
             query = session.query(self.model)
         else:
             query = session
@@ -620,8 +732,7 @@ class BaseModelResource(BaseResourceABC):
                 filters=filters,
                 subfilters=subfilters,
                 embeds=embeds)
-        except (ValueError, TypeError):
-            # TODO - Better error
+        except (ValueError, TypeError, InvalidMqlException, BadRequestError):
             raise self.make_error("resource_not_found", ident=ident)
         instance = query.all()
         if instance:
@@ -654,7 +765,7 @@ class BaseModelResource(BaseResourceABC):
                 session=self.session,
                 nested_opts=self._convert_nested_opts(nested_opts),
                 action="create")
-        except PermissionDenied:
+        except PermissionValidationError:
             self.session.rollback()
             raise self.make_error("permission_denied")
         except ValidationError as exc:
@@ -707,7 +818,7 @@ class BaseModelResource(BaseResourceABC):
                 session=self.session,
                 nested_opts=self._convert_nested_opts(nested_opts),
                 action="update")
-        except PermissionDenied:
+        except PermissionValidationError:
             self.session.rollback()
             raise self.make_error("permission_denied")
         except ValidationError as exc:
@@ -738,7 +849,7 @@ class BaseModelResource(BaseResourceABC):
         :rtype: dict
 
         """
-        # TODO - Refactor - Only three lines here different from put.
+        # Refactor - Only three lines here different from put.
         # TODO - deleting a subresource calls patch, odd error potential
         self._check_method_allowed("PATCH")
         nested_opts = nested_opts or {}
@@ -755,7 +866,7 @@ class BaseModelResource(BaseResourceABC):
                 session=self.session,
                 nested_opts=self._convert_nested_opts(nested_opts),
                 action="update")
-        except PermissionDenied:
+        except PermissionValidationError:
             self.session.rollback()
             raise self.make_error("permission_denied")
         except ValidationError as exc:
@@ -817,7 +928,7 @@ class BaseModelResource(BaseResourceABC):
             try:
                 schema.check_permission(
                     data={}, instance=instance, action="delete")
-            except PermissionDenied:
+            except PermissionValidationError:
                 raise self.make_error("permission_denied")
             self.session.delete(instance)
             try:
@@ -943,7 +1054,7 @@ class BaseModelResource(BaseResourceABC):
                     nested_opts=self._convert_nested_opts(nested_opts),
                     action="create")
                 self.session.add(instance)
-            except PermissionDenied as exc:
+            except PermissionValidationError as exc:
                 errors[i] = exc.messages
                 permission_failure = True
             except ValidationError as exc:
@@ -1028,13 +1139,13 @@ class BaseModelResource(BaseResourceABC):
                     if inspect(instance).persistent:
                         self.session.delete(instance)
                     else:
-                        # TODO - Not sure how to handle.
+                        # NOTE - Not sure how to handle.
                         # Should probably have schema.load raise a
                         # validation error when deleting a non
                         # persistent object.
                         # Biggest hold up is proper i18n support there.
                         pass
-            except PermissionDenied as exc:
+            except PermissionValidationError as exc:
                 errors[i] = exc.messages
                 permission_failure = True
             except ValidationError as exc:
@@ -1086,7 +1197,7 @@ class BaseModelResource(BaseResourceABC):
             try:
                 schema.check_permission(data={}, instance=instance,
                                         action="delete")
-            except PermissionDenied:
+            except PermissionValidationError:
                 self.session.rollback()
                 raise self.make_error("permission_denied")
             self.session.delete(instance)
