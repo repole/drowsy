@@ -7,6 +7,11 @@ with open('drowsy/__init__.py', 'rb') as f:
     version = str(ast.literal_eval(_version_re.search(
         f.read().decode('utf-8')).group(1)))
 
+with open("requirements.txt") as f:
+    requirements = f.read().splitlines()
+test_requirements = requirements + ["pytest", "coverage"]
+setup_requirements = test_requirements + ["pytest-runner"]
+
 setup(
     name='Drowsy',
     version=version,
@@ -18,26 +23,20 @@ setup(
     description='A set of SQLAlchemy tools for building RESTful services.',
     packages=['drowsy'],
     platforms='any',
-    test_suite='drowsy.tests',
-    tests_require=[
-        'SQLAlchemy>=0.9',
-        'MQLAlchemy>=0.1.1'
-    ],
-    install_requires=[
-        'SQLAlchemy>=0.9',
-        'MQLAlchemy>=0.1.1'
-    ],
+    test_suite='tests',
+    tests_require=test_requirements,
+    install_requires=requirements,
+    setup_requires=setup_requirements,
     keywords=['sqlalchemy', 'marshmallow', 'RESTful'],
     classifiers=[
         "Development Status :: 3 - Alpha",
         "Intended Audience :: Developers",
         "License :: OSI Approved :: MIT License",
         "Programming Language :: Python",
-        "Programming Language :: Python :: 2",
-        "Programming Language :: Python :: 2.7",
         "Programming Language :: Python :: 3",
-        "Programming Language :: Python :: 3.3",
-        "Programming Language :: Python :: 3.4",
+        "Programming Language :: Python :: 3.6",
+        "Programming Language :: Python :: 3.7",
+        "Programming Language :: Python :: 3.8",
         "Programming Language :: Python :: Implementation :: CPython",
         "Programming Language :: Python :: Implementation :: PyPy",
         "Topic :: Database :: Front-Ends",
