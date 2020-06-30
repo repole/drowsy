@@ -4,134 +4,123 @@
 
     Fields tests for Drowsy.
 
-    :copyright: (c) 2016-2019 by Nicholas Repole and contributors.
+    :copyright: (c) 2016-2020 by Nicholas Repole and contributors.
                 See AUTHORS for more details.
     :license: MIT - See LICENSE for more details.
 """
-from __future__ import unicode_literals
+from pytest import raises
 from collections import namedtuple
 from drowsy.base import EmbeddableMixinABC, NestedPermissibleABC
 from drowsy.fields import APIUrl, Relationship
 from drowsy.permissions import OpPermissionsABC
-from drowsy.tests.resources import AlbumResource, TrackResource
-from drowsy.tests.schemas import AlbumSchema
-from drowsy.tests.base import DrowsyTests
+from .resources import AlbumResource, TrackResource
+from .schemas import AlbumSchema
 
 
-class DrowsyFieldTests(DrowsyTests):
+def test_permissions_abc_check():
+    """Test that permissions abc fails."""
+    with raises(NotImplementedError):
+        OpPermissionsABC().check(
+            operation="add",
+            obj_data=None)
 
-    """Test drowsy fields are working as expected."""
 
-    def test_permissions_abc_check(self):
-        """Test that permissions abc fails."""
-        self.assertRaises(
-            NotImplementedError,
-            OpPermissionsABC().check,
-            operation=None,
-            obj_data=None
-        )
+def test_field_embeddable_mixin_abc_deserialize():
+    """Test that the embeddable mixin can't be deserialized."""
+    with raises(NotImplementedError):
+        EmbeddableMixinABC().deserialize("test")
 
-    def test_field_embeddable_mixin_abc_deserialize(self):
-        """Test that the embeddable mixin can't be deserialized."""
-        self.assertRaises(
-            NotImplementedError,
-            EmbeddableMixinABC().deserialize,
-            "test"
-        )
 
-    def test_field_embeddable_mixin_abc_serialize(self):
-        """Test that the embeddable mixin can't be serialized."""
-        self.assertRaises(
-            NotImplementedError,
-            EmbeddableMixinABC().serialize,
+def test_field_embeddable_mixin_abc_serialize():
+    """Test that the embeddable mixin can't be serialized."""
+    with raises(NotImplementedError):
+        EmbeddableMixinABC().serialize("test", "test")
+
+
+def test_field_nested_permissible_abc_parent_child():
+    """Test nested permissibles fail to check parent for child."""
+    with raises(NotImplementedError):
+        NestedPermissibleABC(AlbumResource)._parent_contains_child(
             "test",
-            "test"
-        )
+            "test")
 
-    def test_field_nested_permissible_abc_parent_child(self):
-        """Test nested permissibles fail to check parent for child."""
-        self.assertRaises(
-            NotImplementedError,
-            NestedPermissibleABC(AlbumResource)._parent_contains_child,
-            "test",
-            "test"
-        )
 
-    def test_field_nested_permissible_abc_get_id_instance(self):
-        """Test nested permissibles fail to get an id instance."""
-        self.assertRaises(
-            NotImplementedError,
-            NestedPermissibleABC(AlbumResource)._get_identified_instance,
-            obj_data={}
-        )
+def test_field_nested_permissible_abc_get_id_instance():
+    """Test nested permissibles fail to get an id instance."""
+    with raises(NotImplementedError):
+        NestedPermissibleABC(AlbumResource)._get_identified_instance(
+            obj_data={})
 
-    def test_field_nested_permissible_abc_perform_op(self):
-        """Test nested permissibles fail to perform operation."""
-        self.assertRaises(
-            NotImplementedError,
-            NestedPermissibleABC(AlbumResource)._perform_operation,
-            operation=None,
+
+def test_field_nested_permissible_abc_perform_op():
+    """Test nested permissibles fail to perform operation."""
+    with raises(NotImplementedError):
+        NestedPermissibleABC(AlbumResource)._perform_operation(
+            operation="add",
             parent=None,
             instance=None,
-            errors=None,
+            errors={},
             index=None
         )
 
-    def test_field_nested_permissible_load_existing(self):
-        """Test nested permissibles fail to get an existing instance."""
-        self.assertRaises(
-            NotImplementedError,
-            NestedPermissibleABC(AlbumResource)._load_existing_instance,
+
+def test_field_nested_permissible_load_existing():
+    """Test nested permissibles fail to get an existing instance."""
+    with raises(NotImplementedError):
+        NestedPermissibleABC(AlbumResource)._load_existing_instance(
             obj_data=None,
             instance=None
         )
 
-    def test_field_nested_permissible_load_new(self):
-        """Test nested permissibles fail to get a new instance."""
-        self.assertRaises(
-            NotImplementedError,
-            NestedPermissibleABC(AlbumResource)._load_new_instance,
-            obj_data=None
-        )
 
-    def test_field_nested_resource_provided(self):
-        """Test providing a resource to a Relationship works."""
-        resource = AlbumResource(session=self.db_session)
-        field = Relationship(nested=resource)
-        self.assertTrue(field.resource == resource)
+def test_field_nested_permissible_load_new():
+    """Test nested permissibles fail to get a new instance."""
+    with raises(NotImplementedError):
+        NestedPermissibleABC(AlbumResource)._load_new_instance(
+            obj_data=None)
 
-    def test_field_nested_resource_class_provided(self):
-        """Test providing a resource class to a Relationship works."""
-        class TestSchema(AlbumSchema):
-            tracks = Relationship(nested=TrackResource)
-        schema = TestSchema(session=self.db_session)
-        self.assertTrue(
-            isinstance(schema.fields["tracks"].resource, TrackResource))
 
-    def test_field_bad_nested_resource_provided(self):
-        """Test providing a resource to a Relationship works."""
-        field = Relationship(nested=1)
-        self.assertRaises(
-            ValueError,
-            getattr,
-            field,
-            "resource"
-        )
+def test_field_nested_resource_provided(db_session):
+    """Test providing a resource to a Relationship works."""
+    print("hi from nested_resource_provided")
+    resource = AlbumResource(session=db_session)
+    field = Relationship(nested=resource)
+    assert field.resource == resource
 
-    def test_field_api_url_serialize(self):
-        """Test ApiUrl serializes properly."""
-        field = APIUrl(endpoint_name="test", base_url="drowsy.com")
-        Parent = namedtuple("Parent", ["id_keys"])
-        TestObj = namedtuple("TestObj", ["test_id"])
-        field.parent = Parent(id_keys=["test_id"])
-        result = field.serialize("url", obj=TestObj(test_id=5))
-        self.assertTrue(result == "drowsy.com/test/5")
 
-    def test_field_api_url_serialize_slash(self):
-        """Test ApiUrl serialization with trailing slash base url."""
-        field = APIUrl(endpoint_name="test", base_url="drowsy.com/")
-        Parent = namedtuple("Parent", ["id_keys"])
-        TestObj = namedtuple("TestObj", ["test_id"])
-        field.parent = Parent(id_keys=["test_id"])
-        result = field.serialize("url", obj=TestObj(test_id=5))
-        self.assertTrue(result == "drowsy.com/test/5")
+def test_field_nested_resource_class_provided(db_session):
+    """Test providing a resource class to a Relationship works."""
+
+    class TestSchema(AlbumSchema):
+        tracks = Relationship(nested=TrackResource)
+
+    schema = TestSchema(session=db_session)
+    assert isinstance(schema.fields["tracks"].resource,
+                      TrackResource)
+
+
+def test_field_bad_nested_resource_provided():
+    """Test providing a resource to a Relationship works."""
+    field = Relationship(nested=1)
+    with raises(ValueError):
+        getattr(field, "resource")
+
+
+def test_field_api_url_serialize():
+    """Test ApiUrl serializes properly."""
+    field = APIUrl(endpoint_name="test", base_url="drowsy.com")
+    Parent = namedtuple("Parent", ["id_keys"])
+    TestObj = namedtuple("TestObj", ["test_id"])
+    field.parent = Parent(id_keys=["test_id"])
+    result = field.serialize("url", obj=TestObj(test_id=5))
+    assert result == "drowsy.com/test/5"
+
+
+def test_field_api_url_serialize_slash():
+    """Test ApiUrl serialization with trailing slash base url."""
+    field = APIUrl(endpoint_name="test", base_url="drowsy.com/")
+    Parent = namedtuple("Parent", ["id_keys"])
+    TestObj = namedtuple("TestObj", ["test_id"])
+    field.parent = Parent(id_keys=["test_id"])
+    result = field.serialize("url", obj=TestObj(test_id=5))
+    assert result == "drowsy.com/test/5"

@@ -9,7 +9,7 @@
     :license: MIT - See LICENSE for more details.
 """
 from drowsy.resource import ModelResource
-from drowsy.tests.schemas import (
+from .schemas import (
     AlbumCamelSchema, AlbumSchema, ArtistCamelSchema, ArtistSchema,
     CompositeOneSchema, CompositeOneCamelSchema, CompositeManySchema,
     CompositeManyCamelSchema, CompositeNodeCamelSchema, CompositeNodeSchema,
@@ -75,6 +75,16 @@ class GenreResource(ModelResource):
 class TrackResource(ModelResource):
     class Meta:
         schema_cls = TrackSchema
+
+    def get_required_filters(self, alias=None):
+        model = alias or self.model
+        if self.context.get("user") == "limited":
+            filters = (model.track_id != 130, )
+            return filters
+        elif self.context.get("user") == "limited_single_filter":
+            filters = model.track_id != 130
+            return filters
+        return None
 
 
 class ArtistResource(ModelResource):

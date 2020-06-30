@@ -4,33 +4,34 @@
 
     Query builder tests for Drowsy.
 
-    :copyright: (c) 2016-2019 by Nicholas Repole and contributors.
+    :copyright: (c) 2016-2020 by Nicholas Repole and contributors.
                 See AUTHORS for more details.
     :license: MIT - See LICENSE for more details.
 """
-from __future__ import unicode_literals
+from pytest import raises
+from sqlalchemy.inspection import inspect
 from drowsy.exc import BadRequestError
 from drowsy.query_builder import QueryBuilder, ModelResourceQueryBuilder
 from drowsy.parser import SubfilterInfo, SortInfo
-from drowsy.tests.base import DrowsyTests
-from drowsy.tests.models import (
-    Album, CompositeOne, CompositeNode, Track, Customer
+from tests.base import DrowsyDatabaseTests
+from tests.models import (
+    Album, CompositeOne, CompositeNode, Employee, Track, Customer
 )
-from drowsy.tests.resources import (
+from tests.resources import (
     AlbumResource, TrackResource, CompositeNodeResource,
-    CompositeOneResource, CustomerResource
+    CompositeOneResource, CustomerResource, EmployeeResource
 )
-from sqlalchemy.inspection import inspect
 
 
-class DrowsyQueryBuilderTests(DrowsyTests):
+class TestDrowsyQueryBuilder(DrowsyDatabaseTests):
 
-    """Test drowsy query building."""
+    """Test drowsy query building across all databases."""
 
-    def test_apply_sorts_simple(self):
+    @staticmethod
+    def test_apply_sorts_simple(db_session):
         """Test applying a single sort."""
         query_builder = QueryBuilder()
-        query = self.db_session.query(Album)
+        query = db_session.query(Album)
         query = query_builder.apply_sorts(
             query=query,
             sorts=[SortInfo(attr="album_id", direction="ASC")]
@@ -38,46 +39,45 @@ class DrowsyQueryBuilderTests(DrowsyTests):
         results = query.all()
         last_album_id = -1
         for result in results:
-            self.assertTrue(result.album_id >= last_album_id)
+            assert result.album_id >= last_album_id
             last_album_id = result.album_id
 
-    def test_apply_sorts_fail(self):
+    @staticmethod
+    def test_apply_sorts_fail(db_session):
         """Test applying a single sort."""
         query_builder = QueryBuilder()
-        query = self.db_session.query(Album)
-        self.assertRaises(
-            AttributeError,
-            query_builder.apply_sorts,
-            query=query,
-            sorts=[SortInfo(attr="badattr", direction="ASC")]
-        )
+        query = db_session.query(Album)
+        with raises(AttributeError):
+            query_builder.apply_sorts(
+                query=query,
+                sorts=[SortInfo(attr="badattr", direction="ASC")]
+            )
 
-    def test_apply_limit_negative_limit_fail(self):
+    @staticmethod
+    def test_apply_limit_negative_limit_fail(db_session):
         """Test that a negative limit fails."""
         query_builder = QueryBuilder()
-        query = self.db_session.query(Album)
-        self.assertRaises(
-            ValueError,
-            query_builder.apply_limit,
-            query=query,
-            limit=-1
-        )
+        query = db_session.query(Album)
+        with raises(ValueError):
+            query_builder.apply_limit(
+                query=query,
+                limit=-1)
 
-    def test_apply_offset_negative_offset_fail(self):
+    @staticmethod
+    def test_apply_offset_negative_offset_fail(db_session):
         """Test that a negative offset fails."""
         query_builder = QueryBuilder()
-        query = self.db_session.query(Album)
-        self.assertRaises(
-            ValueError,
-            query_builder.apply_offset,
-            query=query,
-            offset=-1
-        )
+        query = db_session.query(Album)
+        with raises(ValueError):
+            query_builder.apply_offset(
+                query=query,
+                offset=-1)
 
-    def test_simple_subfilter(self):
+    @staticmethod
+    def test_simple_subfilter(db_session):
         """Test applying a simple subfilter."""
         query_builder = ModelResourceQueryBuilder()
-        query = self.db_session.query(Album)
+        query = db_session.query(Album)
         subfilters = {
             "tracks": SubfilterInfo(
                 filters={"track_id": 5}
@@ -85,31 +85,701 @@ class DrowsyQueryBuilderTests(DrowsyTests):
         }
         query = query_builder.apply_subquery_loads(
             query=query,
-            resource=AlbumResource(session=self.db_session),
+            resource=AlbumResource(session=db_session),
             subfilters=subfilters,
             embeds=[]
         )
         albums = query.all()
         for album in albums:
-            self.assertTrue(len(album.tracks) <= 1)
+            assert len(album.tracks) <= 1
             if album.tracks:
-                self.assertTrue(album.tracks[0].track_id == 5)
+                assert album.tracks[0].track_id == 5
 
-    def test_apply_sorts_bad_query(self):
+    @staticmethod
+    def test_apply_sorts_bad_query(db_session):
         """Test applying sorts with a bad query fails."""
         query_builder = QueryBuilder()
-        query = self.db_session.query(Album, Track)
-        self.assertRaises(
-            ValueError,
-            query_builder.apply_sorts,
-            query,
-            sorts=[]
-        )
+        query = db_session.query(Album, Track)
+        with raises(ValueError):
+            query_builder.apply_sorts(
+                query,
+                sorts=[])
 
-    def test_simple_subfilter_limit_offset(self):
+    @staticmethod
+    def test_subfilter_sorts_no_limit_offset_fail(db_session):
+        """Check that subresource sorts without limit or offset fail."""
+        query_builder = ModelResourceQueryBuilder()
+        query = db_session.query(Album)
+        subfilters = {
+            "tracks": SubfilterInfo(
+                sorts=[SortInfo(attr="track_id", direction="ASC")]
+            )
+        }
+        with raises(BadRequestError) as excinf:
+            query_builder.apply_subquery_loads(
+                query=query,
+                resource=AlbumResource(
+                    session=db_session),
+                subfilters=subfilters,
+                embeds=[],
+                dialect_override=True
+            )
+        assert excinf.value.code == "invalid_subresource_sorts"
+
+    @staticmethod
+    def test_simple_subfilter_limit_too_big(db_session):
+        """Check that a limit too large on subresource fails."""
+        query_builder = ModelResourceQueryBuilder()
+        query = db_session.query(Customer)
+        subfilters = {
+            "invoices": SubfilterInfo(
+                offset=1,
+                limit=10000
+            )
+        }
+        with raises(BadRequestError) as excinf:
+            query_builder.apply_subquery_loads(
+                query=query,
+                resource=CustomerResource(
+                    session=db_session),
+                subfilters=subfilters,
+                embeds=[],
+                dialect_override=True
+            )
+        assert excinf.value.code == "invalid_subresource_limit"
+
+    @staticmethod
+    def test_subfilter_invalid_fail(db_session):
+        """Check that bad subresource filters fail."""
+        query_builder = ModelResourceQueryBuilder()
+        query = db_session.query(Album)
+        subfilters = {
+            "tracks": SubfilterInfo(
+                filters={"track_id": {"$bad": 5}}
+            )
+        }
+        with raises(BadRequestError) as excinf:
+            query_builder.apply_subquery_loads(
+                query=query,
+                resource=AlbumResource(
+                    session=db_session),
+                subfilters=subfilters,
+                embeds=[],
+                dialect_override=True
+            )
+        assert excinf.value.code == "filters_field_op_error"
+
+    @staticmethod
+    def test_subfilter_invalid_ignore(db_session):
+        """Check that non strict bad subresource filters is ignored."""
+        query_builder = ModelResourceQueryBuilder()
+        query = db_session.query(Album)
+        subfilters = {
+            "tracks": SubfilterInfo(
+                filters={"track_id": {"$bad": 5}}
+            )
+        }
+        query = query_builder.apply_subquery_loads(
+            query=query,
+            resource=AlbumResource(
+                session=db_session),
+            subfilters=subfilters,
+            embeds=[],
+            dialect_override=False,
+            strict=False
+        )
+        result = query.all()
+        assert len(result) > 0
+
+    @staticmethod
+    def test_subfilter_invalid_limit_fail(db_session):
+        """Check subresource query with an invalid root limit fails."""
+        query_builder = ModelResourceQueryBuilder()
+        query = db_session.query(Album)
+        subfilters = {
+            "tracks": SubfilterInfo(
+                sorts=[SortInfo(attr="track_id", direction="ASC")]
+            )
+        }
+        with raises(BadRequestError) as excinf:
+            query_builder.apply_subquery_loads(
+                query=query,
+                resource=AlbumResource(
+                    session=db_session),
+                subfilters=subfilters,
+                embeds=[],
+                dialect_override=True,
+                limit=-1
+            )
+        assert excinf.value.code == "invalid_limit_value"
+
+    @staticmethod
+    def test_subfilter_invalid_limit_ignore(db_session):
+        """Check subresource query with invalid root limit ignored."""
+        query_builder = ModelResourceQueryBuilder()
+        query = db_session.query(Album)
+        subfilters = {
+            "tracks": SubfilterInfo(
+                sorts=[SortInfo(attr="track_id", direction="ASC")]
+            )
+        }
+        query = query_builder.apply_subquery_loads(
+                query=query,
+                resource=AlbumResource(
+                    session=db_session),
+                subfilters=subfilters,
+                embeds=[],
+                dialect_override=True,
+                limit=-1,
+                strict=False
+            )
+        assert query is not None
+
+    @staticmethod
+    def test_subfilter_invalid_sort_fail(db_session):
+        """Check subresource query with an invalid root sort fails."""
+        query_builder = ModelResourceQueryBuilder()
+        query = db_session.query(Album)
+        subfilters = {
+            "tracks": SubfilterInfo(
+                sorts=[SortInfo(attr="track_id")]
+            )
+        }
+        with raises(BadRequestError) as excinf:
+            query_builder.apply_subquery_loads(
+                query=query,
+                resource=AlbumResource(
+                    session=db_session),
+                sorts=[SortInfo(attr="TEST")],
+                subfilters=subfilters,
+                embeds=[],
+                dialect_override=True
+            )
+        assert excinf.value.code == "invalid_sort_field"
+
+    @staticmethod
+    def test_subfilter_invalid_sort_ignore(db_session):
+        """Check subresource query with invalid root sort is ignored."""
+        query_builder = ModelResourceQueryBuilder()
+        query = db_session.query(Album)
+        subfilters = {
+            "tracks": SubfilterInfo(
+                sorts=[SortInfo(attr="track_id")]
+            )
+        }
+        query = query_builder.apply_subquery_loads(
+                query=query,
+                resource=AlbumResource(
+                    session=db_session),
+                subfilters=subfilters,
+                sorts=[SortInfo(attr="TEST")],
+                embeds=[],
+                dialect_override=True,
+                strict=False
+            )
+        assert query is not None
+
+    @staticmethod
+    def test_subfilter_root_sort(db_session):
+        """Check subresource query with root sort works."""
+        query_builder = ModelResourceQueryBuilder()
+        query = db_session.query(Album)
+        subfilters = {
+            "tracks": SubfilterInfo(
+                sorts=[SortInfo(attr="track_id")]
+            )
+        }
+        query = query_builder.apply_subquery_loads(
+                query=query,
+                resource=AlbumResource(
+                    session=db_session),
+                subfilters=subfilters,
+                sorts=[SortInfo(attr="title")],
+                embeds=[],
+                dialect_override=True,
+                strict=False
+            )
+        result = query.first()
+        assert result.title == "...And Justice For All"
+
+    @staticmethod
+    def test_subfilter_invalid_offset_fail(db_session):
+        """Check subresource query with an invalid root offset fails."""
+        query_builder = ModelResourceQueryBuilder()
+        query = db_session.query(Album)
+        subfilters = {
+            "tracks": SubfilterInfo(
+                sorts=[SortInfo(attr="track_id", direction="ASC")]
+            )
+        }
+        with raises(BadRequestError) as excinf:
+            query_builder.apply_subquery_loads(
+                query=query,
+                resource=AlbumResource(
+                    session=db_session),
+                subfilters=subfilters,
+                embeds=[],
+                dialect_override=True,
+                offset=-1
+            )
+        assert excinf.value.code == "invalid_offset_value"
+
+    @staticmethod
+    def test_subfilter_invalid_offset_ignore(db_session):
+        """Check subresource query with invalid root offset ignored."""
+        query_builder = ModelResourceQueryBuilder()
+        query = db_session.query(Album)
+        subfilters = {
+            "tracks": SubfilterInfo(
+                sorts=[SortInfo(attr="track_id", direction="ASC")]
+            )
+        }
+        query = query_builder.apply_subquery_loads(
+                query=query,
+                resource=AlbumResource(
+                    session=db_session),
+                subfilters=subfilters,
+                embeds=[],
+                dialect_override=True,
+                offset=-1,
+                strict=False
+            )
+        assert query is not None
+
+    @staticmethod
+    def test_many_to_one_limit_fail(db_session):
+        """Test a limit/offset on a many to one relationship fails."""
+        query_builder = ModelResourceQueryBuilder()
+        query = db_session.query(Track)
+        subfilters = {
+            "album": SubfilterInfo(
+                offset=1,
+                limit=None
+            )
+        }
+        with raises(BadRequestError) as excinf:
+            query_builder.apply_subquery_loads(
+                query=query,
+                resource=TrackResource(
+                    session=db_session),
+                subfilters=subfilters,
+                embeds=[],
+                dialect_override=True
+            )
+        assert excinf.value.code == "invalid_subresource_options"
+
+    @staticmethod
+    def test_subresource_bad_dialect_fail(db_session):
+        """Test a sublimit/offset fails with unsupported dialect."""
+        query_builder = ModelResourceQueryBuilder()
+        query = db_session.query(Album)
+        subfilters = {
+            "tracks": SubfilterInfo(
+                offset=1,
+                limit=10
+            )
+        }
+        with raises(BadRequestError) as excinf:
+            query_builder.apply_subquery_loads(
+                query=query,
+                resource=AlbumResource(
+                    session=db_session),
+                subfilters=subfilters,
+                embeds=[],
+                dialect_override=False
+            )
+        assert excinf.value.code == "invalid_subresource_options"
+
+    @staticmethod
+    def test_subquery_embeds(db_session):
+        """Test that a simple subquery can work alongside an embed."""
+        query_builder = ModelResourceQueryBuilder()
+        query = db_session.query(Album)
+        subfilters = {
+            "artist": SubfilterInfo(
+                filters={"artist_id": 1}
+            )
+        }
+        query = query_builder.apply_subquery_loads(
+            query=query,
+            resource=AlbumResource(session=db_session),
+            subfilters=subfilters,
+            embeds=["tracks", "artist"]
+        )
+        albums = query.all()
+        for album in albums:
+            res = inspect(album)
+            assert "tracks" not in res.unloaded
+            if album.artist:
+                assert album.artist.artist_id == 1
+
+    @staticmethod
+    def test_same_subquery_embeds(db_session):
+        """Test that a simple subquery works with a duplicate embed."""
+        query_builder = ModelResourceQueryBuilder()
+        query = db_session.query(Album)
+        subfilters = {
+            "tracks": SubfilterInfo(
+                filters={"track_id": 1}
+            )
+        }
+        query = query_builder.apply_subquery_loads(
+            query=query,
+            resource=AlbumResource(session=db_session),
+            subfilters=subfilters,
+            embeds=["tracks"]
+        )
+        albums = query.all()
+        for album in albums:
+            res = inspect(album)
+            assert "tracks" not in res.unloaded
+            if album.tracks:
+                assert len(album.tracks) == 1
+                assert album.tracks[0].track_id == 1
+
+    @staticmethod
+    def test_simple_embeds(db_session):
+        """Test that a simple embed works."""
+        query_builder = ModelResourceQueryBuilder()
+        query = db_session.query(Album)
+        query = query_builder.apply_subquery_loads(
+            query=query,
+            resource=AlbumResource(session=db_session),
+            subfilters={},
+            embeds=["tracks"]
+        )
+        albums = query.all()
+        for album in albums:
+            res = inspect(album)
+            assert "tracks" not in res.unloaded
+
+    @staticmethod
+    def test_property_embeds(db_session):
+        """Test that property embed works."""
+        query_builder = ModelResourceQueryBuilder()
+        query = db_session.query(Album)
+        query = query_builder.apply_subquery_loads(
+            query=query,
+            resource=AlbumResource(session=db_session),
+            subfilters={},
+            embeds=["tracks.track_id"]
+        )
+        albums = query.all()
+        for album in albums:
+            res = inspect(album)
+            assert "tracks" not in res.unloaded
+
+    @staticmethod
+    def test_bad_embeds(db_session):
+        """Test that a bad property embed fails."""
+        query_builder = ModelResourceQueryBuilder()
+        query = db_session.query(Album)
+        with raises(BadRequestError) as excinf:
+            query_builder.apply_subquery_loads(
+                query=query,
+                resource=AlbumResource(session=db_session),
+                subfilters={},
+                embeds=["tracks.track_id.playlistId"]
+            )
+        assert excinf.value.code == "invalid_embed"
+
+    @staticmethod
+    def test_bad_embeds_ignore(db_session):
+        """Test that a non strict bad property embed is ignored."""
+        query_builder = ModelResourceQueryBuilder()
+        query = db_session.query(Album)
+        query = query_builder.apply_subquery_loads(
+            query=query,
+            resource=AlbumResource(session=db_session),
+            subfilters={},
+            embeds=["tracks.track_id.playlistId"],
+            strict=False
+        )
+        result = query.all()
+        assert len(result) > 0
+
+    @staticmethod
+    def test_too_complex(db_session):
+        """Test that an overly complex query fails."""
+        query_builder = ModelResourceQueryBuilder()
+        query = db_session.query(Album)
+        with raises(BadRequestError) as excinf:
+            query_builder.build(
+                query=query,
+                resource=AlbumResource(session=db_session),
+                filters={"tracks.track_id": 5},
+                subfilters={},
+                stack_size_limit=1
+            )
+        assert excinf.value.code == "filters_too_complex"
+
+    @staticmethod
+    def test_no_op_error_message(db_session):
+        """Test that filters trigger an error message with no $op."""
+        query_builder = ModelResourceQueryBuilder()
+        query = db_session.query(Album)
+        with raises(BadRequestError) as excinf:
+            query_builder.build(
+                query=query,
+                resource=AlbumResource(session=db_session),
+                filters={"tracks": {}},
+                subfilters={},
+                stack_size_limit=1
+            )
+        assert excinf.value.code == "filters_field_error"
+
+    @staticmethod
+    def test_bad_subfilters(db_session):
+        """Test that a bad property subfilter fails."""
+        query_builder = ModelResourceQueryBuilder()
+        query = db_session.query(Album)
+        with raises(BadRequestError) as excinf:
+            query_builder.apply_subquery_loads(
+                query=query,
+                resource=AlbumResource(session=db_session),
+                subfilters={
+                    "tracks.track_id": SubfilterInfo(
+                        filters={"track_id": 5}
+                    )
+                },
+                embeds=[]
+            )
+        assert excinf.value.code == "invalid_subresource"
+
+    @staticmethod
+    def test_bad_subfilters_value(db_session):
+        """Test that a bad property subfilter value fails."""
+        query_builder = ModelResourceQueryBuilder()
+        query = db_session.query(Album)
+        with raises(ValueError):
+            query_builder.apply_subquery_loads(
+                query=query,
+                resource=AlbumResource(session=db_session),
+                subfilters={
+                    "tracks.track_id": "test"
+                },
+                embeds=[]
+            )
+
+    @staticmethod
+    def test_non_strict_bad_subfilters(db_session):
+        """Test bad subfitlers don't cause failure when not strict."""
+        query_builder = ModelResourceQueryBuilder()
+        query = db_session.query(Album)
+        query = query_builder.apply_subquery_loads(
+            query=query,
+            resource=AlbumResource(session=db_session),
+            subfilters={
+                "tracks.track_id": SubfilterInfo(
+                    filters={"track_id": 5}
+                )
+            },
+            embeds=[],
+            strict=False
+        )
+        albums = query.all()
+        assert len(albums) == 347
+        # TODO - review whether we want this to not load subresource
+        # for album in albums:
+        #     res = inspect(album)
+        #     assert "tracks" in res.unloaded)
+
+    @staticmethod
+    def test_whitelist_fail(db_session):
+        """Test a missing whitelist key causes permission error."""
+        from drowsy.exc import PermissionDeniedError
+        query_builder = ModelResourceQueryBuilder()
+        query = db_session.query(Employee)
+        resource = EmployeeResource(session=db_session)
+        with raises(PermissionDeniedError) as excinf:
+            query_builder.apply_subquery_loads(
+                query=query,
+                resource=resource,
+                subfilters={
+                    "customers": SubfilterInfo(
+                        filters={"phone": 5}
+                    )
+                },
+                embeds=[],
+                strict=True
+            )
+        assert excinf.value.code == "filters_permission_error"
+
+    @staticmethod
+    def test_self_referential_composite_id_subquery(db_session):
+        """Test a self referential, composite id subquery"""
+        query_builder = ModelResourceQueryBuilder()
+        query = db_session.query(CompositeNode)
+        subfilters = {
+            "children": SubfilterInfo(
+                filters={"node_id": 1}
+            )
+        }
+        query = query_builder.apply_subquery_loads(
+            query=query,
+            resource=CompositeNodeResource(session=db_session),
+            subfilters=subfilters,
+            embeds=[]
+        )
+        composite_nodes = query.all()
+        for composite_node in composite_nodes:
+            res = inspect(composite_node)
+            assert "children" not in res.unloaded
+            for child in composite_node.children:
+                assert child.node_id == 1
+
+
+class TestDrowsyQueryBuilderSqlite(DrowsyDatabaseTests):
+
+    """Sqlite specific query builder tests."""
+
+    backends = ['sqlite']
+
+    @staticmethod
+    def test_root_limit_with_subquery(db_session):
+        """Test applying a limit to a root resource using subqueries."""
+        query_builder = ModelResourceQueryBuilder()
+        query = db_session.query(Album)
+        subfilters = {
+            "tracks": SubfilterInfo(
+                filters={"track_id": 2}
+            )
+        }
+        query = query_builder.apply_subquery_loads(
+            query=query,
+            resource=AlbumResource(session=db_session),
+            subfilters=subfilters,
+            limit=1,
+            offset=1,
+            embeds=[]
+        )
+        result = query.all()
+        assert result is not None
+        assert len(result) == 1
+        assert result[0].album_id == 2
+        assert len(result[0].tracks) == 1
+        assert result[0].tracks[0].track_id == 2
+
+    @staticmethod
+    def test_root_composite_id_limit_with_subquery(db_session):
+        """Limit to a composite id root resource using subqueries."""
+        query_builder = ModelResourceQueryBuilder()
+        query = db_session.query(CompositeNode)
+        subfilters = {
+            "children": SubfilterInfo(
+                filters={"node_id": 6}
+            )
+        }
+        query = query_builder.apply_subquery_loads(
+            query=query,
+            resource=CompositeNodeResource(session=db_session),
+            subfilters=subfilters,
+            limit=1,
+            offset=0,
+            embeds=[]
+        )
+        result = query.all()
+        assert result is not None
+        assert len(result) == 1
+        assert result[0].node_id == 1
+        assert len(result[0].children) == 1
+        assert result[0].children[0].node_id == 6
+
+    @staticmethod
+    def test_root_limit_with_subquery2(db_session):
+        """Test applying a limit to a root resource using subqueries."""
+        query_builder = ModelResourceQueryBuilder()
+        query = db_session.query(CompositeOne)
+        subfilters = {
+            "many": SubfilterInfo(
+                filters={"many_id": 1},
+                offset=1,
+                limit=1
+            )
+        }
+        query = query_builder.apply_subquery_loads(
+            query=query,
+            resource=CompositeOneResource(session=db_session),
+            subfilters=subfilters,
+            limit=1,
+            offset=1,
+            embeds=[],
+            dialect_override=True
+        )
+        expected_query = (
+            """
+            SELECT 
+                anon_1."CompositeOne_OneId" AS "anon_1_CompositeOne_OneId", 
+                anon_1."CompositeOne_CompositeOneId" AS 
+                    "anon_1_CompositeOne_CompositeOneId", 
+                "CompositeMany1"."ManyId" AS "CompositeMany1_ManyId", 
+                "CompositeMany1"."OneId" AS "CompositeMany1_OneId", 
+                "CompositeMany1"."CompositeOneId" AS 
+                    "CompositeMany1_CompositeOneId", 
+                anon_1.row_number AS anon_1_row_number 
+            FROM 
+                (
+                    SELECT 
+                        "CompositeOne"."OneId" AS "CompositeOne_OneId", 
+                        "CompositeOne"."CompositeOneId" AS 
+                            "CompositeOne_CompositeOneId", 
+                        row_number() OVER (ORDER BY 
+                            "CompositeOne"."OneId" ASC, 
+                            "CompositeOne"."CompositeOneId" ASC) AS row_number 
+                    FROM "CompositeOne"
+                ) AS anon_1 
+                LEFT OUTER JOIN 
+                (
+                    SELECT 
+                        q1."ManyId" AS "ManyId", 
+                        q1."OneId" AS "OneId", 
+                        q1."CompositeOneId" AS "CompositeOneId", 
+                        q1.row_number AS row_number 
+                    FROM 
+                        (
+                            SELECT 
+                                "CompositeMany1"."ManyId" AS "ManyId", 
+                                "CompositeMany1"."OneId" AS "OneId", 
+                                "CompositeMany1"."CompositeOneId" AS 
+                                    "CompositeOneId", 
+                                row_number() OVER (
+                                    PARTITION BY 
+                                        "CompositeMany1"."OneId", 
+                                        "CompositeMany1"."CompositeOneId" 
+                                    ORDER BY 
+                                        "CompositeMany1"."ManyId" ASC
+                                ) AS row_number 
+                            FROM 
+                                "CompositeMany" AS "CompositeMany1"
+                        ) AS q1, 
+                        "CompositeMany" AS "CompositeMany1" 
+                    WHERE 
+                        q1.row_number >= ? 
+                        AND 
+                        q1.row_number <= ? 
+                        AND 
+                        "CompositeMany1"."ManyId" = ?
+                ) AS "CompositeMany1" ON 
+                    anon_1."CompositeOne_OneId" = "CompositeMany1"."OneId" 
+                    AND 
+                    anon_1."CompositeOne_CompositeOneId" = 
+                        "CompositeMany1"."CompositeOneId" 
+            WHERE 
+                anon_1.row_number >= ? 
+                AND 
+                anon_1.row_number <= ? 
+            ORDER BY 
+                anon_1.row_number
+            """
+        ).replace(" ", "").replace("\n", "")
+        result = str(query).replace(" ", "").replace("\n", "")
+        assert expected_query == result
+
+    @staticmethod
+    def test_simple_subfilter_limit_offset(db_session):
         """Test offset and limit in a subresource."""
         query_builder = ModelResourceQueryBuilder()
-        query = self.db_session.query(Album)
+        query = db_session.query(Album)
         subfilters = {
             "tracks": SubfilterInfo(
                 filters={"track_id": {"$gte": 5}},
@@ -119,7 +789,7 @@ class DrowsyQueryBuilderTests(DrowsyTests):
         }
         query = query_builder.apply_subquery_loads(
             query=query,
-            resource=AlbumResource(session=self.db_session),
+            resource=AlbumResource(session=db_session),
             subfilters=subfilters,
             embeds=[],
             dialect_override=True
@@ -189,12 +859,13 @@ class DrowsyQueryBuilderTests(DrowsyTests):
             """
         ).replace(" ", "").replace("\n", "")
         result = str(query).replace(" ", "").replace("\n", "")
-        self.assertTrue(expected_query == result)
+        assert expected_query == result
 
-    def test_subfilter_limit_offset_sorts(self):
+    @staticmethod
+    def test_subfilter_limit_offset_sorts(db_session):
         """Test subfiltering with sorts works with limit and offset."""
         query_builder = ModelResourceQueryBuilder()
-        query = self.db_session.query(Album)
+        query = db_session.query(Album)
         subfilters = {
             "tracks": SubfilterInfo(
                 filters={"track_id": {"$gte": 5}},
@@ -205,7 +876,7 @@ class DrowsyQueryBuilderTests(DrowsyTests):
         }
         query = query_builder.apply_subquery_loads(
             query=query,
-            resource=AlbumResource(session=self.db_session),
+            resource=AlbumResource(session=db_session),
             subfilters=subfilters,
             embeds=[],
             dialect_override=True
@@ -275,144 +946,16 @@ class DrowsyQueryBuilderTests(DrowsyTests):
             """
         ).replace(" ", "").replace("\n", "")
         result = str(query).replace(" ", "").replace("\n", "")
-        self.assertTrue(expected_query == result)
+        assert expected_query == result
 
-    def test_subfilter_sorts_no_limit_offset_fail(self):
-        """Check that subresource sorts without limit or offset fail."""
-        query_builder = ModelResourceQueryBuilder()
-        query = self.db_session.query(Album)
-        subfilters = {
-            "tracks": SubfilterInfo(
-                sorts=[SortInfo(attr="track_id", direction="ASC")]
-            )
-        }
-        self.assertRaisesCode(
-            BadRequestError,
-            "invalid_subresource_sorts",
-            query_builder.apply_subquery_loads,
-            query=query,
-            resource=AlbumResource(
-                session=self.db_session),
-            subfilters=subfilters,
-            embeds=[],
-            dialect_override=True
-        )
-
-    def test_simple_subfilter_limit_too_big(self):
-        """Check that a limit too large on subresource fails."""
-        query_builder = ModelResourceQueryBuilder()
-        query = self.db_session.query(Customer)
-        subfilters = {
-            "invoices": SubfilterInfo(
-                offset=1,
-                limit=10000
-            )
-        }
-        self.assertRaisesCode(
-            BadRequestError,
-            "invalid_subresource_limit",
-            query_builder.apply_subquery_loads,
-            query=query,
-            resource=CustomerResource(
-                session=self.db_session),
-            subfilters=subfilters,
-            embeds=[],
-            dialect_override=True
-        )
-
-    def test_subfilter_invalid_fail(self):
-        """Check that bad subresource filters fail."""
-        query_builder = ModelResourceQueryBuilder()
-        query = self.db_session.query(Album)
-        subfilters = {
-            "tracks": SubfilterInfo(
-                filters={"track_id": {"$bad": 5}}
-            )
-        }
-        self.assertRaisesCode(
-            BadRequestError,
-            "invalid_subresource_filters",
-            query_builder.apply_subquery_loads,
-            query=query,
-            resource=AlbumResource(
-                session=self.db_session),
-            subfilters=subfilters,
-            embeds=[],
-            dialect_override=True
-        )
-
-    def test_subfilter_invalid_ignore(self):
-        """Check that non strict bad subresource filters is ignored."""
-        query_builder = ModelResourceQueryBuilder()
-        query = self.db_session.query(Album)
-        subfilters = {
-            "tracks": SubfilterInfo(
-                filters={"track_id": {"$bad": 5}}
-            )
-        }
-        query = query_builder.apply_subquery_loads(
-            query=query,
-            resource=AlbumResource(
-                session=self.db_session),
-            subfilters=subfilters,
-            embeds=[],
-            dialect_override=False,
-            strict=False
-        )
-        result = query.all()
-        self.assertTrue(len(result) > 0)
-
-    def test_many_to_one_limit_fail(self):
-        """Test a limit/offset on a many to one relationship fails."""
-        query_builder = ModelResourceQueryBuilder()
-        query = self.db_session.query(Track)
-        subfilters = {
-            "album": SubfilterInfo(
-                offset=1,
-                limit=None
-            )
-        }
-        self.assertRaisesCode(
-            BadRequestError,
-            "invalid_subresource_options",
-            query_builder.apply_subquery_loads,
-            query=query,
-            resource=TrackResource(
-                session=self.db_session),
-            subfilters=subfilters,
-            embeds=[],
-            dialect_override=True
-        )
-
-    def test_subresource_bad_dialect_fail(self):
-        """Test a sublimit/offset fails with unsupported dialect."""
-        query_builder = ModelResourceQueryBuilder()
-        query = self.db_session.query(Album)
-        subfilters = {
-            "tracks": SubfilterInfo(
-                offset=1,
-                limit=10
-            )
-        }
-        self.assertRaisesCode(
-            BadRequestError,
-            "invalid_subresource_options",
-            query_builder.apply_subquery_loads,
-            query=query,
-            resource=AlbumResource(
-                session=self.db_session),
-            subfilters=subfilters,
-            embeds=[],
-            dialect_override=False
-        )
-
-    def test_non_strict_bad_sublimits(self):
+    @staticmethod
+    def test_non_strict_bad_sublimits(db_session):
         """Test bad sublimits don't cause failure when not strict."""
         query_builder = ModelResourceQueryBuilder()
-        query = self.db_session.query(Customer)
+        query = db_session.query(Customer)
         query = query_builder.apply_subquery_loads(
             query=query,
-            resource=CustomerResource(session=self.db_session),
+            resource=CustomerResource(session=db_session),
             subfilters={
                 "invoices": SubfilterInfo(
                     offset=1,
@@ -498,192 +1041,13 @@ class DrowsyQueryBuilderTests(DrowsyTests):
             """
         ).replace(" ", "").replace("\n", "")
         result = str(query).replace(" ", "").replace("\n", "")
-        self.assertTrue(expected_query == result)
+        assert expected_query == result
 
-    def test_subquery_embeds(self):
-        """Test that a simple subquery can work alongside an embed."""
-        query_builder = ModelResourceQueryBuilder()
-        query = self.db_session.query(Album)
-        subfilters = {
-            "artist": SubfilterInfo(
-                filters={"artist_id": 1}
-            )
-        }
-        query = query_builder.apply_subquery_loads(
-            query=query,
-            resource=AlbumResource(session=self.db_session),
-            subfilters=subfilters,
-            embeds=["tracks", "artist"]
-        )
-        albums = query.all()
-        for album in albums:
-            res = inspect(album)
-            self.assertTrue("tracks" not in res.unloaded)
-            if album.artist:
-                self.assertTrue(album.artist.artist_id == 1)
-
-    def test_same_subquery_embeds(self):
-        """Test that a simple subquery works with a duplicate embed."""
-        query_builder = ModelResourceQueryBuilder()
-        query = self.db_session.query(Album)
-        subfilters = {
-            "tracks": SubfilterInfo(
-                filters={"track_id": 1}
-            )
-        }
-        query = query_builder.apply_subquery_loads(
-            query=query,
-            resource=AlbumResource(session=self.db_session),
-            subfilters=subfilters,
-            embeds=["tracks"]
-        )
-        albums = query.all()
-        for album in albums:
-            res = inspect(album)
-            self.assertTrue("tracks" not in res.unloaded)
-            if album.tracks:
-                self.assertTrue(len(album.tracks) == 1)
-                self.assertTrue(album.tracks[0].track_id == 1)
-
-    def test_simple_embeds(self):
-        """Test that a simple embed works."""
-        query_builder = ModelResourceQueryBuilder()
-        query = self.db_session.query(Album)
-        query = query_builder.apply_subquery_loads(
-            query=query,
-            resource=AlbumResource(session=self.db_session),
-            subfilters={},
-            embeds=["tracks"]
-        )
-        albums = query.all()
-        for album in albums:
-            res = inspect(album)
-            self.assertTrue("tracks" not in res.unloaded)
-
-    def test_property_embeds(self):
-        """Test that property embed works."""
-        query_builder = ModelResourceQueryBuilder()
-        query = self.db_session.query(Album)
-        query = query_builder.apply_subquery_loads(
-            query=query,
-            resource=AlbumResource(session=self.db_session),
-            subfilters={},
-            embeds=["tracks.track_id"]
-        )
-        albums = query.all()
-        for album in albums:
-            res = inspect(album)
-            self.assertTrue("tracks" not in res.unloaded)
-
-    def test_bad_embeds(self):
-        """Test that a bad property embed fails."""
-        query_builder = ModelResourceQueryBuilder()
-        query = self.db_session.query(Album)
-        self.assertRaisesCode(
-            BadRequestError,
-            "invalid_embed",
-            query_builder.apply_subquery_loads,
-            query=query,
-            resource=AlbumResource(session=self.db_session),
-            subfilters={},
-            embeds=["tracks.track_id.playlistId"]
-        )
-
-    def test_bad_embeds_ignore(self):
-        """Test that a non strict bad property embed is ignored."""
-        query_builder = ModelResourceQueryBuilder()
-        query = self.db_session.query(Album)
-        query = query_builder.apply_subquery_loads(
-            query=query,
-            resource=AlbumResource(session=self.db_session),
-            subfilters={},
-            embeds=["tracks.track_id.playlistId"],
-            strict=False
-        )
-        result = query.all()
-        self.assertTrue(len(result) > 0)
-
-    def test_bad_subfilters(self):
-        """Test that a bad property subfilter fails."""
-        query_builder = ModelResourceQueryBuilder()
-        query = self.db_session.query(Album)
-        self.assertRaisesCode(
-            BadRequestError,
-            "invalid_subresource",
-            query_builder.apply_subquery_loads,
-            query=query,
-            resource=AlbumResource(session=self.db_session),
-            subfilters={
-                "tracks.track_id": SubfilterInfo(
-                    filters={"track_id": 5}
-                )
-            },
-            embeds=[]
-        )
-
-    def test_bad_subfilters_value(self):
-        """Test that a bad property subfilter value fails."""
-        query_builder = ModelResourceQueryBuilder()
-        query = self.db_session.query(Album)
-        self.assertRaises(
-            ValueError,
-            query_builder.apply_subquery_loads,
-            query=query,
-            resource=AlbumResource(session=self.db_session),
-            subfilters={
-                "tracks.track_id": "test"
-            },
-            embeds=[]
-        )
-
-    def test_non_strict_bad_subfilters(self):
-        """Test bad subfitlers don't cause failure when not strict."""
-        query_builder = ModelResourceQueryBuilder()
-        query = self.db_session.query(Album)
-        query = query_builder.apply_subquery_loads(
-            query=query,
-            resource=AlbumResource(session=self.db_session),
-            subfilters={
-                "tracks.track_id": SubfilterInfo(
-                    filters={"track_id": 5}
-                )
-            },
-            embeds=[],
-            strict=False
-        )
-        albums = query.all()
-        self.assertTrue(len(albums) == 347)
-        # TODO - review whether we want this to not load subresource
-        # for album in albums:
-        #     res = inspect(album)
-        #     self.assertTrue("tracks" in res.unloaded)
-
-    def test_self_referential_composite_id_subquery(self):
-        """Test a self referential, composite id subquery"""
-        query_builder = ModelResourceQueryBuilder()
-        query = self.db_session.query(CompositeNode)
-        subfilters = {
-            "children": SubfilterInfo(
-                filters={"node_id": 1}
-            )
-        }
-        query = query_builder.apply_subquery_loads(
-            query=query,
-            resource=CompositeNodeResource(session=self.db_session),
-            subfilters=subfilters,
-            embeds=[]
-        )
-        composite_nodes = query.all()
-        for composite_node in composite_nodes:
-            res = inspect(composite_node)
-            self.assertTrue("children" not in res.unloaded)
-            for child in composite_node.children:
-                self.assertTrue(child.node_id == 1)
-
-    def test_composite_id_subquery_with_limit(self):
+    @staticmethod
+    def test_composite_id_subquery_with_limit(db_session):
         """Test a composite id subquery with a limit"""
         query_builder = ModelResourceQueryBuilder()
-        query = self.db_session.query(CompositeNode)
+        query = db_session.query(CompositeNode)
         subfilters = {
             "children": SubfilterInfo(
                 filters={"node_id": 1},
@@ -693,7 +1057,7 @@ class DrowsyQueryBuilderTests(DrowsyTests):
         }
         query = query_builder.apply_subquery_loads(
             query=query,
-            resource=CompositeNodeResource(session=self.db_session),
+            resource=CompositeNodeResource(session=db_session),
             subfilters=subfilters,
             embeds=[],
             dialect_override=True
@@ -775,12 +1139,13 @@ class DrowsyQueryBuilderTests(DrowsyTests):
             """
         ).replace(" ", "").replace("\n", "")
         result = str(query).replace(" ", "").replace("\n", "")
-        self.assertTrue(expected_query == result)
+        assert expected_query == result
 
-    def test_composite_id_subquery_one_to_many(self):
+    @staticmethod
+    def test_composite_id_subquery_one_to_many(db_session):
         """Test a composite id subquery with a many to one relation."""
         query_builder = ModelResourceQueryBuilder()
-        query = self.db_session.query(CompositeOne)
+        query = db_session.query(CompositeOne)
         subfilters = {
             "many": SubfilterInfo(
                 filters={"many_id": 1},
@@ -790,7 +1155,7 @@ class DrowsyQueryBuilderTests(DrowsyTests):
         }
         query = query_builder.apply_subquery_loads(
             query=query,
-            resource=CompositeOneResource(session=self.db_session),
+            resource=CompositeOneResource(session=db_session),
             subfilters=subfilters,
             embeds=[],
             dialect_override=True
@@ -849,4 +1214,4 @@ class DrowsyQueryBuilderTests(DrowsyTests):
             """
         ).replace(" ", "").replace("\n", "")
         result = str(query).replace(" ", "").replace("\n", "")
-        self.assertTrue(expected_query == result)
+        assert expected_query == result

@@ -9,16 +9,16 @@
     :license: MIT - See LICENSE for more details.
 """
 from drowsy.convert import CamelModelResourceConverter
-from drowsy.exc import PermissionDenied
+from drowsy.exc import PermissionValidationError
 from drowsy.fields import Relationship
 from drowsy.permissions import DisallowAllOpPermissions
 from drowsy.schema import ModelResourceSchema
-from drowsy.tests.models import (
+from .models import (
     Album, Artist, CompositeOne, CompositeMany, CompositeNode, Customer,
     Employee, Genre, Invoice, InvoiceLine, MediaType, Node, Playlist, Track
 )
 from marshmallow import fields
-from marshmallow_sqlalchemy.schema import ModelSchema
+from marshmallow_sqlalchemy.schema import SQLAlchemyAutoSchema
 
 
 class InvoiceLineSchema(ModelResourceSchema):
@@ -70,6 +70,23 @@ class TrackSchema(ModelResourceSchema):
         model = Track
         include_relationships = True
 
+    def check_permission(self, data, instance, action):
+        """Checks if this action is permissible to attempt.
+
+        :param dict data: The user supplied data to be deserialized.
+        :param instance: A pre-existing instance the data is to be
+            deserialized into. Should be ``None`` if not updating an
+            existing object.
+        :param str action: Either ``"create"``, ``"update"``, or
+            ``"delete"``.
+        :return: None
+        :raise PermissionValidationError: If the action being taken is
+            not allowed.
+
+        """
+        if data.get("track_id") == 1 and data.get("name") == "Denied":
+            raise self.make_error("permission_denied")
+
 
 class TrackPermissionsSchema(ModelResourceSchema):
     class Meta:
@@ -98,11 +115,13 @@ class AlbumSchema(ModelResourceSchema):
         :param str action: Either ``"create"``, ``"update"``, or
             ``"delete"``.
         :return: None
-        :raise PermissionDenied: If the action being taken is not
-            allowed.
+        :raise PermissionValidationError: If the action being taken is
+            not allowed.
 
         """
-        if data.get("album_id") == 340 and data.get("title") == "Denied":
+        if data.get("title") == "Denied" or (
+                instance is not None and instance.album_id == 340 and
+                action == "delete"):
             raise self.make_error("permission_denied")
 
 
@@ -263,10 +282,11 @@ class CompositeManyCamelSchema(ModelResourceSchema):
         model_converter = TestCamelModelResourceConverter
 
 
-class MsAlbumSchema(ModelSchema):
+class MsAlbumSchema(SQLAlchemyAutoSchema):
     class Meta:
         model = Album
         include_relationships = True
+        load_instance = True
     album_id = fields.Integer(data_key="albumId")
 
 

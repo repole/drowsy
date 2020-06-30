@@ -13,9 +13,9 @@ from sqlalchemy import (
     Column, DateTime, ForeignKey, Integer, Table, Unicode, orm, and_, Float
 )
 from sqlalchemy.ext.declarative import declarative_base
+from sqlalchemy.orm import backref
 from sqlalchemy.schema import ForeignKeyConstraint
 from sqlalchemy.sql.sqltypes import NullType
-
 
 Base = declarative_base()
 metadata = Base.metadata
@@ -147,7 +147,8 @@ class InvoiceLine(Base):
     quantity = Column("Quantity", Integer, nullable=False)
 
     invoice = orm.relationship('Invoice', backref="invoice_lines")
-    track = orm.relationship('Track')
+    track = orm.relationship('Track', backref=backref(
+        "invoice_lines", cascade="all, delete-orphan"))
 
 
 class MediaType(Base):
@@ -207,7 +208,8 @@ class Track(Base):
     bytes = Column("Bytes", Integer)
     unit_price = Column("UnitPrice", Float, nullable=False)
 
-    album = orm.relationship('Album', backref="tracks")
+    album = orm.relationship('Album', backref=backref(
+        "tracks", cascade="all, delete-orphan"))
     genre = orm.relationship('Genre', backref="tracks")
     media_type = orm.relationship('MediaType')
 

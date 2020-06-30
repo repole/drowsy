@@ -4,25 +4,25 @@
 
     Integration tests for Drowsy.
 
-    :copyright: (c) 2016-2018 by Nicholas Repole and contributors.
+    :copyright: (c) 2016-2020 by Nicholas Repole and contributors.
                 See AUTHORS for more details.
     :license: MIT - See LICENSE for more details.
 """
-from __future__ import unicode_literals
 from drowsy.parser import ModelQueryParamParser
-from drowsy.tests.base import DrowsyTests
-from drowsy.tests.resources import *
+from .base import DrowsyDatabaseTests
+from .resources import *
 
 
-class DrowsyIntegrationTests(DrowsyTests):
+class TestDrowsyIntegration(DrowsyDatabaseTests):
 
     """General purpose drowsy integration tests."""
 
-    def test_offset(self):
+    @staticmethod
+    def test_offset(db_session):
         """Make sure providing an offset query_param works."""
         query_params = {"offset": "1"}
         parser = ModelQueryParamParser(query_params)
-        album_resource = AlbumResource(session=self.db_session)
+        album_resource = AlbumResource(session=db_session)
         offset_limit_info = parser.parse_offset_limit(page_max_size=30)
         offset = offset_limit_info.offset
         limit = offset_limit_info.limit
@@ -32,13 +32,14 @@ class DrowsyIntegrationTests(DrowsyTests):
             limit=limit,
             offset=offset
         )
-        self.assertTrue(result[0]["album_id"] == 2)
+        assert result[0]["album_id"] == 2
 
-    def test_limit(self):
+    @staticmethod
+    def test_limit(db_session):
         """Make sure providing a limit query_param works."""
         query_params = {"limit": "1"}
         parser = ModelQueryParamParser(query_params)
-        album_resource = AlbumResource(session=self.db_session)
+        album_resource = AlbumResource(session=db_session)
         offset_limit_info = parser.parse_offset_limit(page_max_size=30)
         offset = offset_limit_info.offset
         limit = offset_limit_info.limit
@@ -48,29 +49,30 @@ class DrowsyIntegrationTests(DrowsyTests):
             limit=limit,
             offset=offset
         )
-        self.assertTrue(len(result) == 1)
+        assert len(result) == 1
 
-    def test_get_resources_ordered(self):
+    @staticmethod
+    def test_get_resources_ordered(db_session):
         """Test simple get_resources sort functionality."""
         query_params = {
             "sort": "-album_id,title"
         }
         parser = ModelQueryParamParser(query_params)
-        album_resource = AlbumResource(session=self.db_session)
+        album_resource = AlbumResource(session=db_session)
         result = album_resource.get_collection(
             filters=parser.parse_filters(album_resource.model),
             sorts=parser.parse_sorts()
         )
-        self.assertTrue(
-            len(result) == 347 and
-            result[0]["album_id"] == 347)
+        assert len(result) == 347
+        assert result[0]["album_id"] == 347
 
-    def test_get_first_page(self):
+    @staticmethod
+    def test_get_first_page(db_session):
         """Test that we can get the first page of a set of objects."""
         query_params = {
             "sort": "album_id"
         }
-        album_resource = AlbumResource(session=self.db_session)
+        album_resource = AlbumResource(session=db_session)
         parser = ModelQueryParamParser(query_params)
         offset_limit_info = parser.parse_offset_limit(page_max_size=30)
         offset = offset_limit_info.offset
@@ -81,18 +83,18 @@ class DrowsyIntegrationTests(DrowsyTests):
             limit=limit,
             offset=offset
         )
-        self.assertTrue(
-            len(result) == 30 and
-            result[0]["album_id"] == 1)
+        assert len(result) == 30
+        assert result[0]["album_id"] == 1
 
-    def test_get_second_page(self):
+    @staticmethod
+    def test_get_second_page(db_session):
         """Test that we can get the second page of a set of objects."""
         query_params = {
             "sort": "album_id",
             "page": "2"
         }
         parser = ModelQueryParamParser(query_params)
-        album_resource = AlbumResource(session=self.db_session)
+        album_resource = AlbumResource(session=db_session)
         offset_limit_info = parser.parse_offset_limit(page_max_size=30)
         offset = offset_limit_info.offset
         limit = offset_limit_info.limit
@@ -102,18 +104,18 @@ class DrowsyIntegrationTests(DrowsyTests):
             limit=limit,
             offset=offset
         )
-        self.assertTrue(
-            len(result) == 30 and
-            result[0]["album_id"] == 31)
+        assert len(result) == 30
+        assert result[0]["album_id"] == 31
 
-    def test_subresource_nested_query(self):
+    @staticmethod
+    def test_subresource_nested_query(db_session):
         """Ensure a simple subresource query works."""
         query_params = {
             "tracks._subquery_.track_id-gte": 5,
             "tracks.playlists._subquery_.playlist_id-lte": 5
         }
         parser = ModelQueryParamParser(query_params)
-        album_resource = AlbumResource(session=self.db_session)
+        album_resource = AlbumResource(session=db_session)
         result = album_resource.get_collection(
             subfilters=parser.parse_subfilters(),
             embeds=parser.parse_embeds()
@@ -121,20 +123,20 @@ class DrowsyIntegrationTests(DrowsyTests):
         success = False
         for album in result:
             if album["album_id"] == 3:
-                self.assertTrue(
-                    len(album["tracks"]) == 1 and
-                    album["tracks"][0]["track_id"] == 5)
+                assert len(album["tracks"]) == 1
+                assert album["tracks"][0]["track_id"] == 5
                 success = True
-        self.assertTrue(success)
+        assert success
 
-    def test_subresource_simple_query(self):
+    @staticmethod
+    def test_subresource_simple_query(db_session):
         """Ensure a simple subresource query works."""
         query_params = {
             "tracks._subquery_.track_id-gte": 5,
             "tracks.playlists._subquery_.playlist_id-lte": 5
         }
         parser = ModelQueryParamParser(query_params)
-        album_resource = AlbumResource(session=self.db_session)
+        album_resource = AlbumResource(session=db_session)
         result = album_resource.get_collection(
             subfilters=parser.parse_subfilters(),
             embeds=parser.parse_embeds()
@@ -142,9 +144,7 @@ class DrowsyIntegrationTests(DrowsyTests):
         success = False
         for album in result:
             if album["album_id"] == 3:
-                self.assertTrue(
-                    len(album["tracks"]) == 1 and
-                    album["tracks"][0]["track_id"] == 5)
+                assert len(album["tracks"]) == 1
+                assert album["tracks"][0]["track_id"] == 5
                 success = True
-        self.assertTrue(success)
-
+        assert success

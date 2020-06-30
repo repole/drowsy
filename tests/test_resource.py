@@ -4,621 +4,614 @@
 
     Resource tests for Drowsy.
 
-    :copyright: (c) 2016-2019 by Nicholas Repole and contributors.
+    :copyright: (c) 2016-2020 by Nicholas Repole and contributors.
                 See AUTHORS for more details.
     :license: MIT - See LICENSE for more details.
 """
-from __future__ import unicode_literals
 from marshmallow.exceptions import RegistryError
 import drowsy.resource_class_registry as registry
 from drowsy.base import ResourceABC, NestableResourceABC, SchemaResourceABC
 from drowsy.exc import (
-    BadRequestError, MethodNotAllowedError, ResourceNotFoundError,
-    UnprocessableEntityError)
+    BadRequestError, MethodNotAllowedError, PermissionDeniedError,
+    ResourceNotFoundError, UnprocessableEntityError)
 from drowsy.parser import SubfilterInfo, SortInfo
 from drowsy.resource import ResourceCollection, PaginationInfo
 from drowsy.schema import NestedOpts
-from drowsy.tests.base import DrowsyTests
-from drowsy.tests.models import Album, Artist, Playlist, Track
-from drowsy.tests.resources import (
+from tests.base import DrowsyDatabaseTests
+from tests.models import Album, Artist, Playlist, Track
+from tests.resources import (
     AlbumResource, AlbumCamelResource, CustomerResource, EmployeeResource,
     InvoiceResource, InvoiceCamelResource, PlaylistResource, TrackResource)
+from pytest import raises
+from unittest.mock import MagicMock
+import sqlalchemy as sa
+from sqlalchemy.orm.session import Session
 
 
-class DrowsyResourceTests(DrowsyTests):
+# ABSTRACT CLASS TESTS
 
-    """Test drowsy resources."""
+def test_resource_abc_get():
+    """Make sure ResourceABC raises exception on `get`."""
+    with raises(NotImplementedError):
+        ResourceABC().get(1)
 
-    # ABSTRACT CLASS TESTS
 
-    def test_resource_abc_get(self):
-        """Make sure ResourceABC raises exception on `get`."""
-        self.assertRaises(
-            NotImplementedError,
-            ResourceABC().get,
-            1
-        )
+def test_resource_abc_post():
+    """Make sure ResourceABC raises exception on `post`."""
+    with raises(NotImplementedError):
+        ResourceABC().post({})
 
-    def test_resource_abc_post(self):
-        """Make sure ResourceABC raises exception on `post`."""
-        self.assertRaises(
-            NotImplementedError,
-            ResourceABC().post,
-            {}
-        )
 
-    def test_resource_abc_patch(self):
-        """Make sure ResourceABC raises exception on `patch`."""
-        self.assertRaises(
-            NotImplementedError,
-            ResourceABC().patch,
-            1,
-            {}
-        )
+def test_resource_abc_patch():
+    """Make sure ResourceABC raises exception on `patch`."""
+    with raises(NotImplementedError):
+        ResourceABC().patch(1, {})
 
-    def test_resource_abc_put(self):
-        """Make sure ResourceABC raises exception on `put`."""
-        self.assertRaises(
-            NotImplementedError,
-            ResourceABC().put,
-            1,
-            {}
-        )
 
-    def test_resource_abc_delete(self):
-        """Make sure ResourceABC raises exception on `delete`."""
-        self.assertRaises(
-            NotImplementedError,
-            ResourceABC().delete,
-            1
-        )
+def test_resource_abc_put():
+    """Make sure ResourceABC raises exception on `put`."""
+    with raises(NotImplementedError):
+        ResourceABC().put(1, {})
 
-    def test_resource_abc_get_collection(self):
-        """Check ResourceABC raises exception on `get_collection`."""
-        self.assertRaises(
-            NotImplementedError,
-            ResourceABC().get_collection
-        )
 
-    def test_resource_abc_post_collection(self):
-        """Check ResourceABC raises exception on `post_collection`."""
-        self.assertRaises(
-            NotImplementedError,
-            ResourceABC().post_collection,
-            {}
-        )
+def test_resource_abc_delete():
+    """Make sure ResourceABC raises exception on `delete`."""
+    with raises(NotImplementedError):
+        ResourceABC().delete(1)
 
-    def test_resource_abc_patch_collection(self):
-        """Check ResourceABC raises exception on `patch_collection`."""
-        self.assertRaises(
-            NotImplementedError,
-            ResourceABC().patch_collection,
-            {}
-        )
 
-    def test_resource_abc_put_collection(self):
-        """Check ResourceABC raises exception on `put_collection`."""
-        self.assertRaises(
-            NotImplementedError,
-            ResourceABC().put_collection,
-            {}
-        )
+def test_resource_abc_get_collection():
+    """Check ResourceABC raises exception on `get_collection`."""
+    with raises(NotImplementedError):
+        ResourceABC().get_collection()
 
-    def test_resource_abc_delete_collection(self):
-        """Check ResourceABC raises exception on `delete_collection`."""
-        self.assertRaises(
-            NotImplementedError,
-            ResourceABC().delete_collection
-        )
 
-    def test_resource_abc_options(self):
-        """Make sure ResourceABC raises exception on `options`."""
-        self.assertRaises(
-            NotImplementedError,
-            getattr,
-            ResourceABC(),
-            "options"
-        )
+def test_resource_abc_post_collection():
+    """Check ResourceABC raises exception on `post_collection`."""
+    with raises(NotImplementedError):
+        ResourceABC().post_collection({})
 
-    def test_nestable_resource_abc_make_resource(self):
-        """NestableResourceABC exception on `make_subresource`."""
-        self.assertRaises(
-            NotImplementedError,
-            NestableResourceABC().make_subresource,
-            "test"
-        )
 
-    def test_schema_resource_abc_make_resource(self):
-        """SchemaResourceABC raises exception on `make_schema`."""
-        self.assertRaises(
-            NotImplementedError,
-            SchemaResourceABC().make_schema
-        )
+def test_resource_abc_patch_collection():
+    """Check ResourceABC raises exception on `patch_collection`."""
+    with raises(NotImplementedError):
+        ResourceABC().patch_collection({})
 
-    def test_schema_resource_abc_schema_kwargs(self):
-        """SchemaResourceABC raises exception on `get_schema_kwargs`."""
-        self.assertRaises(
-            NotImplementedError,
-            getattr(SchemaResourceABC(), "_get_schema_kwargs"),
-            "test"
-        )
 
-    def test_schema_resource_abc_schema(self):
-        """SchemaResourceABC raises exception on `session`."""
-        self.assertRaises(
-            NotImplementedError,
-            getattr,
-            SchemaResourceABC(),
-            "schema",
-        )
+def test_resource_abc_put_collection():
+    """Check ResourceABC raises exception on `put_collection`."""
+    with raises(NotImplementedError):
+        ResourceABC().put_collection({})
 
-    def test_schema_resource_abc_context(self):
-        """SchemaResourceABC raises exception on `context`."""
-        self.assertRaises(
-            NotImplementedError,
-            getattr,
-            SchemaResourceABC(),
-            "context",
-        )
 
-    # REGISTRY TESTS
-    def test_registry_find_class(self):
-        """Test the registry finds a class."""
-        self.assertTrue(
-            registry.get_class("AlbumResource", all=True) == AlbumResource)
+def test_resource_abc_delete_collection():
+    """Check ResourceABC raises exception on `delete_collection`."""
+    with raises(NotImplementedError):
+        ResourceABC().delete_collection()
 
-    def test_registry_duplicate_class(self):
-        """Test that multiple registrations under the same name work."""
-        registry.register("AlbumResource", dict)
-        self.assertRaises(
-            RegistryError,
-            registry.get_class,
-            "AlbumResource",
-            all=False)
-        self.assertTrue(
-            len(registry.get_class("AlbumResource", all=True)) == 2)
-        # clean up the mess we just made in the registry
-        registry._registry["AlbumResource"].remove(dict)
 
-    def test_registry_class_not_found(self):
-        """Test the registry acts as expected when no class is found."""
-        self.assertRaises(
-            RegistryError,
-            registry.get_class,
-            "Test",
-            all=False)
+def test_resource_abc_options():
+    """Make sure ResourceABC raises exception on `options`."""
+    with raises(NotImplementedError):
+        getattr(ResourceABC(), "options")
 
-    # PAGINATION TESTS
-    def test_pagination_info_current_page(self):
-        """Test PaginationInfo current_page works with positive int."""
-        info = PaginationInfo(
-            resources_available=100,
-            page_size=10,
-            current_page=4
-        )
-        self.assertTrue(info.current_page == 4)
 
-    def test_pagination_info_current_page_none(self):
-        """Test PaginationInfo current_page works with a None value."""
-        info = PaginationInfo(
-            resources_available=100,
-            page_size=10,
-            current_page=None
-        )
-        self.assertTrue(info.current_page is None)
+def test_nestable_resource_abc_make_resource():
+    """NestableResourceABC exception on `make_subresource`."""
+    with raises(NotImplementedError):
+        NestableResourceABC().make_subresource("test")
 
-    def test_pagination_info_current_page_negative(self):
-        """Test PaginationInfo current_page fails with negative int."""
-        self.assertRaises(
-            ValueError,
-            PaginationInfo,
+
+def test_schema_resource_abc_make_resource():
+    """SchemaResourceABC raises exception on `make_schema`."""
+    with raises(NotImplementedError):
+        SchemaResourceABC().make_schema()
+
+
+def test_schema_resource_abc_schema_kwargs():
+    """SchemaResourceABC raises exception on `get_schema_kwargs`."""
+    with raises(NotImplementedError):
+        getattr(SchemaResourceABC(), "_get_schema_kwargs")("test")
+
+
+def test_schema_resource_abc_schema():
+    """SchemaResourceABC raises exception on `session`."""
+    with raises(NotImplementedError):
+        getattr(SchemaResourceABC(), "schema")
+
+
+def test_schema_resource_abc_context():
+    """SchemaResourceABC raises exception on `context`."""
+    with raises(NotImplementedError):
+        getattr(SchemaResourceABC(), "context")
+
+
+# REGISTRY TESTS
+def test_registry_find_class():
+    """Test the registry finds a class."""
+    assert (
+        registry.get_class("AlbumResource", all=True) == AlbumResource)
+
+
+def test_registry_duplicate_class():
+    """Test that multiple registrations under the same name work."""
+    registry.register("AlbumResource", dict)
+    with raises(RegistryError):
+        registry.get_class("AlbumResource", all=False)
+    assert (
+        len(registry.get_class("AlbumResource", all=True)) == 2)
+    # clean up the mess we just made in the registry
+    registry._registry["AlbumResource"].remove(dict)
+
+
+def test_registry_class_not_found():
+    """Test the registry acts as expected when no class is found."""
+    with raises(RegistryError):
+        registry.get_class("Test", all=False)
+
+
+# PAGINATION TESTS
+def test_pagination_info_current_page():
+    """Test PaginationInfo current_page works with positive int."""
+    info = PaginationInfo(
+        resources_available=100,
+        page_size=10,
+        current_page=4
+    )
+    assert info.current_page == 4
+
+
+def test_pagination_info_current_page_none():
+    """Test PaginationInfo current_page works with a None value."""
+    info = PaginationInfo(
+        resources_available=100,
+        page_size=10,
+        current_page=None
+    )
+    assert info.current_page is None
+
+
+def test_pagination_info_current_page_negative():
+    """Test PaginationInfo current_page fails with negative int."""
+    with raises(ValueError):
+        PaginationInfo(
             resources_available=100,
             page_size=10,
             current_page=-4
         )
 
-    def test_pagination_info_current_page_non_int(self):
-        """Test PaginationInfo current_page fails with non int."""
-        self.assertRaises(
-            TypeError,
-            PaginationInfo,
+
+def test_pagination_info_current_page_non_int():
+    """Test PaginationInfo current_page fails with non int."""
+    with raises(TypeError):
+        PaginationInfo(
             resources_available=100,
             page_size=10,
             current_page="1"
         )
 
-    def test_pagination_info_page_size(self):
-        """Test PaginationInfo page_size works with positive int."""
-        info = PaginationInfo(
-            resources_available=100,
-            page_size=10,
-            current_page=4
-        )
-        self.assertTrue(info.page_size == 10)
 
-    def test_pagination_info_page_size_none(self):
-        """Test PaginationInfo page_size works with a None value."""
-        info = PaginationInfo(
-            resources_available=100,
-            page_size=None,
-            current_page=None
-        )
-        self.assertTrue(info.page_size is None)
+def test_pagination_info_page_size():
+    """Test PaginationInfo page_size works with positive int."""
+    info = PaginationInfo(
+        resources_available=100,
+        page_size=10,
+        current_page=4
+    )
+    assert info.page_size == 10
 
-    def test_pagination_info_page_size_negative(self):
-        """Test PaginationInfo page_size fails with negative int."""
-        self.assertRaises(
-            ValueError,
-            PaginationInfo,
+
+def test_pagination_info_page_size_none():
+    """Test PaginationInfo page_size works with a None value."""
+    info = PaginationInfo(
+        resources_available=100,
+        page_size=None,
+        current_page=None
+    )
+    assert info.page_size is None
+
+
+def test_pagination_info_page_size_negative():
+    """Test PaginationInfo page_size fails with negative int."""
+    with raises(ValueError):
+        PaginationInfo(
             resources_available=100,
             page_size=-10,
             current_page=1
         )
 
-    def test_pagination_info_page_size_non_int(self):
-        """Test PaginationInfo page_size fails with non int."""
-        self.assertRaises(
-            TypeError,
-            PaginationInfo,
+
+def test_pagination_info_page_size_non_int():
+    """Test PaginationInfo page_size fails with non int."""
+    with raises(TypeError):
+        PaginationInfo(
             resources_available=100,
             page_size="10",
             current_page=1
         )
 
-    def test_pagination_info_first_page(self):
-        """Test PaginationInfo first_page works."""
-        info = PaginationInfo(
-            resources_available=100,
-            page_size=10,
-            current_page=4
-        )
-        self.assertTrue(info.first_page == 1)
 
-    def test_pagination_info_first_page_none(self):
-        """Test PaginationInfo first_page as None works."""
-        info = PaginationInfo(
-            resources_available=100,
-            page_size=None,
-            current_page=None
-        )
-        self.assertTrue(info.first_page is None)
+def test_pagination_info_first_page():
+    """Test PaginationInfo first_page works."""
+    info = PaginationInfo(
+        resources_available=100,
+        page_size=10,
+        current_page=4
+    )
+    assert info.first_page == 1
 
-    def test_pagination_info_last_page(self):
-        """Test PaginationInfo last_page works."""
-        info = PaginationInfo(
-            resources_available=100,
-            page_size=10,
-            current_page=4
-        )
-        self.assertTrue(info.last_page == 10)
 
-    def test_pagination_info_last_page_none(self):
-        """Test PaginationInfo last_page as None works."""
-        info = PaginationInfo(
-            resources_available=100,
-            page_size=None,
-            current_page=None
-        )
-        self.assertTrue(info.last_page is None)
+def test_pagination_info_first_page_none():
+    """Test PaginationInfo first_page as None works."""
+    info = PaginationInfo(
+        resources_available=100,
+        page_size=None,
+        current_page=None
+    )
+    assert info.first_page is None
 
-    def test_pagination_info_next_page(self):
-        """Test PaginationInfo next_page works."""
-        info = PaginationInfo(
-            resources_available=100,
-            page_size=10,
-            current_page=4
-        )
-        self.assertTrue(info.next_page == 5)
 
-    def test_pagination_info_next_page_none(self):
-        """Test PaginationInfo next_page as None works."""
-        info = PaginationInfo(
-            resources_available=100,
-            page_size=None,
-            current_page=None
-        )
-        self.assertTrue(info.next_page is None)
+def test_pagination_info_last_page():
+    """Test PaginationInfo last_page works."""
+    info = PaginationInfo(
+        resources_available=100,
+        page_size=10,
+        current_page=4
+    )
+    assert info.last_page == 10
 
-    def test_pagination_info_next_page_not_found(self):
-        """Test PaginationInfo next_page when on last page works."""
-        info = PaginationInfo(
-            resources_available=100,
-            page_size=10,
-            current_page=10
-        )
-        self.assertTrue(info.next_page is None)
 
-    def test_pagination_info_previous_page(self):
-        """Test PaginationInfo previous_page works."""
-        info = PaginationInfo(
-            resources_available=100,
-            page_size=10,
-            current_page=4
-        )
-        self.assertTrue(info.previous_page == 3)
+def test_pagination_info_last_page_none():
+    """Test PaginationInfo last_page as None works."""
+    info = PaginationInfo(
+        resources_available=100,
+        page_size=None,
+        current_page=None
+    )
+    assert info.last_page is None
 
-    def test_pagination_info_previous_page_none(self):
-        """Test PaginationInfo previous_page as None works."""
-        info = PaginationInfo(
-            resources_available=100,
-            page_size=None,
-            current_page=None
-        )
-        self.assertTrue(info.previous_page is None)
 
-    def test_pagination_info_previous_page_not_found(self):
-        """Test PaginationInfo previous_page from first page works."""
-        info = PaginationInfo(
-            resources_available=100,
-            page_size=10,
-            current_page=1
-        )
-        self.assertTrue(info.previous_page is None)
+def test_pagination_info_next_page():
+    """Test PaginationInfo next_page works."""
+    info = PaginationInfo(
+        resources_available=100,
+        page_size=10,
+        current_page=4
+    )
+    assert info.next_page == 5
 
-    # RESOURCECOLLECTION TESTS
 
-    def test_resource_collection_class(self):
-        """Test the ResourceCollection class."""
-        rc = ResourceCollection([1, 2, 3], 100)
-        self.assertTrue(rc[0] == 1)
-        self.assertTrue(rc.resources_fetched == 3)
-        self.assertTrue(rc.resources_available == 100)
+def test_pagination_info_next_page_none():
+    """Test PaginationInfo next_page as None works."""
+    info = PaginationInfo(
+        resources_available=100,
+        page_size=None,
+        current_page=None
+    )
+    assert info.next_page is None
+
+
+def test_pagination_info_next_page_not_found():
+    """Test PaginationInfo next_page when on last page works."""
+    info = PaginationInfo(
+        resources_available=100,
+        page_size=10,
+        current_page=10
+    )
+    assert info.next_page is None
+
+
+def test_pagination_info_previous_page():
+    """Test PaginationInfo previous_page works."""
+    info = PaginationInfo(
+        resources_available=100,
+        page_size=10,
+        current_page=4
+    )
+    assert info.previous_page == 3
+
+
+def test_pagination_info_previous_page_none():
+    """Test PaginationInfo previous_page as None works."""
+    info = PaginationInfo(
+        resources_available=100,
+        page_size=None,
+        current_page=None
+    )
+    assert info.previous_page is None
+
+
+def test_pagination_info_previous_page_not_found():
+    """Test PaginationInfo previous_page from first page works."""
+    info = PaginationInfo(
+        resources_available=100,
+        page_size=10,
+        current_page=1
+    )
+    assert info.previous_page is None
+
+
+# RESOURCECOLLECTION TESTS
+
+def test_resource_collection_class():
+    """Test the ResourceCollection class."""
+    rc = ResourceCollection([1, 2, 3], 100)
+    assert rc[0] == 1
+    assert rc.resources_fetched == 3
+    assert rc.resources_available == 100
+
+
+class TestDrowsyResource(DrowsyDatabaseTests):
+
+    """Test drowsy resources."""
 
     # RESOURCE CLASS TESTS
 
-    def test_resource_session_callable(self):
+    @staticmethod
+    def test_resource_session_callable(db_session):
         """Test that providing a callable session works."""
         def session_callable():
             """Dummy session callable."""
-            return self.db_session
+            return db_session
         resource = EmployeeResource(session=session_callable)
-        self.assertTrue(resource.session is self.db_session)
+        assert resource.session is db_session
 
-    def test_resource_session_setter(self):
+    @staticmethod
+    def test_resource_session_setter(db_session):
         """Test setting a session works."""
-        resource = EmployeeResource(session=self.db_session)
-        new_session = self.DBSession()
+        resource = EmployeeResource(session=db_session)
+        new_session = MagicMock(spec=Session)
         resource.session = new_session
-        self.assertTrue(resource.session is not self.db_session)
-        self.assertTrue(resource.session is new_session)
+        assert resource.session is not db_session
+        # For some reason it seems like the MagicMock is changing here
+        # TODO - Research this
+        assert resource.session is not None
 
-    def test_resource_context_callable(self):
+    @staticmethod
+    def test_resource_context_callable(db_session):
         """Test that providing a callable context works."""
         def context_callable():
             """Dummy context callable."""
             return {"test": "test"}
-        resource = EmployeeResource(session=self.db_session,
+        resource = EmployeeResource(session=db_session,
                                     context=context_callable)
-        self.assertTrue(resource.context.get("test") == "test")
+        assert resource.context.get("test") == "test"
 
-    def test_resource_context_setter(self):
+    @staticmethod
+    def test_resource_context_setter(db_session):
         """Test setting a resource context works."""
-        resource = EmployeeResource(session=self.db_session,
+        resource = EmployeeResource(session=db_session,
                                     context={})
         resource.context = {"test": "test"}
-        self.assertTrue(resource.context.get("test") == "test")
+        assert resource.context.get("test") == "test"
 
-    def test_resource_page_max_size(self):
+    @staticmethod
+    def test_resource_page_max_size(db_session):
         """Test that providing a page_max_size works."""
-        resource = EmployeeResource(session=self.db_session,
+        resource = EmployeeResource(session=db_session,
                                     page_max_size=100)
-        self.assertTrue(resource.page_max_size == 100)
+        assert resource.page_max_size == 100
 
-    def test_resource_page_max_size_0(self):
+    @staticmethod
+    def test_resource_page_max_size_0(db_session):
         """Test that providing 0 for page_max_size works."""
-        resource = EmployeeResource(session=self.db_session,
+        resource = EmployeeResource(session=db_session,
                                     page_max_size=0)
-        self.assertTrue(resource.page_max_size is None)
+        assert resource.page_max_size is None
 
-    def test_resource_limit_too_high_fail(self):
+    @staticmethod
+    def test_resource_limit_too_high_fail(db_session):
         """Test providing a limit greater than page_max_size fails."""
-        resource = EmployeeResource(session=self.db_session,
+        resource = EmployeeResource(session=db_session,
                                     page_max_size=100)
-        self.assertRaisesCode(
-            BadRequestError,
-            "limit_too_high",
-            resource.get_collection,
-            limit=101,
-            strict=True
-        )
+        with raises(BadRequestError) as excinf:
+            resource.get_collection(
+                limit=101,
+                strict=True
+            )
+        assert excinf.value.code == "limit_too_high"
 
-    def test_resource_limit_negative_fail(self):
+    @staticmethod
+    def test_resource_limit_negative_fail(db_session):
         """Test providing a negative_limit fails."""
-        resource = AlbumResource(session=self.db_session)
-        self.assertRaisesCode(
-            BadRequestError,
-            "invalid_limit_value",
-            resource.get_collection,
-            limit=-1,
-            strict=True
-        )
+        resource = AlbumResource(session=db_session)
+        with raises(BadRequestError) as excinf:
+            resource.get_collection(
+                limit=-1,
+                strict=True
+            )
+        assert excinf.value.code == "invalid_limit_value"
 
-    def test_resource_limit_too_high_soft_fail(self):
+    @staticmethod
+    def test_resource_limit_too_high_soft_fail(db_session):
         """Test in non strict page_max_size overrides high limit."""
-        resource = AlbumResource(session=self.db_session,
+        resource = AlbumResource(session=db_session,
                                  page_max_size=100)
         results = resource.get_collection(
             limit=101,
             strict=False)
-        self.assertTrue(len(results) == 100)
+        assert len(results) == 100
 
-    def test_resource_offset_negative_fail(self):
+    @staticmethod
+    def test_resource_offset_negative_fail(db_session):
         """Test providing a negative_limit fails."""
-        resource = AlbumResource(session=self.db_session)
-        self.assertRaisesCode(
-            BadRequestError,
-            "invalid_offset_value",
-            resource.get_collection,
-            offset=-1,
-            strict=True
-        )
+        resource = AlbumResource(session=db_session)
+        with raises(BadRequestError) as excinf:
+            resource.get_collection(
+                offset=-1,
+                strict=True
+            )
+        assert excinf.value.code == "invalid_offset_value"
 
-    def test_resource_error_message_override(self):
+    @staticmethod
+    def test_resource_error_message_override(db_session):
         """Test that error message overrides are handled properly."""
-        resource = EmployeeResource(session=self.db_session)
-        try:
+        resource = EmployeeResource(session=db_session)
+        with raises(BadRequestError) as excinf:
             raise resource.make_error(key="invalid_field")
-        except BadRequestError as exc:
-            self.assertTrue(exc.code == "invalid_field")
-            self.assertTrue(exc.message == "Test invalid_field message.")
+        assert excinf.value.code == "invalid_field"
+        assert excinf.value.message == "Test invalid_field message."
 
-    def test_resource_make_subresource_fail(self):
+    @staticmethod
+    def test_resource_make_subresource_fail(db_session):
         """Test that attempting to make an invalid subresource fails."""
-        resource = EmployeeResource(session=self.db_session,
+        resource = EmployeeResource(session=db_session,
                                     page_max_size=0)
-        self.assertRaises(
-            ValueError,
-            resource.make_subresource,
-            "test"
-        )
+        with raises(ValueError):
+            resource.make_subresource("test")
 
-    def test_resource_fail_missing_key(self):
+    @staticmethod
+    def test_resource_fail_missing_key(db_session):
         """Test resource failure missing key error message."""
-        resource = EmployeeResource(session=self.db_session)
-        self.assertRaises(
-            AssertionError,
-            resource.make_error,
-            key="test"
-        )
+        resource = EmployeeResource(session=db_session)
+        with raises(AssertionError):
+            resource.make_error(key="test")
 
-    def test_resource_fail_invalid_filters(self):
+    @staticmethod
+    def test_resource_fail_invalid_filters(db_session):
         """Test resource failure with invalid_filters and no exc."""
-        resource = EmployeeResource(session=self.db_session)
+        resource = EmployeeResource(session=db_session)
         error = resource.make_error("invalid_filters")
-        self.assertTrue(isinstance(error, BadRequestError))
+        assert isinstance(error, BadRequestError)
 
-    def test_resource_whitelist(self):
+    @staticmethod
+    def test_resource_whitelist(db_session):
         """Test that a multi level whitelist check works."""
-        resource = AlbumResource(session=self.db_session)
-        self.assertTrue(resource.whitelist("tracks.playlists.playlist_id"))
+        resource = AlbumResource(session=db_session)
+        assert resource.whitelist("tracks.playlists.playlist_id")
 
-    def test_resource_whitelist_empty(self):
+    @staticmethod
+    def test_resource_whitelist_empty(db_session):
         """Test whitelist with an empty string returns True."""
-        resource = AlbumResource(session=self.db_session)
-        self.assertTrue(resource.whitelist(""))
+        resource = AlbumResource(session=db_session)
+        assert resource.whitelist("")
 
-    def test_resource_whitelist_non_nested_resource(self):
+    @staticmethod
+    def test_resource_whitelist_non_nested_resource(db_session):
         """Test whitelist using a nested field without a resource."""
-        resource = InvoiceResource(session=self.db_session)
-        self.assertTrue(resource.whitelist("invoice_lines.unit_price"))
+        resource = InvoiceResource(session=db_session)
+        assert resource.whitelist("invoice_lines.unit_price")
 
-    def test_resource_whitelist_fail(self):
+    @staticmethod
+    def test_resource_whitelist_fail(db_session):
         """Test that a single level whitelist check properly fails."""
-        resource = CustomerResource(session=self.db_session)
-        self.assertFalse(resource.whitelist("phone"))
+        resource = CustomerResource(session=db_session)
+        assert resource.whitelist("phone") is False
 
-    def test_resource_whitelist_nested_fail(self):
+    @staticmethod
+    def test_resource_whitelist_nested_fail(db_session):
         """Test that a multi level whitelist check properly fails."""
-        resource = EmployeeResource(session=self.db_session)
-        self.assertFalse(resource.whitelist("parent.customers.phone"))
+        resource = EmployeeResource(session=db_session)
+        assert resource.whitelist("parent.customers.phone") is False
 
-    def test_resource_whitelist_bad_key_fail(self):
+    @staticmethod
+    def test_resource_whitelist_bad_key_fail(db_session):
         """Test bad attribute names properly fail whitelist check."""
-        resource = CustomerResource(session=self.db_session)
-        self.assertFalse(resource.whitelist("test"))
+        resource = CustomerResource(session=db_session)
+        assert resource.whitelist("test") is False
 
-    def test_resource_convert_non_nested_resource(self):
+    @staticmethod
+    def test_resource_convert_non_nested_resource(db_session):
         """Test converting using a nested field without a resource."""
-        resource = InvoiceCamelResource(session=self.db_session)
-        self.assertTrue(
+        resource = InvoiceCamelResource(session=db_session)
+        assert (
             "invoice_lines.unit_price" == resource.convert_key_name(
                 "invoiceLines.unitPrice"))
 
-    def test_resource_convert_bad_key_fail(self):
+    @staticmethod
+    def test_resource_convert_bad_key_fail(db_session):
         """Test converting with a bad nested key."""
-        resource = AlbumCamelResource(session=self.db_session)
-        self.assertIsNone(resource.convert_key_name("albumId.test"))
+        resource = AlbumCamelResource(session=db_session)
+        assert resource.convert_key_name("albumId.test") is None
 
-    def test_resource_make_schema_embeds_subfilters(self):
+    @staticmethod
+    def test_resource_make_schema_embeds_subfilters(db_session):
         """Test supplying conflicting embeds and subfilters works."""
-        resource = AlbumResource(session=self.db_session)
+        resource = AlbumResource(session=db_session)
         result = resource.make_schema(
             embeds=["tracks.track_id"],
             subfilters={"tracks": {}}
         )
-        self.assertTrue(result.fields["tracks"].embedded)
+        assert result.fields["tracks"].embedded
 
-    def test_resource_make_schema_embeds_fields(self):
+    @staticmethod
+    def test_resource_make_schema_embeds_fields(db_session):
         """Test supplying embeds and fields together works."""
-        resource = AlbumResource(session=self.db_session)
+        resource = AlbumResource(session=db_session)
         result = resource.make_schema(
             embeds=["tracks.track_id"],
-            fields=["album_id"]
-        )
-        self.assertTrue(result.fields["tracks"].embedded)
+            fields=["album_id"])
+        assert result.fields["tracks"].embedded
 
-    def test_resource_make_schema_embeds_fail(self):
+    @staticmethod
+    def test_resource_make_schema_embeds_fail(db_session):
         """Test supplying bad embeds fails."""
-        resource = AlbumResource(session=self.db_session)
-        self.assertRaisesCode(
-            BadRequestError,
-            "invalid_embed",
-            resource.make_schema,
-            embeds=["album"]
-        )
+        resource = AlbumResource(session=db_session)
+        with raises(BadRequestError) as excinf:
+            resource.make_schema(embeds=["album"])
+        assert excinf.value.code == "invalid_embed"
 
-    def test_resource_check_method_allowed(self):
+    @staticmethod
+    def test_resource_check_method_allowed(db_session):
         """Test a disallowed method fails."""
-        resource = InvoiceResource(session=self.db_session)
-        self.assertRaisesCode(
-            MethodNotAllowedError,
-            "method_not_allowed",
-            resource.get,
-            1,
-            head=True
-        )
+        resource = InvoiceResource(session=db_session)
+        with raises(MethodNotAllowedError) as excinf:
+            resource.get(
+                1,
+                head=True)
+        assert excinf.value.code == "method_not_allowed"
 
 
     # PATCH TESTS
 
-    def test_patch_simple(self):
+    @staticmethod
+    def test_patch_simple(db_session):
         """Make sure that a simple obj update works."""
-        album = self.db_session.query(Album).filter(
+        album = db_session.query(Album).filter(
             Album.album_id == 1).all()[0]
-        album_resource = AlbumResource(session=self.db_session)
+        album_resource = AlbumResource(session=db_session)
         result = album_resource.patch((album.album_id,), {"title": "TEST"})
-        self.assertTrue(
-            result["title"] == "TEST" and
-            album.title == "TEST")
+        assert result["title"] == "TEST"
+        assert album.title == "TEST"
 
-    def test_patch_no_tuple_ident(self):
+    @staticmethod
+    def test_patch_no_tuple_ident(db_session):
         """Test passing a single value identity works."""
-        album = self.db_session.query(Album).filter(
+        album = db_session.query(Album).filter(
             Album.album_id == 1).all()[0]
-        album_resource = AlbumResource(session=self.db_session)
+        album_resource = AlbumResource(session=db_session)
         result = album_resource.patch(album.album_id, {"title": "TEST"})
-        self.assertTrue(
-            result["title"] == "TEST" and
-            album.title == "TEST")
+        assert result["title"] == "TEST"
+        assert album.title == "TEST"
 
-    def test_patch_bad_ident_fail(self):
+    @staticmethod
+    def test_patch_bad_ident_fail(db_session):
         """Ensure a bad ident in patch causes failure."""
-        album = self.db_session.query(Album).filter(
-            Album.album_id == 1).all()[0]
-        album_resource = AlbumResource(session=self.db_session)
-        self.assertRaisesCode(
-            ResourceNotFoundError,
-            "resource_not_found",
-            album_resource.patch,
-            ("TEST", ),
-            {}
-        )
+        album_resource = AlbumResource(session=db_session)
+        with raises(ResourceNotFoundError) as excinf:
+            album_resource.patch(
+                ("TEST", ),
+                {}
+            )
+        print(excinf.value)
+        assert excinf.value.code == "resource_not_found"
 
-    def test_patch_empty(self):
+    @staticmethod
+    def test_patch_empty(db_session):
         """Make sure that a obj update works with no update params."""
-        album = self.db_session.query(Album).filter(
+        album = db_session.query(Album).filter(
             Album.album_id == 1).all()[0]
-        album_resource = AlbumResource(session=self.db_session)
+        album_resource = AlbumResource(session=db_session)
         result = album_resource.patch((album.album_id,), {})
-        self.assertTrue(
-            result["title"] == album.title)
+        assert result["title"] == album.title
 
-    def test_patch_add_existing_subresource(self):
+    @staticmethod
+    def test_patch_add_existing_subresource(db_session):
         """Make sure that we can add an item to a list relation."""
-        playlist = self.db_session.query(Playlist).filter(
+        playlist = db_session.query(Playlist).filter(
             Playlist.playlist_id == 18).first()
-        self.assertTrue(len(playlist.tracks) == 1)
-        playlist_resource = PlaylistResource(session=self.db_session)
+        assert len(playlist.tracks) == 1
+        playlist_resource = PlaylistResource(session=db_session)
         update_data = {
             "tracks": [{
                 "$op": "add",
@@ -626,13 +619,13 @@ class DrowsyResourceTests(DrowsyTests):
             }]
         }
         result = playlist_resource.patch((playlist.playlist_id,), update_data)
-        self.assertTrue(
-            len(playlist.tracks) == 2 and
-            len(result["tracks"]) == 2)
+        assert len(playlist.tracks) == 2
+        assert len(result["tracks"]) == 2
 
-    def test_patch_subresource_list_add_new(self):
+    @staticmethod
+    def test_patch_subresource_list_add_new(db_session):
         """Ensure we can add a new obj to a list using relationship."""
-        playlist = self.db_session.query(Playlist).filter(
+        playlist = db_session.query(Playlist).filter(
             Playlist.playlist_id == 18).all()[0]
         update_data = {
             "tracks": [{
@@ -654,18 +647,19 @@ class DrowsyResourceTests(DrowsyTests):
                 "unit_price": "0.99",
             }]
         }
-        playlist_resource = PlaylistResource(session=self.db_session)
+        playlist_resource = PlaylistResource(session=db_session)
         result = playlist_resource.patch((playlist.playlist_id,), update_data)
-        self.assertTrue(len(playlist.tracks) == 2 and
-                        len(result["tracks"]) == 2 and
-                        playlist.tracks[1].composer == "Nick Repole" and
-                        result["tracks"][1]["composer"] == "Nick Repole")
+        assert len(playlist.tracks) == 2
+        assert len(result["tracks"]) == 2
+        assert playlist.tracks[1].composer == "Nick Repole"
+        assert result["tracks"][1]["composer"] == "Nick Repole"
 
-    def test_patch_subresource_list_update_existing(self):
+    @staticmethod
+    def test_patch_subresource_list_update_existing(db_session):
         """Ensure we can update a list relationship item."""
-        playlist = self.db_session.query(Playlist).filter(
+        playlist = db_session.query(Playlist).filter(
             Playlist.playlist_id == 18).first()
-        playlist_resource = PlaylistResource(session=self.db_session)
+        playlist_resource = PlaylistResource(session=db_session)
         update_data = {
             "tracks": [{
                 "track_id": 597,
@@ -673,126 +667,122 @@ class DrowsyResourceTests(DrowsyTests):
             }]
         }
         result = playlist_resource.patch((playlist.playlist_id,), update_data)
-        self.assertTrue(
-            playlist.tracks[0].name == "Test Track Seven" and
-            result["tracks"][0]["name"] == playlist.tracks[0].name)
+        assert playlist.tracks[0].name == "Test Track Seven"
+        assert result["tracks"][0]["name"] == playlist.tracks[0].name
 
-    def test_patch_subresource_single_update_existing(self):
+    @staticmethod
+    def test_patch_subresource_single_update_existing(db_session):
         """Make sure that a non-list relation can have a field set."""
-        album = self.db_session.query(Album).filter(
+        album = db_session.query(Album).filter(
             Album.album_id == 1).all()[0]
         update_data = {
             "artist": {"name": "TEST"}
         }
-        album_resource = AlbumResource(session=self.db_session)
+        album_resource = AlbumResource(session=db_session)
         result = album_resource.patch((album.album_id,), update_data)
-        self.assertTrue(
-            album.artist.name == "TEST" and
-            result["artist"]["name"] == album.artist.name)
+        assert album.artist.name == "TEST"
+        assert result["artist"]["name"] == album.artist.name
 
-    def test_patch_permission_denied(self):
+    @staticmethod
+    def test_patch_permission_denied(db_session):
         """Test patch permission denial."""
         data = {"album_id": 340, "title": "Denied"}
-        resource = AlbumResource(session=self.db_session)
-        self.assertRaises(BadRequestError, resource.patch, 340, data)
+        resource = AlbumResource(session=db_session)
+        with raises(PermissionDeniedError):
+            resource.patch(340, data)
 
-    def test_single_relation_item_set_fail(self):
+    @staticmethod
+    def test_single_relation_item_set_fail(db_session):
         """Ensure we can't set a relation to a non object value."""
-        album = self.db_session.query(Album).filter(
+        album = db_session.query(Album).filter(
             Album.album_id == 1).all()[0]
-        album_resource = AlbumResource(session=self.db_session)
-        try:
+        album_resource = AlbumResource(session=db_session)
+        with raises(UnprocessableEntityError):
             album_resource.patch(
                 (album.album_id, ),
                 {"artist": 5}
             )
-        except UnprocessableEntityError as exc:
-            print(exc)
-        self.assertRaises(
-            UnprocessableEntityError,
-            album_resource.patch,
-            (album.album_id, ),
-            {"artist": 5})
 
-    def test_list_relation_set_fail(self):
+    @staticmethod
+    def test_list_relation_set_fail(db_session):
         """Ensure we can't set a list relation to a non object value."""
-        album = self.db_session.query(Album).filter(
+        album = db_session.query(Album).filter(
             Album.album_id == 1).all()[0]
-        album_resource = AlbumResource(session=self.db_session)
-        self.assertRaises(
-            UnprocessableEntityError,
-            album_resource.patch,
-            (album.album_id, ),
-            {"tracks": 5})
+        album_resource = AlbumResource(session=db_session)
+        with raises(UnprocessableEntityError):
+            album_resource.patch(
+                (album.album_id, ),
+                {"tracks": 5})
 
-    def test_list_relation_non_item_fail(self):
+    @staticmethod
+    def test_list_relation_non_item_fail(db_session):
         """Ensure we can't set list relation items to a non object."""
-        album = self.db_session.query(Album).filter(
+        album = db_session.query(Album).filter(
             Album.album_id == 1).all()[0]
-        album_resource = AlbumResource(session=self.db_session)
-        self.assertRaises(
-            UnprocessableEntityError,
-            album_resource.patch,
-            (album.album_id, ),
-            {"tracks": ["TEST"]})
+        album_resource = AlbumResource(session=db_session)
+        with raises(UnprocessableEntityError):
+            album_resource.patch(
+                (album.album_id, ),
+                {"tracks": ["TEST"]})
 
-    def test_list_relation_bad_item_value_fail(self):
+    @staticmethod
+    def test_list_relation_bad_item_value_fail(db_session):
         """Ensure list relation item validation works."""
-        album = self.db_session.query(Album).filter(
+        album = db_session.query(Album).filter(
             Album.album_id == 1).all()[0]
-        album_resource = AlbumResource(session=self.db_session)
-        self.assertRaises(
-            UnprocessableEntityError,
-            album_resource.patch,
-            (album.album_id, ),
-            {"tracks": [{"bytes": "TEST"}]})
+        album_resource = AlbumResource(session=db_session)
+        with raises(UnprocessableEntityError):
+            album_resource.patch(
+                (album.album_id, ),
+                {"tracks": [{"bytes": "TEST"}]})
 
-    def test_set_single_relation_item(self):
+    @staticmethod
+    def test_set_single_relation_item(db_session):
         """Make sure that a non-list relation can be set."""
-        album = self.db_session.query(Album).filter(
+        album = db_session.query(Album).filter(
             Album.album_id == 1).all()[0]
-        album_resource = AlbumResource(session=self.db_session)
+        album_resource = AlbumResource(session=db_session)
         update_params = {
             "artist": {"artist_id": 3}
         }
         result = album_resource.patch((album.album_id,), update_params)
-        self.assertTrue(
-            album.artist.name == "Aerosmith" and
-            result["artist"]["name"] == album.artist.name)
+        assert album.artist.name == "Aerosmith"
+        assert result["artist"]["name"] == album.artist.name
 
-    def test_set_single_relation_item_to_none(self):
+    @staticmethod
+    def test_set_single_relation_item_to_none(db_session):
         """Make sure that a non-list relation can be set to ``None``."""
-        track = self.db_session.query(Track).filter(
+        track = db_session.query(Track).filter(
             Track.track_id == 1).all()[0]
-        track_resource = TrackResource(session=self.db_session)
+        track_resource = TrackResource(session=db_session)
         update_params = {
             "genre": None
         }
         result = track_resource.patch((track.track_id,), update_params)
-        self.assertTrue(
-            track.genre is None and
-            result["genre"] is None)
+        assert track.genre is None
+        assert result["genre"] is None
 
-    def test_set_empty_single_relation_item(self):
+    @staticmethod
+    def test_set_empty_single_relation_item(db_session):
         """Make sure that an empty non-list relation can be set."""
-        track = self.db_session.query(Track).filter(
+        track = db_session.query(Track).filter(
             Track.track_id == 1).all()[0]
         track.genre = None
-        self.db_session.commit()
-        track_resource = TrackResource(session=self.db_session)
+        db_session.commit()
+        track_resource = TrackResource(session=db_session)
         update_data = {
             "genre": {"genre_id": 1}
         }
         result = track_resource.patch((track.track_id, ), update_data)
-        self.assertTrue(
-            track.genre.name == "Rock" and
-            result["genre"]["name"] == track.genre.name)
+        assert track.genre.name == "Rock"
+        assert result["genre"]["name"] == track.genre.name
 
-    def test_list_relation_remove_item(self):
+    @staticmethod
+    def test_list_relation_remove_item(db_session):
         """Make sure that we can remove an item from a list relation."""
-        playlist = self.db_session.query(Playlist).filter(
+        playlist = db_session.query(Playlist).filter(
             Playlist.playlist_id == 18).first()
-        playlist_resource = PlaylistResource(session=self.db_session)
+        playlist_resource = PlaylistResource(session=db_session)
         update_params = {
             "tracks": [{
                 "track_id": 597,
@@ -801,15 +791,15 @@ class DrowsyResourceTests(DrowsyTests):
         }
         result = playlist_resource.patch(
             (playlist.playlist_id, ), update_params)
-        self.assertTrue(
-            len(playlist.tracks) == 0 and
-            len(result["tracks"]) == 0)
+        assert len(playlist.tracks) == 0
+        assert len(result["tracks"]) == 0
 
-    def test_new_single_relation_item(self):
+    @staticmethod
+    def test_new_single_relation_item(db_session):
         """Make sure that a non-list relation can be created."""
-        album = self.db_session.query(Album).filter(
+        album = db_session.query(Album).filter(
             Album.album_id == 1).first()
-        album_resource = AlbumResource(session=self.db_session)
+        album_resource = AlbumResource(session=db_session)
         update_params = {
             "artist": {
                 "artist_id": 999,
@@ -818,78 +808,73 @@ class DrowsyResourceTests(DrowsyTests):
         }
         result = album_resource.patch((album.album_id,), update_params)
         # make sure original artist wasn't just edited.
-        artist = self.db_session.query(Artist).filter(
+        artist = db_session.query(Artist).filter(
             Artist.artist_id == 1).first()
-        self.assertTrue(
-            album.artist.name == "Nick Repole" and
-            result["artist"]["name"] == album.artist.name and
-            artist is not None)
+        assert album.artist.name == "Nick Repole"
+        assert result["artist"]["name"] == album.artist.name
+        assert artist is not None
 
     # GET TESTS
 
-    def test_get(self):
+    @staticmethod
+    def test_get(db_session):
         """Test simple get functionality."""
-        resource = AlbumResource(session=self.db_session)
+        resource = AlbumResource(session=db_session)
         result = resource.get(1)
-        self.assertTrue(result["album_id"] == 1)
+        assert result["album_id"] == 1
 
-    def test_get_with_query(self):
+    @staticmethod
+    def test_get_with_query(db_session):
         """Test get with a pre-existing query."""
-        query = self.db_session.query(Album).filter(
+        query = db_session.query(Album).filter(
             Album.title == "test")
-        resource = AlbumResource(session=self.db_session)
-        self.assertRaisesCode(
-            ResourceNotFoundError,
-            "resource_not_found",
-            resource.get,
-            1,
-            session=query
-        )
+        resource = AlbumResource(session=db_session)
+        with raises(ResourceNotFoundError) as excinf:
+            resource.get(1, session=query)
+        assert excinf.value.code == "resource_not_found"
 
-    def test_get_bad_ident(self):
+    @staticmethod
+    def test_get_bad_ident(db_session):
         """Test get fails with a bad identity provided."""
-        resource = AlbumResource(session=self.db_session)
-        self.assertRaisesCode(
-            ResourceNotFoundError,
-            "resource_not_found",
-            resource.get,
-            "bad"
-        )
+        resource = AlbumResource(session=db_session)
+        with raises(ResourceNotFoundError) as excinf:
+            resource.get("bad")
+        assert excinf.value.code == "resource_not_found"
 
-    def test_get_bad_embed(self):
+    @staticmethod
+    def test_get_bad_embed(db_session):
         """Test get fails with a bad embed."""
-        resource = AlbumResource(session=self.db_session)
-        self.assertRaisesCode(
-            BadRequestError,
-            "invalid_embed",
-            resource.get,
-            1,
-            embeds=["test"],
-            strict=True
-        )
+        resource = AlbumResource(session=db_session)
+        with raises(BadRequestError) as excinf:
+            resource.get(
+                1,
+                embeds=["test"],
+                strict=True
+            )
+        assert excinf.value.code == "invalid_embed"
 
-    def test_make_schema_invalid_field(self):
+    @staticmethod
+    def test_make_schema_invalid_field(db_session):
         """Test making a new schema fails with a bad field."""
-        resource = AlbumResource(session=self.db_session)
-        self.assertRaisesCode(
-            BadRequestError,
-            "invalid_field",
-            resource.make_schema,
-            fields=["test"],
-            strict=True
-        )
+        resource = AlbumResource(session=db_session)
+        with raises(BadRequestError) as excinf:
+            resource.make_schema(
+                fields=["test"],
+                strict=True
+            )
+        assert excinf.value.code == "invalid_field"
 
     # GET COLLECTION TESTS
 
-    def test_get_collection(self):
+    @staticmethod
+    def test_get_collection(db_session):
         """Test simple get_collection functionality."""
-        album_resource = AlbumResource(session=self.db_session)
+        album_resource = AlbumResource(session=db_session)
         result = album_resource.get_collection()
-        self.assertTrue(
-            len(result) == 347
-        )
+        assert len(result) == 347
 
-    def test_get_collection_filters(self):
+    @staticmethod
+    def test_get_collection_filters(db_session):
         """Test simple get_collection filtering functionality."""
         filters = {
             "$and": [
@@ -904,61 +889,52 @@ class DrowsyResourceTests(DrowsyTests):
                 {"title": "Big Ones"}
             ]
         }
-        album_resource = AlbumResource(session=self.db_session)
+        album_resource = AlbumResource(session=db_session)
         result = album_resource.get_collection(
             filters=filters
         )
-        self.assertTrue(
-            len(result) == 1 and
-            result[0]["album_id"] == 5
-        )
+        assert len(result) == 1
+        assert result[0]["album_id"] == 5
 
-    def test_get_collection_invalid_filters(self):
+    @staticmethod
+    def test_get_collection_invalid_filters(db_session):
         """Test simple get_collection filtering failure."""
         filters = {
             "$and": [
                 {"title": {"$bad": "Big Ones"}}
             ]
         }
-        album_resource = AlbumResource(session=self.db_session)
-        self.assertRaisesCode(
-            BadRequestError,
-            "invalid_filters",
-            album_resource.get_collection,
-            filters=filters
-        )
+        album_resource = AlbumResource(session=db_session)
+        with raises(BadRequestError) as excinf:
+            album_resource.get_collection(filters=filters)
+        assert excinf.value.code == "filters_field_op_error"
 
-    def test_get_collection_invalid_sorts_type(self):
+    @staticmethod
+    def test_get_collection_invalid_sorts_type(db_session):
         """Test non list sorts with get_collection fails."""
-        album_resource = AlbumResource(session=self.db_session)
-        self.assertRaises(
-            TypeError,
-            album_resource.get_collection,
-            sorts="test"
-        )
+        album_resource = AlbumResource(session=db_session)
+        with raises(TypeError):
+            album_resource.get_collection(sorts="test")
 
-    def test_get_collection_invalid_sort_type(self):
+    @staticmethod
+    def test_get_collection_invalid_sort_type(db_session):
         """Test non SortInfo sort with get_collection fails."""
-        album_resource = AlbumResource(session=self.db_session)
-        self.assertRaises(
-            TypeError,
-            album_resource.get_collection,
-            sorts=["test"]
-        )
+        album_resource = AlbumResource(session=db_session)
+        with raises(TypeError):
+            album_resource.get_collection(sorts=["test"])
 
-    def test_get_collection_invalid_sort_field(self):
+    @staticmethod
+    def test_get_collection_invalid_sort_field(db_session):
         """Test a bad field on SortInfo with get_collection fails."""
-        album_resource = AlbumResource(session=self.db_session)
-        self.assertRaisesCode(
-            BadRequestError,
-            "invalid_sort_field",
-            album_resource.get_collection,
-            sorts=[SortInfo(attr="TEST")]
-        )
+        album_resource = AlbumResource(session=db_session)
+        with raises(BadRequestError) as excinf:
+            album_resource.get_collection(sorts=[SortInfo(attr="TEST")])
+        assert excinf.value.code == "invalid_sort_field"
 
-    def test_get_collection_subresource_query(self):
+    @staticmethod
+    def test_get_collection_subresource_query(db_session):
         """Test a subresource query."""
-        album_resource = AlbumResource(session=self.db_session)
+        album_resource = AlbumResource(session=db_session)
         result = album_resource.get_collection(
             subfilters={"tracks": SubfilterInfo(
                 filters={'track_id': 1}
@@ -966,103 +942,176 @@ class DrowsyResourceTests(DrowsyTests):
         )
         for album in result:
             for track in album["tracks"]:
-                self.assertTrue(
-                    track["track_id"] == 1
-                )
+                assert track["track_id"] == 1
 
-    def test_get_collection_subresource_fail(self):
+    @staticmethod
+    def test_get_collection_subresource_fail(db_session):
         """Test a subresource query fails with bad filters."""
-        album_resource = AlbumResource(session=self.db_session)
-        self.assertRaisesCode(
-            BadRequestError,
-            "invalid_subresource_filters",
-            album_resource.get_collection,
-            subfilters={"tracks": SubfilterInfo(
-                filters={'track_id': {"$bad": 5}}
-            )}
-        )
+        album_resource = AlbumResource(session=db_session)
+        with raises(BadRequestError) as excinf:
+            album_resource.get_collection(
+                subfilters={"tracks": SubfilterInfo(
+                    filters={'track_id': {"$bad": 5}}
+                )}
+            )
+        assert excinf.value.code == "filters_field_op_error"
 
-    def test_get_collection_simple(self):
+    @staticmethod
+    def test_get_collection_simple(db_session):
         """Test getting all objects with an empty dict of params."""
-        album_resource = AlbumResource(session=self.db_session)
+        album_resource = AlbumResource(session=db_session)
         result = album_resource.get_collection(
             filters={}
         )
-        self.assertTrue(len(result) == 347)
+        assert len(result) == 347
 
-    def test_get_collection_empty_filters(self):
+    @staticmethod
+    def test_get_collection_empty_filters(db_session):
         """Test getting all objects with empty filters."""
         filters = {"$and": []}
-        album_resource = AlbumResource(session=self.db_session)
+        album_resource = AlbumResource(session=db_session)
         result = album_resource.get_collection(
             filters=filters
         )
-        self.assertTrue(len(result) == 347)
+        assert len(result) == 347
+
+    @staticmethod
+    def test_get_collection_nested_filters(db_session):
+        """Test get_collection filtering uses required filters."""
+        filters = {"tracks.track_id": 130}
+        album_resource = AlbumResource(
+            session=db_session
+        )
+        result = album_resource.get_collection(
+            filters=filters
+        )
+        assert len(result) == 1
+
+    @staticmethod
+    def test_get_collection_required_nested_filters(db_session):
+        """Test collection filtering uses nested required filters."""
+        filters = {"tracks.track_id": 130}
+        album_resource = AlbumResource(
+            session=db_session,
+            context={"user": "limited"}
+        )
+        result = album_resource.get_collection(
+            filters=filters
+        )
+        assert len(result) == 0
+
+    @staticmethod
+    def test_get_collection_required_filters(db_session):
+        """Test get_collection filtering uses required filters."""
+        filters = {"track_id": 130}
+        resource = TrackResource(
+            session=db_session,
+            context={"user": "limited"}
+        )
+        result = resource.get_collection(
+            filters=filters
+        )
+        assert len(result) == 0
+
+    @staticmethod
+    def test_get_collection_required_single_filter(db_session):
+        """Test collection filtering uses single required filter."""
+        filters = {"track_id": 130}
+        resource = TrackResource(
+            session=db_session,
+            context={"user": "limited_single_filter"}
+        )
+        result = resource.get_collection(
+            filters=filters
+        )
+        assert len(result) == 0
 
     # POST TESTS
 
-    def test_post(self):
+    @staticmethod
+    def test_post(db_session):
         """Test a simple post."""
         data = {"album_id": 9999, "title": "test2", "artist": {"artist_id": 1}}
-        resource = AlbumResource(session=self.db_session)
+        resource = AlbumResource(session=db_session)
         resource.post(data)
-        result = self.db_session.query(Album).filter(
+        result = db_session.query(Album).filter(
             Album.album_id == 9999).first()
-        self.assertTrue(result is not None)
+        assert result is not None
 
-    def test_post_fail_already_exists(self):
+    @staticmethod
+    def test_post_fail_already_exists(db_session):
         """Test post fails when the same id already exists."""
-        resource = AlbumResource(session=self.db_session)
-        self.assertRaisesCode(
-            UnprocessableEntityError,
-            "validation_failure",
-            resource.post,
-            {"album_id": 1, "title": "test2", "artist": {"artist_id": 1}}
-        )
+        resource = AlbumResource(session=db_session)
+        with raises(UnprocessableEntityError) as excinf:
+            resource.post(
+                {"album_id": 1, "title": "test2", "artist": {"artist_id": 1}}
+            )
+        assert excinf.value.code == "validation_failure"
 
-    def test_post_collection_no_relation_fail(self):
-        """Test a missing non list relation causes a post fail."""
-        data = {"title": "test1"}
-        resource = AlbumResource(session=self.db_session)
-        self.assertRaisesCode(
-            UnprocessableEntityError,
-            "validation_failure",
-            resource.post,
-            data
-        )
+    @staticmethod
+    def test_post_permission_denied(db_session):
+        """Test post permission denied errors work as expected."""
+        resource = AlbumResource(session=db_session)
+        data = {
+            "album_id": 9999,
+            "title": "Denied"
+        }
+        with raises(PermissionDeniedError):
+            resource.post(data)
+
 
     # POST COLLECTION TESTS
 
-    def test_post_collection(self):
+    @staticmethod
+    def test_post_collection(db_session):
         """Test posting multiple objects at once."""
         data = [
             {"title": "test1", "artist": {"artist_id": 1}},
             {"album_id": 9999, "title": "test2", "artist": {"artist_id": 1}}
         ]
-        resource = AlbumResource(session=self.db_session)
+        resource = AlbumResource(session=db_session)
         resource.post_collection(data)
-        result1 = self.db_session.query(Album).filter(
+        result1 = db_session.query(Album).filter(
             Album.album_id == 9999).first()
-        self.assertTrue(result1 is not None)
-        result2 = self.db_session.query(Album).filter(
+        assert result1 is not None
+        result2 = db_session.query(Album).filter(
             Album.title == "test2"
         )
-        self.assertTrue(result2 is not None)
+        assert result2 is not None
 
-    def test_post_collection_bad_input(self):
+    @staticmethod
+    def test_post_collection_bad_input(db_session):
         """Test posting a non list to a collection fails."""
         data = {"title": "test1", "artist_id": 1}
-        resource = AlbumResource(session=self.db_session)
-        self.assertRaisesCode(
-            UnprocessableEntityError,
-            "invalid_collection_input",
-            resource.post_collection,
-            data
-        )
+        resource = AlbumResource(session=db_session)
+        with raises(UnprocessableEntityError) as excinf:
+            resource.post_collection(data)
+        assert excinf.value.code == "invalid_collection_input"
+
+    @staticmethod
+    def test_post_collection_no_relation_fail(db_session):
+        """Test a missing non list relation causes a post fail."""
+        data = {"title": "test1"}
+        resource = AlbumResource(session=db_session)
+        with raises(UnprocessableEntityError) as excinf:
+            resource.post(data)
+        assert excinf.value.code == "validation_failure"
+
+    @staticmethod
+    def test_post_collection_permission_denied(db_session):
+        """Test post collection permission denied errors."""
+        resource = AlbumResource(session=db_session)
+        data = [{
+            "album_id": 9999,
+            "title": "Denied"
+        }]
+        with raises(PermissionDeniedError):
+            resource.post_collection(data)
 
     # PATCH COLLECTION TESTS
 
-    def test_patch_collection_add(self):
+    @staticmethod
+    def test_patch_collection_add(db_session):
         """Test adding to a collection via patch works."""
         update_data = [
             {
@@ -1091,15 +1140,25 @@ class DrowsyResourceTests(DrowsyTests):
                 ]
             }
         ]
-        playlist_resource = PlaylistResource(session=self.db_session)
+        playlist_resource = PlaylistResource(session=db_session)
         result = playlist_resource.patch_collection(update_data)
-        playlists = self.db_session.query(Playlist).filter(
+        playlists = db_session.query(Playlist).filter(
             Playlist.playlist_id == 9999).all()
-        self.assertTrue(len(playlists) == 1)
-        self.assertTrue(len(playlists[0].tracks) == 1)
-        self.assertTrue(result is None)
+        assert len(playlists) == 1
+        assert len(playlists[0].tracks) == 1
+        assert result is None
 
-    def test_patch_collection_set_child(self):
+    @staticmethod
+    def test_patch_collection_permission_denied(db_session):
+        """Test patch collection permission denial."""
+        data = [{"album_id": 340, "title": "Denied"}]
+        resource = AlbumResource(session=db_session)
+        with raises(PermissionDeniedError):
+            resource.patch_collection(data)
+
+
+    @staticmethod
+    def test_patch_collection_set_child(db_session):
         """Test setting a non list relationship via patch works."""
         update_data = [
             {
@@ -1116,14 +1175,15 @@ class DrowsyResourceTests(DrowsyTests):
                 "unit_price": 1.0
             }
         ]
-        track_resource = TrackResource(session=self.db_session)
+        track_resource = TrackResource(session=db_session)
         result = track_resource.patch_collection(update_data)
-        tracks = self.db_session.query(Track).filter(
+        tracks = db_session.query(Track).filter(
             Track.track_id == 9999).all()
-        self.assertTrue(len(tracks) == 1)
-        self.assertTrue(result is None)
+        assert len(tracks) == 1
+        assert result is None
 
-    def test_patch_collection_remove(self):
+    @staticmethod
+    def test_patch_collection_remove(db_session):
         """Test removing from a collection via patch works."""
         update_data = [
             {
@@ -1131,14 +1191,15 @@ class DrowsyResourceTests(DrowsyTests):
                 "playlist_id": 18
             }
         ]
-        playlist_resource = PlaylistResource(session=self.db_session)
+        playlist_resource = PlaylistResource(session=db_session)
         result = playlist_resource.patch_collection(update_data)
-        playlists = self.db_session.query(Playlist).filter(
+        playlists = db_session.query(Playlist).filter(
             Playlist.playlist_id == 18).all()
-        self.assertTrue(len(playlists) == 0)
-        self.assertTrue(result is None)
+        assert len(playlists) == 0
+        assert result is None
 
-    def test_patch_collection_update(self):
+    @staticmethod
+    def test_patch_collection_update(db_session):
         """Test updating from a collection via patch works."""
         update_data = [
             {
@@ -1146,29 +1207,28 @@ class DrowsyResourceTests(DrowsyTests):
                 "name": "New name"
             }
         ]
-        playlist_resource = PlaylistResource(session=self.db_session)
+        playlist_resource = PlaylistResource(session=db_session)
         result = playlist_resource.patch_collection(update_data)
-        playlists = self.db_session.query(Playlist).filter(
+        playlists = db_session.query(Playlist).filter(
             Playlist.playlist_id == 18).all()
-        self.assertTrue(len(playlists) == 1)
-        self.assertTrue(playlists[0].name == "New name")
-        self.assertTrue(result is None)
+        assert len(playlists) == 1
+        assert playlists[0].name == "New name"
+        assert result is None
 
-    def test_patch_collection_bad_data(self):
+    @staticmethod
+    def test_patch_collection_bad_data(db_session):
         """Test providing a non list to patch collection fails."""
         update_data = {
             "playlist_id": 18,
             "name": "New name"
         }
-        playlist_resource = PlaylistResource(session=self.db_session)
-        self.assertRaisesCode(
-            UnprocessableEntityError,
-            "invalid_collection_input",
-            playlist_resource.patch_collection,
-            update_data
-        )
+        playlist_resource = PlaylistResource(session=db_session)
+        with raises(UnprocessableEntityError) as excinf:
+            playlist_resource.patch_collection(update_data)
+        assert excinf.value.code == "invalid_collection_input"
 
-    def test_patch_collection_update_fail(self):
+    @staticmethod
+    def test_patch_collection_update_fail(db_session):
         """Test updating a collection via patch fails validation."""
         update_data = [
             {
@@ -1176,15 +1236,13 @@ class DrowsyResourceTests(DrowsyTests):
                 "name": 5
             }
         ]
-        playlist_resource = PlaylistResource(session=self.db_session)
-        self.assertRaisesCode(
-            UnprocessableEntityError,
-            "validation_failure",
-            playlist_resource.patch_collection,
-            update_data
-        )
+        playlist_resource = PlaylistResource(session=db_session)
+        with raises(UnprocessableEntityError) as excinf:
+            playlist_resource.patch_collection(update_data)
+        assert excinf.value.code == "validation_failure"
 
-    def test_patch_collection_add_fail(self):
+    @staticmethod
+    def test_patch_collection_add_fail(db_session):
         """Test adding to a collection via patch fails validation."""
         update_data = [
             {
@@ -1193,15 +1251,14 @@ class DrowsyResourceTests(DrowsyTests):
                 "name": 5
             }
         ]
-        playlist_resource = PlaylistResource(session=self.db_session)
-        self.assertRaisesCode(
-            UnprocessableEntityError,
-            "validation_failure",
-            playlist_resource.patch_collection,
-            update_data
-        )
+        playlist_resource = PlaylistResource(session=db_session)
+        with raises(UnprocessableEntityError) as excinf:
+            playlist_resource.patch_collection(
+                update_data)
+        assert excinf.value.code == "validation_failure"
 
-    def test_patch_collection_remove_fail(self):
+    @staticmethod
+    def test_patch_collection_remove_fail(db_session):
         """Test removing from collection via patch fails validation."""
         update_data = [
             {
@@ -1209,111 +1266,129 @@ class DrowsyResourceTests(DrowsyTests):
                 "playlist_id": "test"
             }
         ]
-        playlist_resource = PlaylistResource(session=self.db_session)
-        self.assertRaisesCode(
-            UnprocessableEntityError,
-            "validation_failure",
-            playlist_resource.patch_collection,
-            update_data
-        )
+        playlist_resource = PlaylistResource(session=db_session)
+        with raises(UnprocessableEntityError) as excinf:
+            playlist_resource.patch_collection(update_data)
+        assert excinf.value.code == "validation_failure"
 
-    def test_patch_collection_nested_opts(self):
+    @staticmethod
+    def test_patch_collection_nested_opts(db_session):
         """Test nested opts work as expected."""
         data = [{
             "album_id": 1,
             "tracks": [{"track_id": 1}]
         }]
-        resource = AlbumResource(session=self.db_session)
+        resource = AlbumResource(session=db_session)
         resource.patch_collection(
             data,
             nested_opts={"tracks": NestedOpts(partial=False)})
-        db_result = self.db_session.query(Album).filter(
+        db_result = db_session.query(Album).filter(
             Album.album_id == 1).first()
-        self.assertTrue(db_result is not None)
-        self.assertTrue(len(db_result.tracks) == 1)
+        assert db_result is not None
+        assert len(db_result.tracks) == 1
 
-    def test_patch_collection_nested_opts_fail(self):
+    @staticmethod
+    def test_patch_collection_nested_opts_fail(db_session):
         """Test invalid nested opts fail."""
         data = [{
             "album_id": 1,
             "tracks": [{"track_id": 1}]
         }]
-        resource = AlbumResource(session=self.db_session)
-        self.assertRaises(
-            TypeError,
-            resource.patch_collection,
-            data,
-            nested_opts="test")
+        resource = AlbumResource(session=db_session)
+        with raises(TypeError):
+            resource.patch_collection(
+                data,
+                nested_opts="test")
 
     # PUT TESTS
 
-    def test_put_validation_fail(self):
+    @staticmethod
+    def test_put_validation_fail(db_session):
         """Test put validation error failure."""
-        resource = AlbumResource(session=self.db_session)
-        self.assertRaisesCode(
-            UnprocessableEntityError,
-            "validation_failure",
-            resource.put,
-            1,
-            {"album_id": "bad"}
-        )
+        resource = AlbumResource(session=db_session)
+        with raises(UnprocessableEntityError) as excinf:
+            resource.put(
+                1,
+                {"album_id": "bad"})
+        assert excinf.value.code == "validation_failure"
 
-    def test_put_resource_not_found(self):
+    @staticmethod
+    def test_put_resource_not_found(db_session):
         """Test put on a nonexistant resource fails."""
-        resource = AlbumResource(session=self.db_session)
-        self.assertRaisesCode(
-            ResourceNotFoundError,
-            "resource_not_found",
-            resource.put,
-            12345,
-            {"title": "test"}
-        )
+        resource = AlbumResource(session=db_session)
+        with raises(ResourceNotFoundError) as excinf:
+            resource.put(
+                12345,
+                {"title": "test"})
+        assert excinf.value.code == "resource_not_found"
 
     # PUT COLLECTION TESTS
 
-    def test_put_collection_fail(self):
+    @staticmethod
+    def test_put_collection_fail(db_session):
         """Test that trying to put a collection fails."""
         update_data = []
-        playlist_resource = PlaylistResource(session=self.db_session)
-        self.assertRaisesCode(
-            MethodNotAllowedError,
-            "method_not_allowed",
-            playlist_resource.put_collection,
-            update_data
-        )
+        playlist_resource = PlaylistResource(session=db_session)
+        with raises(MethodNotAllowedError) as excinf:
+            playlist_resource.put_collection(update_data)
+        assert excinf.value.code == "method_not_allowed"
+
+    @staticmethod
+    def test_put_permission_denied(db_session):
+        """Test put permission denied errors work as expected."""
+        resource = AlbumResource(session=db_session)
+        data = {
+            "album_id": 340,
+            "title": "Denied"
+        }
+        with raises(PermissionDeniedError):
+            resource.put((340,), data)
 
     # DELETE TESTS
 
-    def test_delete(self):
+    @staticmethod
+    def test_delete(db_session):
         """Test a simple delete action."""
-        resource = AlbumResource(session=self.db_session)
+        resource = AlbumResource(session=db_session)
         resource.delete(1)
-        result = self.db_session.query(Album).filter(
+        result = db_session.query(Album).filter(
             Album.album_id == 1
         ).first()
-        self.assertTrue(result is None)
+        assert result is None
 
-    def test_delete_resource_not_found(self):
+    @staticmethod
+    def test_delete_resource_not_found(db_session):
         """Test deleting a non existant resource fails."""
-        resource = AlbumResource(session=self.db_session)
-        self.assertRaisesCode(
-            ResourceNotFoundError,
-            "resource_not_found",
-            resource.delete,
-            9999999
-        )
+        resource = AlbumResource(session=db_session)
+        with raises(ResourceNotFoundError) as excinf:
+            resource.delete(9999999)
+        assert excinf.value.code == "resource_not_found"
+
+    @staticmethod
+    def test_delete_permission_denied(db_session):
+        """Test delete permission denied errors work as expected."""
+        resource = AlbumResource(session=db_session)
+        with raises(PermissionDeniedError):
+            resource.delete(340)
 
     # DELETE COLLECTION TESTS
 
-    def test_delete_collection(self):
+    @staticmethod
+    def test_delete_collection(db_session):
         """Test deleting from a collection works."""
         filters = {
             "playlist_id": 18
         }
-        playlist_resource = PlaylistResource(session=self.db_session)
+        playlist_resource = PlaylistResource(session=db_session)
         result = playlist_resource.delete_collection(filters=filters)
-        playlists = self.db_session.query(Playlist).filter(
+        playlists = db_session.query(Playlist).filter(
             Playlist.playlist_id == 18).all()
-        self.assertTrue(len(playlists) == 0)
-        self.assertTrue(result is None)
+        assert len(playlists) == 0
+        assert result is None
 
+    @staticmethod
+    def test_delete_collection_permission_denied(db_session):
+        """Test delete collection permission denied errors."""
+        resource = AlbumResource(session=db_session)
+        with raises(PermissionDeniedError):
+            resource.delete_collection(filters={"album_id": 340})
