@@ -204,7 +204,8 @@ class ModelResourceQueryBuilder(QueryBuilder):
         def __init__(self, name, alias=None, parent=None, children=None,
                      subquery=None, limit=None, limit_source=None, offset=None,
                      sorts=None, convert_key_name=None, whitelist=None,
-                     relationship_direction=None, joined=False, option=None):
+                     relationship_direction=None, joined=False, option=None,
+                     join=None):
             """
 
             :param str name: Name of the subresource.
@@ -253,6 +254,7 @@ class ModelResourceQueryBuilder(QueryBuilder):
             self.relationship_direction = relationship_direction
             self.joined = joined
             self.option = option
+            self.join = join or []
 
     def build(self, query, resource, filters, subfilters, embeds=None,
               offset=None, limit=None, sorts=None, strict=True,
@@ -358,6 +360,37 @@ class ModelResourceQueryBuilder(QueryBuilder):
                         "invalid_limit_value", limit=limit)
         return query
 
+    def _get_many_to_many_join(self, child, parent, relationship,
+                               assoc_queryable):
+        parent_expressions = []
+        join = []
+        if isinstance(relationship.prop.primaryjoin, BinaryExpression):
+            parent_expressions.append(relationship.prop.primaryjoin)
+        elif isinstance(relationship.prop.primaryjoin, BooleanClauseList):
+            parent_expressions = relationship.prop.primaryjoin.clauses
+        for expression in parent_expressions:
+            if assoc_queryable == expression.right.table:
+                parent_expr = expression.left
+                parent_col_name = expression.left.name
+                child_expr = expression.right
+                child_col_name = expression.right.name
+            else:
+                parent_expr = expression.right
+                parent_col_name = expression.right.name
+                child_expr = expression.left
+                child_col_name = expression.left.name
+            from sqlalchemy.sql.selectable import Alias
+            if isinstance(parent, Alias):
+                parent_expr = getattr(
+                    parent.c,
+                    parent.name + "_" + parent_col_name)
+            if isinstance(child, Alias):
+                child_expr = getattr(
+                    child.c,
+                    assoc_queryable.name + "_" + child_col_name)
+            join.append(child_expr == parent_expr)
+        return join
+
     def _get_partition_by_info(self, child, parent, relationship_name):
         """Get the partition_by needed for row_number in a subquery.
 
@@ -411,36 +444,30 @@ class ModelResourceQueryBuilder(QueryBuilder):
             elif isinstance(relationship.prop.secondaryjoin, BooleanClauseList):
                 secondary_expressions = relationship.prop.secondaryjoin.clauses
             # default until proven otherwise:
-            parent_expressions = secondary_expressions
-            for expressions in (primary_expressions, secondary_expressions):
-                for expression in expressions:
-                    # Find the association table
-                    # Then figure out the join condition
-                    left_table = expression.left.table
-                    right_table = expression.right.table
-                    child_table = inspect(child).mapper.local_table
-                    if left_table == child_table:
-                        child_side = expression.left
-                        assoc_side = expression.right
-                        queryable = right_table
-                        child_expressions = expressions
-                    elif right_table == child_table:
-                        child_side = expression.right
-                        assoc_side = expression.left
-                        queryable = left_table
-                        child_expressions = expressions
-                    else:
-                        parent_expressions = expressions
-                        continue
-                    if child_expressions == primary_expressions:
-                        parent_expressions = secondary_expressions
-                    else:
-                        parent_expressions = primary_expressions
-                    child_insp = inspect(inspect(child).class_)
-                    for column_key in child_insp.columns.keys():
-                        if child_insp.columns[column_key].key == child_side.key:
-                            child_condition = getattr(child, column_key)
-                            joins.append(assoc_side == child_condition)
+            child_expressions = secondary_expressions
+            parent_expressions = primary_expressions
+            for expression in child_expressions:
+                # Find the association table
+                # Then figure out the join condition
+                left_table = expression.left.table
+                right_table = expression.right.table
+                child_table = inspect(child).mapper.local_table
+                if left_table == child_table:
+                    child_side = expression.left
+                    assoc_side = expression.right
+                    queryable = right_table
+                elif right_table == child_table:
+                    child_side = expression.right
+                    assoc_side = expression.left
+                    queryable = left_table
+                else:
+                    # Shouldn't ever get here...
+                    raise ValueError  # pragma: no cover
+                child_insp = inspect(inspect(child).class_)
+                for column_key in child_insp.columns.keys():
+                    if child_insp.columns[column_key].key == child_side.key:
+                        child_condition = getattr(child, column_key)
+                        joins.append(assoc_side == child_condition)
             # Now get the partition by...
             partition_by = []
             # First, figure out the join conditions
@@ -642,7 +669,15 @@ class ModelResourceQueryBuilder(QueryBuilder):
                 end = None
                 if limit is not None:
                     end = start + limit - 1
-                query = query.from_self()
+                # Remove row_number from select list
+                # NOTE - Not sure if there's a better way to do this...
+                entities = []
+                for col in query.column_descriptions:
+                    if col["name"] != "row_number":
+                        entities.append(col["expr"])
+                # Query from self, allowing us to filter by row_number
+                # Only include non row_number expressions in SELECT
+                query = query.from_self(*entities)
                 if start:
                     query = query.filter(row_number >= start)
                 if end:
@@ -928,7 +963,40 @@ class ModelResourceQueryBuilder(QueryBuilder):
                                         queryable,
                                         join_condition
                                     )
-                                q1 = q1.subquery("q1")
+                                    row_num_ent = None
+                                    for col in q1.column_descriptions:
+                                        if col["name"] == "row_number":
+                                            row_num_ent = col["expr"]
+                                            break
+                                    q1 = q1.with_entities(
+                                        last_node.alias,
+                                        queryable,
+                                        row_num_ent)
+                                try:
+                                    nested_conditions = (
+                                        resource.get_required_nested_filters)
+                                    q1 = resource.apply_required_filters(
+                                        q1, alias=last_node.alias)
+                                    q1 = self.apply_filters(
+                                            query=q1,
+                                            model_class=last_node.alias,
+                                            whitelist=resource.whitelist,
+                                            nested_conditions=(
+                                                nested_conditions),
+                                            filters=user_supplied_filters,
+                                            convert_key_names_func=(
+                                                resource.convert_key_name),
+                                            stack_size_limit=stack_size_limit
+                                        )
+                                except InvalidMqlException as exc:
+                                    if not strict:
+                                        failed = True
+                                        continue
+                                    self._handle_filter_errors(
+                                        resource=resource,
+                                        exc=exc,
+                                        subfilter_key=subfilter_key)
+                                q1 = q1.subquery("q1", with_labels=True)
                                 # limit and offset handling
                                 start = 1
                                 if last_node.offset is not None:
@@ -942,30 +1010,47 @@ class ModelResourceQueryBuilder(QueryBuilder):
                                     subquery = subquery.filter(
                                         q1.c.row_number <= end
                                     )
-                        try:
-                            subquery = resource.apply_required_filters(
-                                subquery, alias=last_node.alias)
-                            last_node.subquery = (
-                                self.apply_filters(
-                                    query=subquery,
-                                    model_class=last_node.alias,
-                                    whitelist=resource.whitelist,
-                                    nested_conditions=(
-                                        resource.get_required_nested_filters),
-                                    filters=user_supplied_filters,
-                                    convert_key_names_func=(
-                                        resource.convert_key_name),
-                                    stack_size_limit=stack_size_limit
-                                ).subquery(inspect(last_node.alias).name)
-                            )
-                        except InvalidMqlException as exc:
-                            if not strict:
-                                failed = True
-                                continue
-                            self._handle_filter_errors(
-                                resource=resource,
-                                exc=exc,
-                                subfilter_key=subfilter_key)
+                                last_node.subquery = subquery.subquery(
+                                    inspect(last_node.alias).name)
+                                chld = last_node.subquery
+                                if chld is None:
+                                    chld = last_node.alias
+                                prnt = last_node.parent.subquery
+                                if prnt is None:
+                                    prnt = last_node.parent.alias
+                                if queryable is not None:
+                                    relationship = getattr(last_node.parent.alias,
+                                                           last_node.name)
+                                    last_node.join = self._get_many_to_many_join(
+                                        child=chld,
+                                        parent=prnt,
+                                        relationship=relationship,
+                                        assoc_queryable=queryable
+                                    )
+                        else:
+                            try:
+                                nested_conditions = (
+                                    resource.get_required_nested_filters)
+                                subquery = resource.apply_required_filters(
+                                    subquery, alias=last_node.alias)
+                                last_node.subquery = self.apply_filters(
+                                        query=subquery,
+                                        model_class=last_node.alias,
+                                        whitelist=resource.whitelist,
+                                        nested_conditions=nested_conditions,
+                                        filters=user_supplied_filters,
+                                        convert_key_names_func=(
+                                            resource.convert_key_name),
+                                        stack_size_limit=stack_size_limit
+                                    ).subquery(inspect(last_node.alias).name)
+                            except InvalidMqlException as exc:
+                                if not strict:
+                                    failed = True
+                                    continue
+                                self._handle_filter_errors(
+                                    resource=resource,
+                                    exc=exc,
+                                    subfilter_key=subfilter_key)
                 else:
                     if is_embed:
                         if not split_subfilter_keys:
@@ -1017,8 +1102,11 @@ class ModelResourceQueryBuilder(QueryBuilder):
             secondaryjoin = join_info[1]
             secondary = join_info[4]
             if secondary is not None:
-                query = query.outerjoin(secondary, primaryjoin)
-                query = query.outerjoin(node.subquery, secondaryjoin)
+                if node.join:
+                    query = query.outerjoin(node.subquery, and_(*node.join))
+                else:
+                    query = query.outerjoin(secondary, primaryjoin)
+                    query = query.outerjoin(node.subquery, secondaryjoin)
             else:
                 query = query.outerjoin(node.subquery, primaryjoin)
             if node.parent and node.parent.option:

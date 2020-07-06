@@ -15,11 +15,12 @@ from drowsy.query_builder import QueryBuilder, ModelResourceQueryBuilder
 from drowsy.parser import SubfilterInfo, SortInfo
 from tests.base import DrowsyDatabaseTests
 from tests.models import (
-    Album, CompositeOne, CompositeNode, Employee, Track, Customer
+    Album, CompositeOne, CompositeNode, Customer, Employee, Playlist, Track
 )
 from tests.resources import (
     AlbumResource, TrackResource, CompositeNodeResource,
-    CompositeOneResource, CustomerResource, EmployeeResource
+    CompositeOneResource, CustomerResource, EmployeeResource,
+    PlaylistResource
 )
 
 
@@ -369,28 +370,6 @@ class TestDrowsyQueryBuilder(DrowsyDatabaseTests):
         assert excinf.value.code == "invalid_subresource_options"
 
     @staticmethod
-    def test_subresource_bad_dialect_fail(db_session):
-        """Test a sublimit/offset fails with unsupported dialect."""
-        query_builder = ModelResourceQueryBuilder()
-        query = db_session.query(Album)
-        subfilters = {
-            "tracks": SubfilterInfo(
-                offset=1,
-                limit=10
-            )
-        }
-        with raises(BadRequestError) as excinf:
-            query_builder.apply_subquery_loads(
-                query=query,
-                resource=AlbumResource(
-                    session=db_session),
-                subfilters=subfilters,
-                embeds=[],
-                dialect_override=False
-            )
-        assert excinf.value.code == "invalid_subresource_options"
-
-    @staticmethod
     def test_subquery_embeds(db_session):
         """Test that a simple subquery can work alongside an embed."""
         query_builder = ModelResourceQueryBuilder()
@@ -628,38 +607,6 @@ class TestDrowsyQueryBuilder(DrowsyDatabaseTests):
             for child in composite_node.children:
                 assert child.node_id == 1
 
-
-class TestDrowsyQueryBuilderSqlite(DrowsyDatabaseTests):
-
-    """Sqlite specific query builder tests."""
-
-    backends = ['sqlite']
-
-    @staticmethod
-    def test_root_limit_with_subquery(db_session):
-        """Test applying a limit to a root resource using subqueries."""
-        query_builder = ModelResourceQueryBuilder()
-        query = db_session.query(Album)
-        subfilters = {
-            "tracks": SubfilterInfo(
-                filters={"track_id": 2}
-            )
-        }
-        query = query_builder.apply_subquery_loads(
-            query=query,
-            resource=AlbumResource(session=db_session),
-            subfilters=subfilters,
-            limit=1,
-            offset=1,
-            embeds=[]
-        )
-        result = query.all()
-        assert result is not None
-        assert len(result) == 1
-        assert result[0].album_id == 2
-        assert len(result[0].tracks) == 1
-        assert result[0].tracks[0].track_id == 2
-
     @staticmethod
     def test_root_composite_id_limit_with_subquery(db_session):
         """Limit to a composite id root resource using subqueries."""
@@ -686,8 +633,62 @@ class TestDrowsyQueryBuilderSqlite(DrowsyDatabaseTests):
         assert result[0].children[0].node_id == 6
 
     @staticmethod
-    def test_root_limit_with_subquery2(db_session):
+    def test_root_limit_with_subquery(db_session):
         """Test applying a limit to a root resource using subqueries."""
+        query_builder = ModelResourceQueryBuilder()
+        query = db_session.query(Album)
+        subfilters = {
+            "tracks": SubfilterInfo(
+                filters={"track_id": 2}
+            )
+        }
+        query = query_builder.apply_subquery_loads(
+            query=query,
+            resource=AlbumResource(session=db_session),
+            subfilters=subfilters,
+            limit=1,
+            offset=1,
+            embeds=[]
+        )
+        result = query.all()
+        assert result is not None
+        assert len(result) == 1
+        assert result[0].album_id == 2
+        assert len(result[0].tracks) == 1
+        assert result[0].tracks[0].track_id == 2
+
+
+class TestDrowsyQueryBuilderSqlite(DrowsyDatabaseTests):
+
+    """Sqlite specific query builder tests."""
+
+    backends = ['sqlite']
+
+    @staticmethod
+    def test_subresource_bad_dialect_fail(db_session):
+        """Test a sublimit/offset fails with unsupported dialect."""
+        query_builder = ModelResourceQueryBuilder()
+        query = db_session.query(Album)
+        subfilters = {
+            "tracks": SubfilterInfo(
+                offset=1,
+                limit=10
+            )
+        }
+        with raises(BadRequestError) as excinf:
+            query_builder.apply_subquery_loads(
+                query=query,
+                resource=AlbumResource(
+                    session=db_session),
+                subfilters=subfilters,
+                embeds=[],
+                dialect_override=False
+            )
+        assert excinf.value.code == "invalid_subresource_options"
+
+    @staticmethod
+    def test_composite_root_limit_with_subquery_limit(db_session):
+        """Apply limit to both root + subresource with composite id."""
         query_builder = ModelResourceQueryBuilder()
         query = db_session.query(CompositeOne)
         subfilters = {
@@ -715,8 +716,7 @@ class TestDrowsyQueryBuilderSqlite(DrowsyDatabaseTests):
                 "CompositeMany1"."ManyId" AS "CompositeMany1_ManyId", 
                 "CompositeMany1"."OneId" AS "CompositeMany1_OneId", 
                 "CompositeMany1"."CompositeOneId" AS 
-                    "CompositeMany1_CompositeOneId", 
-                anon_1.row_number AS anon_1_row_number 
+                    "CompositeMany1_CompositeOneId"
             FROM 
                 (
                     SELECT 
@@ -751,14 +751,13 @@ class TestDrowsyQueryBuilderSqlite(DrowsyDatabaseTests):
                                 ) AS row_number 
                             FROM 
                                 "CompositeMany" AS "CompositeMany1"
-                        ) AS q1, 
-                        "CompositeMany" AS "CompositeMany1" 
+                            WHERE
+                                "CompositeMany1"."ManyId" = ?
+                        ) AS q1
                     WHERE 
                         q1.row_number >= ? 
                         AND 
-                        q1.row_number <= ? 
-                        AND 
-                        "CompositeMany1"."ManyId" = ?
+                        q1.row_number <= ?
                 ) AS "CompositeMany1" ON 
                     anon_1."CompositeOne_OneId" = "CompositeMany1"."OneId" 
                     AND 
@@ -844,14 +843,13 @@ class TestDrowsyQueryBuilderSqlite(DrowsyDatabaseTests):
                                 ) AS row_number 
                             FROM 
                                 "Track" AS "Track1"
-                        ) AS q1, 
-                        "Track" AS "Track1" 
+                            WHERE 
+                                "Track1"."TrackId" >= ?
+                        ) AS q1
                     WHERE 
                         q1.row_number >= ? 
                         AND 
                         q1.row_number <= ? 
-                        AND 
-                        "Track1"."TrackId" >= ?
                 ) AS "Track1" ON 
                     "Album"."AlbumId" = "Track1"."AlbumId" 
             ORDER BY 
@@ -931,14 +929,13 @@ class TestDrowsyQueryBuilderSqlite(DrowsyDatabaseTests):
                                 ) AS row_number 
                             FROM 
                                 "Track" AS "Track1"
-                        ) AS q1, 
-                        "Track" AS "Track1" 
+                            WHERE
+                                "Track1"."TrackId" >= ?
+                        ) AS q1
                     WHERE 
                         q1.row_number >= ? 
                         AND 
-                        q1.row_number <= ? 
-                        AND 
-                        "Track1"."TrackId" >= ?
+                        q1.row_number <= ?  
                 ) AS "Track1" ON 
                     "Album"."AlbumId" = "Track1"."AlbumId" 
             ORDER BY 
@@ -1106,27 +1103,19 @@ class TestDrowsyQueryBuilderSqlite(DrowsyDatabaseTests):
                                 JOIN 
                                 "CompositeNodeToCompositeNode" ON 
                                     "CompositeNodeToCompositeNode".
-                                        "NodeId" = "CompositeNode1"."NodeId" 
-                                    AND 
-                                    "CompositeNodeToCompositeNode".
-                                        "CompositeId" = 
-                                            "CompositeNode1"."CompositeId" 
-                                    AND 
-                                    "CompositeNodeToCompositeNode".
                                         "ChildNodeId" = 
                                             "CompositeNode1"."NodeId" 
                                     AND 
                                     "CompositeNodeToCompositeNode".
                                         "ChildCompositeId" = 
                                             "CompositeNode1"."CompositeId"
-                        ) AS q1, 
-                        "CompositeNode" AS "CompositeNode1" 
+                            WHERE
+                                "CompositeNode1"."NodeId" = ?
+                        ) AS q1
                         WHERE 
                             q1.row_number >= ? 
                             AND 
                             q1.row_number <= ? 
-                            AND 
-                            "CompositeNode1"."NodeId" = ?
                     ) AS "CompositeNode1" ON 
                         "CompositeNodeToCompositeNode_1"."ChildNodeId" = 
                             "CompositeNode1"."NodeId" 
@@ -1195,14 +1184,13 @@ class TestDrowsyQueryBuilderSqlite(DrowsyDatabaseTests):
                                 ) AS row_number 
                             FROM 
                                 "CompositeMany" AS "CompositeMany1"
-                        ) AS q1, 
-                        "CompositeMany" AS "CompositeMany1" 
+                            WHERE
+                                "CompositeMany1"."ManyId" = ?
+                        ) AS q1
                     WHERE 
                         q1.row_number >= ? 
                         AND 
                         q1.row_number <= ? 
-                        AND 
-                        "CompositeMany1"."ManyId" = ?
                 ) AS "CompositeMany1" ON 
                     "CompositeOne"."OneId" = "CompositeMany1"."OneId" 
                     AND 
@@ -1215,3 +1203,188 @@ class TestDrowsyQueryBuilderSqlite(DrowsyDatabaseTests):
         ).replace(" ", "").replace("\n", "")
         result = str(query).replace(" ", "").replace("\n", "")
         assert expected_query == result
+
+
+class TestDrowsyQueryBuilderSqlServer(DrowsyDatabaseTests):
+
+    """Sqlite specific query builder tests."""
+
+    backends = ['mssql']
+
+    @staticmethod
+    def test_root_and_nested_limit_offset(db_session):
+        """Test offset and limit in both root and nested collections."""
+        query_builder = ModelResourceQueryBuilder()
+        query = db_session.query(Album)
+        subfilters = {
+            "tracks": SubfilterInfo(
+                filters={"track_id": {"$gte": 15}},
+                offset=1,
+                limit=1
+            )
+        }
+        query = query_builder.apply_subquery_loads(
+            query=query,
+            resource=AlbumResource(session=db_session),
+            subfilters=subfilters,
+            embeds=[],
+            limit=10,
+            offset=1
+        )
+        results = query.all()
+        assert len(results) == 10
+        for album in results:
+            assert len(album.tracks) <= 1
+            for track in album.tracks:
+                # root offset check
+                assert album.album_id != 1
+                if album.album_id == 2:
+                    # subresource offset check
+                    assert track.track_id == 16
+                assert track.track_id >= 5
+
+    @staticmethod
+    def test_subfilter_limit_offset_sorts(db_session):
+        """Test subfiltering with sorts works with limit and offset."""
+        query_builder = ModelResourceQueryBuilder()
+        query = db_session.query(Album)
+        subfilters = {
+            "tracks": SubfilterInfo(
+                filters={"track_id": {"$gte": 5}},
+                offset=1,
+                limit=1,
+                sorts=[SortInfo(attr="name", direction="ASC")]
+            )
+        }
+        query = query_builder.apply_subquery_loads(
+            query=query,
+            resource=AlbumResource(session=db_session),
+            subfilters=subfilters,
+            embeds=[]
+        )
+        results = query.all()
+        assert len(results) == 347
+        for album in results:
+            # limit test
+            assert len(album.tracks) <= 1
+            if album.album_id == 1:
+                # offset test
+                assert album.tracks[0].name == "C.O.D."
+
+    @staticmethod
+    def test_non_strict_bad_sublimits(db_session):
+        """Test bad sublimits don't cause failure when not strict."""
+        query_builder = ModelResourceQueryBuilder()
+        query = db_session.query(Customer)
+        query = query_builder.apply_subquery_loads(
+            query=query,
+            resource=CustomerResource(session=db_session),
+            subfilters={
+                "invoices": SubfilterInfo(
+                    offset=1,
+                    limit=10000
+                )
+            },
+            embeds=[],
+            strict=False
+        )
+        results = query.all()
+        assert len(results) == 59
+        assert results[0].customer_id == 1
+        # offset check
+        assert len(results[0].invoices) == 6
+        assert results[0].invoices[0].invoice_id == 121
+
+    @staticmethod
+    def test_self_ref_composite_id_subquery_with_limit(db_session):
+        """Self referential a composite id subquery with a limit"""
+        query_builder = ModelResourceQueryBuilder()
+        query = db_session.query(CompositeNode).filter(CompositeNode.node_id == 1)
+        subfilters = {
+            "children": SubfilterInfo(
+                filters={"node_id": {"$in": [1, 2]}},
+                offset=1,
+                limit=1
+            )
+        }
+        query = query_builder.apply_subquery_loads(
+            query=query,
+            resource=CompositeNodeResource(session=db_session),
+            subfilters=subfilters,
+            embeds=[]
+        )
+        results = query.all()
+        assert len(results) == 1
+        assert results[0].node_id == 1
+        assert results[0].children[0].node_id == 2
+
+    @staticmethod
+    def test_multilevel_subfilter_limit(db_session):
+        """Test subfiltering with sorts works with limit and offset."""
+        query_builder = ModelResourceQueryBuilder()
+        query = db_session.query(Album)
+        subfilters = {
+            "tracks": SubfilterInfo(
+                filters={"track_id": {"$gte": 5}},
+                limit=4,
+                sorts=[SortInfo(attr="name", direction="ASC")]
+            ),
+            "tracks.playlists": SubfilterInfo(
+                filters={"playlist_id": {"$gte": 6}},
+                limit=5,
+                sorts=[SortInfo(attr="name", direction="ASC")]
+            )
+        }
+        query = query_builder.apply_subquery_loads(
+            query=query,
+            resource=AlbumResource(session=db_session),
+            subfilters=subfilters,
+            embeds=[],
+            limit=3
+        )
+        results = query.all()
+        assert len(results) == 3
+        for album in results:
+            # limit test
+            assert len(album.tracks) <= 4
+            for track in album.tracks:
+                assert track.track_id >= 5
+                # limit test
+                assert len(track.playlists) <= 5
+                for playlist in track.playlists:
+                    assert playlist.playlist_id >= 6
+
+
+    @staticmethod
+    def test_many_to_many_subresource_limit(db_session):
+        """Many to many relationships with limits loaded properly."""
+        query_builder = ModelResourceQueryBuilder()
+        query = db_session.query(Playlist)
+        subfilters = {
+            "tracks": SubfilterInfo(
+                filters={"track_id": {"$gte": 5}},
+                limit=5,
+                sorts=[SortInfo(attr="name", direction="ASC")]
+            ),
+            "tracks.playlists": SubfilterInfo(
+                filters={"playlist_id": {"$lte": 6}},
+                limit=4,
+                sorts=[SortInfo(attr="name", direction="ASC")]
+            )
+        }
+        query = query_builder.apply_subquery_loads(
+            query=query,
+            resource=PlaylistResource(session=db_session),
+            subfilters=subfilters,
+            embeds=[],
+            limit=3
+        )
+        results = query.all()
+        assert len(results) == 3
+        for playlist in results:
+            assert len(playlist.tracks) <= 5
+            for track in playlist.tracks:
+                assert track.track_id >= 5
+                assert len(track.playlists) <= 4
+                for pl in track.playlists:
+                    assert pl.playlist_id <= 6
