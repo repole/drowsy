@@ -299,7 +299,11 @@ class BaseModelResource(BaseResourceABC):
         "filters_permission_error": ("You do not have permission to filter "
                                      "the field `%(field)s`."),
         "filters_too_complex": ("The filters provided can not be processed "
-                                "due to being overly complex.")
+                                "due to being overly complex."),
+        "invalid_subresource_multi_embed": (
+            "The attempt to embed %(subresource_key)s resulted in an error. "
+            "This subresource is of the same relationship as a previously "
+            "embedded subresource.")
     }
 
     def __init__(self, session, context=None, page_max_size=None,

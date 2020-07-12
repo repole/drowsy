@@ -781,6 +781,7 @@ class ModelResourceQueryBuilder(QueryBuilder):
         root_resource = resource
         embeds = [e for e in embeds if e not in subfilters.keys()]
         subfilter_keys = embeds + list(subfilters.keys())
+        subquery_tracker = {}
         for subfilter_key in subfilter_keys:
             resource = root_resource
             schema = resource.make_schema()
@@ -826,6 +827,14 @@ class ModelResourceQueryBuilder(QueryBuilder):
                             default_limit = resource.page_max_size
                         else:
                             default_limit = None
+                        unaliased_relationship = getattr(
+                            inspect(last_node.alias).class_,
+                            field.name)
+                        if unaliased_relationship in subquery_tracker:
+                            raise root_resource.make_error(
+                                "invalid_subresource_multi_embed",
+                                subresource_key=subfilter_key)
+                        subquery_tracker[unaliased_relationship] = True
                         relationship = getattr(last_node.alias, field.name)
                         relationship_direction = relationship.prop.direction
                         new_node = self.SubqueryNode(

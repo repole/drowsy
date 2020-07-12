@@ -657,12 +657,821 @@ class TestDrowsyQueryBuilder(DrowsyDatabaseTests):
         assert len(result[0].tracks) == 1
         assert result[0].tracks[0].track_id == 2
 
+    @staticmethod
+    def test_circular_relationship_fails(db_session):
+        """Referencing the same relationship multiple times fails."""
+        query_builder = ModelResourceQueryBuilder()
+        query = db_session.query(Playlist)
+        subfilters = {
+            "tracks": SubfilterInfo(
+                filters={"track_id": {"$gte": 5}},
+                limit=5,
+                sorts=[SortInfo(attr="name", direction="ASC")]
+            ),
+            "tracks.playlists": SubfilterInfo(
+                filters={"playlist_id": {"$lte": 6}},
+                limit=4,
+                sorts=[SortInfo(attr="name", direction="ASC")]
+            ),
+            "tracks.playlists.tracks": SubfilterInfo(
+                filters={"track_id": {"$gte": 5}},
+                limit=5,
+                sorts=[SortInfo(attr="name", direction="ASC")]
+            ),
+        }
+        with raises(BadRequestError) as excinf:
+            query_builder.apply_subquery_loads(
+                query=query,
+                resource=PlaylistResource(session=db_session),
+                subfilters=subfilters,
+                embeds=[],
+                limit=3,
+                dialect_override=True
+            )
+        assert excinf.value.code == "invalid_subresource_multi_embed"
+
 
 class TestDrowsyQueryBuilderSqlite(DrowsyDatabaseTests):
 
     """Sqlite specific query builder tests."""
 
     backends = ['sqlite']
+
+    @staticmethod
+    def test_root_and_nested_limit_offset(db_session):
+        """Test offset and limit in both root and nested collections."""
+        query_builder = ModelResourceQueryBuilder()
+        query = db_session.query(Album)
+        subfilters = {
+            "tracks": SubfilterInfo(
+                filters={"track_id": {"$gte": 15}},
+                offset=1,
+                limit=1
+            )
+        }
+        query = query_builder.apply_subquery_loads(
+            query=query,
+            resource=AlbumResource(session=db_session),
+            subfilters=subfilters,
+            embeds=[],
+            limit=10,
+            offset=1,
+            dialect_override=True
+        )
+        expected_query = (
+            """
+            SELECT 
+                anon_1."Album_AlbumId" AS "anon_1_Album_AlbumId", 
+                anon_1."Album_Title" AS "anon_1_Album_Title", 
+                anon_1."Album_ArtistId" AS "anon_1_Album_ArtistId", 
+                "Track1"."Track1_TrackId" AS "Track1_Track1_TrackId", 
+                "Track1"."Track1_Name" AS "Track1_Track1_Name", 
+                "Track1"."Track1_AlbumId" AS "Track1_Track1_AlbumId", 
+                "Track1"."Track1_MediaTypeId" AS "Track1_Track1_MediaTypeId", 
+                "Track1"."Track1_GenreId" AS "Track1_Track1_GenreId", 
+                "Track1"."Track1_Composer" AS "Track1_Track1_Composer", 
+                "Track1"."Track1_Milliseconds" AS "Track1_Track1_Milliseconds", 
+                "Track1"."Track1_Bytes" AS "Track1_Track1_Bytes", 
+                "Track1"."Track1_UnitPrice" AS "Track1_Track1_UnitPrice" 
+            FROM 
+                (
+                    SELECT 
+                        "Album"."AlbumId" AS "Album_AlbumId", 
+                        "Album"."Title" AS "Album_Title", 
+                        "Album"."ArtistId" AS "Album_ArtistId", 
+                        row_number() OVER (
+                            ORDER BY "Album"."AlbumId" ASC) AS row_number 
+                    FROM 
+                        "Album"
+                ) AS anon_1 
+                LEFT OUTER JOIN 
+                (
+                    SELECT 
+                        q1."Track1_TrackId" AS "Track1_TrackId", 
+                        q1."Track1_Name" AS "Track1_Name", 
+                        q1."Track1_AlbumId" AS "Track1_AlbumId", 
+                        q1."Track1_MediaTypeId" AS "Track1_MediaTypeId", 
+                        q1."Track1_GenreId" AS "Track1_GenreId", 
+                        q1."Track1_Composer" AS "Track1_Composer", 
+                        q1."Track1_Milliseconds" AS "Track1_Milliseconds", 
+                        q1."Track1_Bytes" AS "Track1_Bytes", 
+                        q1."Track1_UnitPrice" AS "Track1_UnitPrice", 
+                        q1.row_number AS row_number 
+                    FROM 
+                        (
+                            SELECT 
+                                "Track1"."TrackId" AS "Track1_TrackId", 
+                                "Track1"."Name" AS "Track1_Name", 
+                                "Track1"."AlbumId" AS "Track1_AlbumId", 
+                                "Track1"."MediaTypeId" AS "Track1_MediaTypeId", 
+                                "Track1"."GenreId" AS "Track1_GenreId", 
+                                "Track1"."Composer" AS "Track1_Composer", 
+                                "Track1"."Milliseconds" AS 
+                                    "Track1_Milliseconds", 
+                                "Track1"."Bytes" AS "Track1_Bytes", 
+                                "Track1"."UnitPrice" AS "Track1_UnitPrice", 
+                                row_number() OVER (
+                                    PARTITION BY "Track1"."AlbumId" 
+                                    ORDER BY "Track1"."TrackId" ASC
+                                ) AS row_number 
+                            FROM 
+                                "Track" AS "Track1" 
+                            WHERE 
+                                "Track1"."TrackId" >= ?
+                        ) AS q1 
+                    WHERE 
+                        q1.row_number >= ? 
+                        AND 
+                        q1.row_number <= ?
+                ) AS "Track1" ON 
+                    anon_1."Album_AlbumId" = "Track1"."Track1_AlbumId" 
+            WHERE 
+                anon_1.row_number >= ? 
+                AND 
+                anon_1.row_number <= ? 
+            ORDER BY 
+                anon_1.row_number
+            """
+        ).replace(" ", "").replace("\n", "")
+        result = str(query).replace(" ", "").replace("\n", "")
+        assert expected_query == result
+
+    @staticmethod
+    def test_simple_subfilter_limit_offset(db_session):
+        """Test offset and limit in a subresource."""
+        query_builder = ModelResourceQueryBuilder()
+        query = db_session.query(Album)
+        subfilters = {
+            "tracks": SubfilterInfo(
+                filters={"track_id": {"$gte": 5}},
+                offset=1,
+                limit=1
+            )
+        }
+        query = query_builder.apply_subquery_loads(
+            query=query,
+            resource=AlbumResource(session=db_session),
+            subfilters=subfilters,
+            embeds=[],
+            dialect_override=True
+        )
+        expected_query = (
+            """
+            SELECT 
+                "Album"."AlbumId" AS "Album_AlbumId", 
+                "Album"."Title" AS "Album_Title", 
+                "Album"."ArtistId" AS "Album_ArtistId", 
+                "Track1"."Track1_TrackId" AS "Track1_Track1_TrackId", 
+                "Track1"."Track1_Name" AS "Track1_Track1_Name", 
+                "Track1"."Track1_AlbumId" AS "Track1_Track1_AlbumId", 
+                "Track1"."Track1_MediaTypeId" AS "Track1_Track1_MediaTypeId", 
+                "Track1"."Track1_GenreId" AS "Track1_Track1_GenreId", 
+                "Track1"."Track1_Composer" AS "Track1_Track1_Composer", 
+                "Track1"."Track1_Milliseconds" AS "Track1_Track1_Milliseconds", 
+                "Track1"."Track1_Bytes" AS "Track1_Track1_Bytes", 
+                "Track1"."Track1_UnitPrice" AS "Track1_Track1_UnitPrice" 
+            FROM 
+                "Album" 
+                LEFT OUTER JOIN (
+                    SELECT 
+                        q1."Track1_TrackId" AS "Track1_TrackId", 
+                        q1."Track1_Name" AS "Track1_Name", 
+                        q1."Track1_AlbumId" AS "Track1_AlbumId", 
+                        q1."Track1_MediaTypeId" AS "Track1_MediaTypeId", 
+                        q1."Track1_GenreId" AS "Track1_GenreId", 
+                        q1."Track1_Composer" AS "Track1_Composer", 
+                        q1."Track1_Milliseconds" AS "Track1_Milliseconds", 
+                        q1."Track1_Bytes" AS "Track1_Bytes", 
+                        q1."Track1_UnitPrice" AS "Track1_UnitPrice", 
+                        q1.row_number AS row_number 
+                    FROM 
+                        (
+                            SELECT 
+                                "Track1"."TrackId" AS "Track1_TrackId", 
+                                "Track1"."Name" AS "Track1_Name", 
+                                "Track1"."AlbumId" AS "Track1_AlbumId", 
+                                "Track1"."MediaTypeId" AS "Track1_MediaTypeId", 
+                                "Track1"."GenreId" AS "Track1_GenreId", 
+                                "Track1"."Composer" AS "Track1_Composer", 
+                                "Track1"."Milliseconds" AS 
+                                    "Track1_Milliseconds", 
+                                "Track1"."Bytes" AS "Track1_Bytes", 
+                                "Track1"."UnitPrice" AS "Track1_UnitPrice", 
+                                row_number() OVER (
+                                    PARTITION BY "Track1"."AlbumId" 
+                                    ORDER BY "Track1"."TrackId" ASC
+                                ) AS row_number 
+                            FROM 
+                                "Track" AS "Track1" 
+                            WHERE 
+                                "Track1"."TrackId" >= ?
+                        ) AS q1 
+                    WHERE 
+                        q1.row_number >= ? 
+                        AND 
+                        q1.row_number <= ?
+                ) AS "Track1" ON "Album"."AlbumId" = "Track1"."Track1_AlbumId" 
+            ORDER BY 
+                "Album"."AlbumId" ASC
+            """
+        ).replace(" ", "").replace("\n", "")
+        result = str(query).replace(" ", "").replace("\n", "")
+        assert expected_query == result
+
+    @staticmethod
+    def test_subfilter_limit_offset_sorts(db_session):
+        """Test subfiltering with sorts works with limit and offset."""
+        query_builder = ModelResourceQueryBuilder()
+        query = db_session.query(Album)
+        subfilters = {
+            "tracks": SubfilterInfo(
+                filters={"track_id": {"$gte": 5}},
+                offset=1,
+                limit=1,
+                sorts=[SortInfo(attr="name", direction="ASC")]
+            )
+        }
+        query = query_builder.apply_subquery_loads(
+            query=query,
+            resource=AlbumResource(session=db_session),
+            subfilters=subfilters,
+            embeds=[],
+            dialect_override=True
+        )
+        expected_query = (
+            """
+            SELECT 
+                "Album"."AlbumId" AS "Album_AlbumId", 
+                "Album"."Title" AS "Album_Title", 
+                "Album"."ArtistId" AS "Album_ArtistId", 
+                "Track1"."Track1_TrackId" AS "Track1_Track1_TrackId", 
+                "Track1"."Track1_Name" AS "Track1_Track1_Name", 
+                "Track1"."Track1_AlbumId" AS "Track1_Track1_AlbumId", 
+                "Track1"."Track1_MediaTypeId" AS "Track1_Track1_MediaTypeId", 
+                "Track1"."Track1_GenreId" AS "Track1_Track1_GenreId", 
+                "Track1"."Track1_Composer" AS "Track1_Track1_Composer", 
+                "Track1"."Track1_Milliseconds" AS "Track1_Track1_Milliseconds", 
+                "Track1"."Track1_Bytes" AS "Track1_Track1_Bytes", 
+                "Track1"."Track1_UnitPrice" AS "Track1_Track1_UnitPrice" 
+            FROM 
+                "Album" 
+                LEFT OUTER JOIN (
+                    SELECT 
+                        q1."Track1_TrackId" AS "Track1_TrackId", 
+                        q1."Track1_Name" AS "Track1_Name", 
+                        q1."Track1_AlbumId" AS "Track1_AlbumId", 
+                        q1."Track1_MediaTypeId" AS "Track1_MediaTypeId", 
+                        q1."Track1_GenreId" AS "Track1_GenreId", 
+                        q1."Track1_Composer" AS "Track1_Composer", 
+                        q1."Track1_Milliseconds" AS "Track1_Milliseconds", 
+                        q1."Track1_Bytes" AS "Track1_Bytes", 
+                        q1."Track1_UnitPrice" AS "Track1_UnitPrice", 
+                        q1.row_number AS row_number 
+                    FROM 
+                        (
+                            SELECT 
+                                "Track1"."TrackId" AS "Track1_TrackId", 
+                                "Track1"."Name" AS "Track1_Name", 
+                                "Track1"."AlbumId" AS "Track1_AlbumId", 
+                                "Track1"."MediaTypeId" AS "Track1_MediaTypeId", 
+                                "Track1"."GenreId" AS "Track1_GenreId", 
+                                "Track1"."Composer" AS "Track1_Composer", 
+                                "Track1"."Milliseconds" AS 
+                                    "Track1_Milliseconds", 
+                                "Track1"."Bytes" AS "Track1_Bytes", 
+                                "Track1"."UnitPrice" AS "Track1_UnitPrice", 
+                                row_number() OVER (
+                                    PARTITION BY "Track1"."AlbumId" 
+                                    ORDER BY "Track1"."Name" ASC
+                                ) AS row_number 
+                            FROM 
+                                "Track" AS "Track1" 
+                            WHERE 
+                                "Track1"."TrackId" >= ?
+                        ) AS q1 
+                    WHERE 
+                        q1.row_number >= ? 
+                        AND 
+                        q1.row_number <= ?
+                ) AS "Track1" ON "Album"."AlbumId" = "Track1"."Track1_AlbumId" 
+            ORDER BY 
+                "Album"."AlbumId" ASC
+            """
+        ).replace(" ", "").replace("\n", "")
+        result = str(query).replace(" ", "").replace("\n", "")
+        assert expected_query == result
+
+    @staticmethod
+    def test_non_strict_bad_sublimits(db_session):
+        """Test bad sublimits don't cause failure when not strict."""
+        query_builder = ModelResourceQueryBuilder()
+        query = db_session.query(Customer)
+        query = query_builder.apply_subquery_loads(
+            query=query,
+            resource=CustomerResource(session=db_session),
+            subfilters={
+                "invoices": SubfilterInfo(
+                    offset=1,
+                    limit=10000
+                )
+            },
+            embeds=[],
+            strict=False,
+            dialect_override=True
+        )
+        expected_query = (
+            """
+            SELECT 
+                "Customer"."CustomerId" AS "Customer_CustomerId", 
+                "Customer"."FirstName" AS "Customer_FirstName", 
+                "Customer"."LastName" AS "Customer_LastName", 
+                "Customer"."Company" AS "Customer_Company", 
+                "Customer"."Address" AS "Customer_Address", 
+                "Customer"."City" AS "Customer_City", 
+                "Customer"."State" AS "Customer_State", 
+                "Customer"."Country" AS "Customer_Country", 
+                "Customer"."PostalCode" AS "Customer_PostalCode", 
+                "Customer"."Phone" AS "Customer_Phone", 
+                "Customer"."Fax" AS "Customer_Fax", 
+                "Customer"."Email" AS "Customer_Email", 
+                "Customer"."SupportRepId" AS "Customer_SupportRepId", 
+                "Invoice1"."Invoice1_InvoiceId" AS 
+                    "Invoice1_Invoice1_InvoiceId", 
+                "Invoice1"."Invoice1_CustomerId" AS 
+                    "Invoice1_Invoice1_CustomerId", 
+                "Invoice1"."Invoice1_InvoiceDate" AS 
+                    "Invoice1_Invoice1_InvoiceDate", 
+                "Invoice1"."Invoice1_BillingAddress" AS 
+                    "Invoice1_Invoice1_BillingAddress", 
+                "Invoice1"."Invoice1_BillingCity" AS 
+                    "Invoice1_Invoice1_BillingCity", 
+                "Invoice1"."Invoice1_BillingState" AS 
+                    "Invoice1_Invoice1_BillingState", 
+                "Invoice1"."Invoice1_BillingCountry" AS 
+                    "Invoice1_Invoice1_BillingCountry", 
+                "Invoice1"."Invoice1_BillingPostalCode" AS 
+                    "Invoice1_Invoice1_BillingPostalCode", 
+                "Invoice1"."Invoice1_Total" AS "Invoice1_Invoice1_Total" 
+            FROM 
+                "Customer" 
+                LEFT OUTER JOIN (
+                    SELECT 
+                        q1."Invoice1_InvoiceId" AS "Invoice1_InvoiceId", 
+                        q1."Invoice1_CustomerId" AS "Invoice1_CustomerId", 
+                        q1."Invoice1_InvoiceDate" AS "Invoice1_InvoiceDate", 
+                        q1."Invoice1_BillingAddress" AS 
+                            "Invoice1_BillingAddress", 
+                        q1."Invoice1_BillingCity" AS "Invoice1_BillingCity", 
+                        q1."Invoice1_BillingState" AS "Invoice1_BillingState", 
+                        q1."Invoice1_BillingCountry" AS 
+                            "Invoice1_BillingCountry", 
+                        q1."Invoice1_BillingPostalCode" AS 
+                            "Invoice1_BillingPostalCode", 
+                        q1."Invoice1_Total" AS "Invoice1_Total", 
+                        q1.row_number AS row_number 
+                    FROM 
+                        (
+                            SELECT 
+                                "Invoice1"."InvoiceId" AS "Invoice1_InvoiceId", 
+                                "Invoice1"."CustomerId" AS 
+                                    "Invoice1_CustomerId", 
+                                "Invoice1"."InvoiceDate" AS 
+                                    "Invoice1_InvoiceDate", 
+                                "Invoice1"."BillingAddress" AS 
+                                    "Invoice1_BillingAddress", 
+                                "Invoice1"."BillingCity" AS 
+                                    "Invoice1_BillingCity", 
+                                "Invoice1"."BillingState" AS 
+                                    "Invoice1_BillingState", 
+                                "Invoice1"."BillingCountry" AS 
+                                    "Invoice1_BillingCountry", 
+                                "Invoice1"."BillingPostalCode" AS 
+                                    "Invoice1_BillingPostalCode", 
+                                "Invoice1"."Total" AS "Invoice1_Total", 
+                                row_number() OVER (
+                                    PARTITION BY "Invoice1"."CustomerId" 
+                                    ORDER BY "Invoice1"."InvoiceId" ASC
+                                ) AS row_number 
+                            FROM 
+                                "Invoice" AS "Invoice1"
+                        ) AS q1 
+                    WHERE 
+                        q1.row_number >= ? 
+                        AND 
+                        q1.row_number <= ?
+                ) AS "Invoice1" ON 
+                    "Invoice1"."Invoice1_CustomerId" = "Customer"."CustomerId" 
+            ORDER BY 
+                "Customer"."CustomerId" ASC
+            """
+        ).replace(" ", "").replace("\n", "")
+        result = str(query).replace(" ", "").replace("\n", "")
+        assert expected_query == result
+
+    @staticmethod
+    def test_self_ref_composite_id_subquery_with_limit(db_session):
+        """Self referential a composite id subquery with a limit"""
+        query_builder = ModelResourceQueryBuilder()
+        query = db_session.query(CompositeNode)
+        subfilters = {
+            "children": SubfilterInfo(
+                filters={"node_id": {"$in": [1, 2]}},
+                offset=1,
+                limit=1
+            )
+        }
+        query = query_builder.apply_subquery_loads(
+            query=query,
+            resource=CompositeNodeResource(session=db_session),
+            subfilters=subfilters,
+            embeds=[],
+            dialect_override=True
+        )
+        expected_query = (
+            """
+            SELECT 
+                "CompositeNode"."NodeId" AS "CompositeNode_NodeId", 
+                "CompositeNode"."CompositeId" AS "CompositeNode_CompositeId", 
+                "CompositeNode1"."CompositeNode1_NodeId" AS 
+                    "CompositeNode1_CompositeNode1_NodeId", 
+                "CompositeNode1"."CompositeNode1_CompositeId" AS 
+                    "CompositeNode1_CompositeNode1_CompositeId" 
+            FROM 
+                "CompositeNode" 
+                LEFT OUTER JOIN (
+                    SELECT 
+                        q1."CompositeNode1_NodeId" AS "CompositeNode1_NodeId", 
+                        q1."CompositeNode1_CompositeId" AS 
+                            "CompositeNode1_CompositeId", 
+                        q1."CompositeNodeToCompositeNode_NodeId" AS 
+                            "CompositeNodeToCompositeNode_NodeId", 
+                        q1."CompositeNodeToCompositeNode_CompositeId" AS 
+                            "CompositeNodeToCompositeNode_CompositeId", 
+                        q1."CompositeNodeToCompositeNode_ChildNodeId" AS 
+                            "CompositeNodeToCompositeNode_ChildNodeId", 
+                        q1."CompositeNodeToCompositeNode_ChildCompositeId" AS 
+                            "CompositeNodeToCompositeNode_ChildCompositeId", 
+                        q1.row_number AS row_number 
+                    FROM 
+                        (
+                            SELECT 
+                                "CompositeNode1"."NodeId" AS 
+                                    "CompositeNode1_NodeId", 
+                                "CompositeNode1"."CompositeId" AS 
+                                    "CompositeNode1_CompositeId", 
+                                "CompositeNodeToCompositeNode"."NodeId" AS 
+                                    "CompositeNodeToCompositeNode_NodeId", 
+                                "CompositeNodeToCompositeNode"."CompositeId" AS 
+                                    "CompositeNodeToCompositeNode_CompositeId", 
+                                "CompositeNodeToCompositeNode"."ChildNodeId" AS 
+                                    "CompositeNodeToCompositeNode_ChildNodeId", 
+                                "CompositeNodeToCompositeNode".
+                                    "ChildCompositeId" AS 
+                                        "CompositeNodeToCompositeNode_
+                                            ChildCompositeId", 
+                                row_number() OVER (
+                                    PARTITION BY 
+                                        "CompositeNodeToCompositeNode".
+                                            "NodeId", 
+                                        "CompositeNodeToCompositeNode".
+                                            "CompositeId" 
+                                    ORDER BY 
+                                        "CompositeNode1"."NodeId" ASC, 
+                                        "CompositeNode1"."CompositeId" ASC
+                                ) AS row_number 
+                            FROM 
+                                "CompositeNode" AS "CompositeNode1" 
+                                JOIN "CompositeNodeToCompositeNode" ON 
+                                    "CompositeNodeToCompositeNode".
+                                        "ChildNodeId" = 
+                                    "CompositeNode1"."NodeId" 
+                                    AND 
+                                    "CompositeNodeToCompositeNode".
+                                        "ChildCompositeId" = 
+                                    "CompositeNode1"."CompositeId" 
+                            WHERE 
+                                "CompositeNode1"."NodeId" IN (?, ?)
+                        ) AS q1 
+                    WHERE 
+                        q1.row_number >= ? 
+                        AND 
+                        q1.row_number <= ?
+                ) AS "CompositeNode1" ON 
+                    "CompositeNode"."NodeId" = 
+                    "CompositeNode1"."CompositeNodeToCompositeNode_NodeId" 
+                    AND 
+                    "CompositeNode"."CompositeId" = 
+                    "CompositeNode1"."CompositeNodeToCompositeNode_CompositeId" 
+            ORDER BY 
+                "CompositeNode"."NodeId" ASC, 
+                "CompositeNode"."CompositeId" ASC
+            """
+        ).replace(" ", "").replace("\n", "")
+        result = str(query).replace(" ", "").replace("\n", "")
+        assert expected_query == result
+
+    @staticmethod
+    def test_multilevel_subfilter_limit(db_session):
+        """Test subfiltering with sorts works with limit and offset."""
+        query_builder = ModelResourceQueryBuilder()
+        query = db_session.query(Album)
+        subfilters = {
+            "tracks": SubfilterInfo(
+                filters={"track_id": {"$gte": 5}},
+                limit=4,
+                sorts=[SortInfo(attr="name", direction="ASC")]
+            ),
+            "tracks.playlists": SubfilterInfo(
+                filters={"playlist_id": {"$gte": 6}},
+                limit=5,
+                sorts=[SortInfo(attr="name", direction="ASC")]
+            )
+        }
+        query = query_builder.apply_subquery_loads(
+            query=query,
+            resource=AlbumResource(session=db_session),
+            subfilters=subfilters,
+            embeds=[],
+            limit=3,
+            dialect_override=True
+        )
+        expected_query = (
+            """
+            SELECT 
+                anon_1."Album_AlbumId" AS "anon_1_Album_AlbumId", 
+                anon_1."Album_Title" AS "anon_1_Album_Title", 
+                anon_1."Album_ArtistId" AS "anon_1_Album_ArtistId", 
+                "Track1"."Track1_TrackId" AS "Track1_Track1_TrackId", 
+                "Track1"."Track1_Name" AS "Track1_Track1_Name", 
+                "Track1"."Track1_AlbumId" AS "Track1_Track1_AlbumId", 
+                "Track1"."Track1_MediaTypeId" AS "Track1_Track1_MediaTypeId", 
+                "Track1"."Track1_GenreId" AS "Track1_Track1_GenreId", 
+                "Track1"."Track1_Composer" AS "Track1_Track1_Composer", 
+                "Track1"."Track1_Milliseconds" AS "Track1_Track1_Milliseconds", 
+                "Track1"."Track1_Bytes" AS "Track1_Track1_Bytes", 
+                "Track1"."Track1_UnitPrice" AS "Track1_Track1_UnitPrice", 
+                "Playlist1"."Playlist1_PlaylistId" AS 
+                    "Playlist1_Playlist1_PlaylistId", 
+                "Playlist1"."Playlist1_Name" AS "Playlist1_Playlist1_Name" 
+            FROM 
+                (
+                    SELECT 
+                        "Album"."AlbumId" AS "Album_AlbumId", 
+                        "Album"."Title" AS "Album_Title", 
+                        "Album"."ArtistId" AS "Album_ArtistId", 
+                        row_number() OVER (
+                            ORDER BY 
+                                "Album"."AlbumId" ASC
+                        ) AS row_number 
+                    FROM 
+                        "Album"
+                ) AS anon_1 
+                LEFT OUTER JOIN (
+                    SELECT 
+                        q1."Track1_TrackId" AS "Track1_TrackId", 
+                        q1."Track1_Name" AS "Track1_Name", 
+                        q1."Track1_AlbumId" AS "Track1_AlbumId", 
+                        q1."Track1_MediaTypeId" AS "Track1_MediaTypeId", 
+                        q1."Track1_GenreId" AS "Track1_GenreId", 
+                        q1."Track1_Composer" AS "Track1_Composer", 
+                        q1."Track1_Milliseconds" AS "Track1_Milliseconds", 
+                        q1."Track1_Bytes" AS "Track1_Bytes", 
+                        q1."Track1_UnitPrice" AS "Track1_UnitPrice", 
+                        q1.row_number AS row_number 
+                    FROM 
+                        (
+                            SELECT 
+                                "Track1"."TrackId" AS "Track1_TrackId", 
+                                "Track1"."Name" AS "Track1_Name", 
+                                "Track1"."AlbumId" AS "Track1_AlbumId", 
+                                "Track1"."MediaTypeId" AS "Track1_MediaTypeId", 
+                                "Track1"."GenreId" AS "Track1_GenreId", 
+                                "Track1"."Composer" AS "Track1_Composer", 
+                                "Track1"."Milliseconds" AS 
+                                    "Track1_Milliseconds", 
+                                "Track1"."Bytes" AS "Track1_Bytes", 
+                                "Track1"."UnitPrice" AS "Track1_UnitPrice", 
+                                row_number() OVER (
+                                    PARTITION BY "Track1"."AlbumId" 
+                                    ORDER BY 
+                                        "Track1"."Name" ASC
+                                ) AS row_number 
+                            FROM 
+                                "Track" AS "Track1" 
+                            WHERE 
+                                "Track1"."TrackId" >= ?
+                        ) AS q1 
+                    WHERE 
+                        q1.row_number >= ? 
+                        AND q1.row_number <= ?
+                ) AS "Track1" ON 
+                    anon_1."Album_AlbumId" = "Track1"."Track1_AlbumId" 
+                LEFT OUTER JOIN (
+                    SELECT 
+                        q1."Playlist1_PlaylistId" AS "Playlist1_PlaylistId", 
+                        q1."Playlist1_Name" AS "Playlist1_Name", 
+                        q1."PlaylistTrack_PlaylistId" AS 
+                            "PlaylistTrack_PlaylistId", 
+                        q1."PlaylistTrack_TrackId" AS "PlaylistTrack_TrackId", 
+                        q1.row_number AS row_number 
+                    FROM 
+                        (
+                            SELECT 
+                                "Playlist1"."PlaylistId" AS 
+                                    "Playlist1_PlaylistId", 
+                                "Playlist1"."Name" AS "Playlist1_Name", 
+                                "PlaylistTrack"."PlaylistId" AS 
+                                    "PlaylistTrack_PlaylistId", 
+                                "PlaylistTrack"."TrackId" AS 
+                                    "PlaylistTrack_TrackId", 
+                                row_number() OVER (
+                                    PARTITION BY "PlaylistTrack"."TrackId" 
+                                    ORDER BY 
+                                        "Playlist1"."Name" ASC
+                                ) AS row_number 
+                            FROM 
+                                "Playlist" AS "Playlist1" 
+                                JOIN "PlaylistTrack" ON 
+                                    "PlaylistTrack"."PlaylistId" = 
+                                    "Playlist1"."PlaylistId" 
+                            WHERE 
+                                "Playlist1"."PlaylistId" >= ?
+                        ) AS q1 
+                    WHERE 
+                        q1.row_number >= ? 
+                        AND q1.row_number <= ?
+                ) AS "Playlist1" ON 
+                    "Playlist1"."PlaylistTrack_TrackId" = 
+                    "Track1"."Track1_TrackId" 
+            WHERE 
+                anon_1.row_number >= ? 
+                AND 
+                anon_1.row_number <= ? 
+            ORDER BY 
+                anon_1.row_number
+            """
+        ).replace(" ", "").replace("\n", "")
+        result = str(query).replace(" ", "").replace("\n", "")
+        assert expected_query == result
+
+    @staticmethod
+    def test_many_to_many_subresource_limit(db_session):
+        """Many to many relationships with limits loaded properly."""
+        query_builder = ModelResourceQueryBuilder()
+        query = db_session.query(Playlist)
+        subfilters = {
+            "tracks": SubfilterInfo(
+                filters={"track_id": {"$gte": 5}},
+                limit=5,
+                sorts=[SortInfo(attr="name", direction="ASC")]
+            ),
+            "tracks.playlists": SubfilterInfo(
+                filters={"playlist_id": {"$lte": 6}},
+                limit=4,
+                sorts=[SortInfo(attr="name", direction="ASC")]
+            )
+        }
+        query = query_builder.apply_subquery_loads(
+            query=query,
+            resource=PlaylistResource(session=db_session),
+            subfilters=subfilters,
+            embeds=[],
+            limit=3,
+            dialect_override=True
+        )
+        expected_query = (
+            """
+            SELECT 
+                anon_1."Playlist_PlaylistId" AS "anon_1_Playlist_PlaylistId", 
+                anon_1."Playlist_Name" AS "anon_1_Playlist_Name", 
+                "Track1"."Track1_TrackId" AS "Track1_Track1_TrackId", 
+                "Track1"."Track1_Name" AS "Track1_Track1_Name", 
+                "Track1"."Track1_AlbumId" AS "Track1_Track1_AlbumId", 
+                "Track1"."Track1_MediaTypeId" AS "Track1_Track1_MediaTypeId", 
+                "Track1"."Track1_GenreId" AS "Track1_Track1_GenreId", 
+                "Track1"."Track1_Composer" AS "Track1_Track1_Composer", 
+                "Track1"."Track1_Milliseconds" AS "Track1_Track1_Milliseconds", 
+                "Track1"."Track1_Bytes" AS "Track1_Track1_Bytes", 
+                "Track1"."Track1_UnitPrice" AS "Track1_Track1_UnitPrice", 
+                "Playlist1"."Playlist1_PlaylistId" AS 
+                    "Playlist1_Playlist1_PlaylistId", 
+                "Playlist1"."Playlist1_Name" AS "Playlist1_Playlist1_Name" 
+            FROM 
+                (
+                    SELECT 
+                        "Playlist"."PlaylistId" AS "Playlist_PlaylistId", 
+                        "Playlist"."Name" AS "Playlist_Name", 
+                        row_number() OVER (
+                            ORDER BY 
+                                "Playlist"."PlaylistId" ASC
+                        ) AS row_number 
+                    FROM 
+                        "Playlist"
+                ) AS anon_1 
+                LEFT OUTER JOIN (
+                    SELECT 
+                        q1."Track1_TrackId" AS "Track1_TrackId", 
+                        q1."Track1_Name" AS "Track1_Name", 
+                        q1."Track1_AlbumId" AS "Track1_AlbumId", 
+                        q1."Track1_MediaTypeId" AS "Track1_MediaTypeId", 
+                        q1."Track1_GenreId" AS "Track1_GenreId", 
+                        q1."Track1_Composer" AS "Track1_Composer", 
+                        q1."Track1_Milliseconds" AS "Track1_Milliseconds", 
+                        q1."Track1_Bytes" AS "Track1_Bytes", 
+                        q1."Track1_UnitPrice" AS "Track1_UnitPrice", 
+                        q1."PlaylistTrack_PlaylistId" AS 
+                            "PlaylistTrack_PlaylistId", 
+                        q1."PlaylistTrack_TrackId" AS "PlaylistTrack_TrackId", 
+                        q1.row_number AS row_number 
+                    FROM 
+                        (
+                            SELECT 
+                                "Track1"."TrackId" AS "Track1_TrackId", 
+                                "Track1"."Name" AS "Track1_Name", 
+                                "Track1"."AlbumId" AS "Track1_AlbumId", 
+                                "Track1"."MediaTypeId" AS "Track1_MediaTypeId", 
+                                "Track1"."GenreId" AS "Track1_GenreId", 
+                                "Track1"."Composer" AS "Track1_Composer", 
+                                "Track1"."Milliseconds" AS 
+                                    "Track1_Milliseconds", 
+                                "Track1"."Bytes" AS "Track1_Bytes", 
+                                "Track1"."UnitPrice" AS "Track1_UnitPrice", 
+                                "PlaylistTrack"."PlaylistId" AS 
+                                    "PlaylistTrack_PlaylistId", 
+                                "PlaylistTrack"."TrackId" AS 
+                                    "PlaylistTrack_TrackId", 
+                                row_number() OVER (
+                                    PARTITION BY 
+                                        "PlaylistTrack"."PlaylistId" 
+                                    ORDER BY 
+                                        "Track1"."Name" ASC
+                                ) AS row_number 
+                            FROM 
+                                "Track" AS "Track1" 
+                                JOIN 
+                                "PlaylistTrack" ON 
+                                    "PlaylistTrack"."TrackId" = 
+                                    "Track1"."TrackId" 
+                            WHERE 
+                                "Track1"."TrackId" >= ?
+                        ) AS q1 
+                    WHERE 
+                        q1.row_number >= ? 
+                        AND 
+                        q1.row_number <= ?
+                ) AS "Track1" ON 
+                    anon_1."Playlist_PlaylistId" = 
+                    "Track1"."PlaylistTrack_PlaylistId" 
+                LEFT OUTER JOIN (
+                    SELECT 
+                        q1."Playlist1_PlaylistId" AS "Playlist1_PlaylistId", 
+                        q1."Playlist1_Name" AS "Playlist1_Name", 
+                        q1."PlaylistTrack_PlaylistId" AS 
+                            "PlaylistTrack_PlaylistId", 
+                        q1."PlaylistTrack_TrackId" AS "PlaylistTrack_TrackId", 
+                        q1.row_number AS row_number 
+                    FROM 
+                        (
+                            SELECT 
+                                "Playlist1"."PlaylistId" AS 
+                                    "Playlist1_PlaylistId", 
+                                "Playlist1"."Name" AS "Playlist1_Name", 
+                                "PlaylistTrack"."PlaylistId" AS 
+                                    "PlaylistTrack_PlaylistId", 
+                                "PlaylistTrack"."TrackId" AS 
+                                    "PlaylistTrack_TrackId", 
+                                row_number() OVER (
+                                    PARTITION BY 
+                                        "PlaylistTrack"."TrackId" 
+                                    ORDER BY 
+                                        "Playlist1"."Name" ASC
+                                ) AS row_number 
+                            FROM 
+                                "Playlist" AS "Playlist1" 
+                                JOIN 
+                                "PlaylistTrack" ON 
+                                    "PlaylistTrack"."PlaylistId" = 
+                                    "Playlist1"."PlaylistId" 
+                            WHERE 
+                                "Playlist1"."PlaylistId" <= ?
+                        ) AS q1 
+                    WHERE 
+                        q1.row_number >= ? 
+                        AND 
+                        q1.row_number <= ?
+                ) AS "Playlist1" ON 
+                    "Playlist1"."PlaylistTrack_TrackId" = 
+                    "Track1"."Track1_TrackId" 
+            WHERE 
+                anon_1.row_number >= ? 
+                AND 
+                anon_1.row_number <= ? 
+            ORDER BY 
+                anon_1.row_number
+            """
+        ).replace(" ", "").replace("\n", "")
+        result = str(query).replace(" ", "").replace("\n", "")
+        assert expected_query == result
 
     @staticmethod
     def test_subresource_bad_dialect_fail(db_session):
@@ -713,35 +1522,42 @@ class TestDrowsyQueryBuilderSqlite(DrowsyDatabaseTests):
                 anon_1."CompositeOne_OneId" AS "anon_1_CompositeOne_OneId", 
                 anon_1."CompositeOne_CompositeOneId" AS 
                     "anon_1_CompositeOne_CompositeOneId", 
-                "CompositeMany1"."ManyId" AS "CompositeMany1_ManyId", 
-                "CompositeMany1"."OneId" AS "CompositeMany1_OneId", 
-                "CompositeMany1"."CompositeOneId" AS 
-                    "CompositeMany1_CompositeOneId"
+                "CompositeMany1"."CompositeMany1_ManyId" AS 
+                    "CompositeMany1_CompositeMany1_ManyId", 
+                "CompositeMany1"."CompositeMany1_OneId" AS 
+                    "CompositeMany1_CompositeMany1_OneId", 
+                "CompositeMany1"."CompositeMany1_CompositeOneId" AS 
+                    "CompositeMany1_CompositeMany1_CompositeOneId" 
             FROM 
                 (
                     SELECT 
                         "CompositeOne"."OneId" AS "CompositeOne_OneId", 
                         "CompositeOne"."CompositeOneId" AS 
                             "CompositeOne_CompositeOneId", 
-                        row_number() OVER (ORDER BY 
-                            "CompositeOne"."OneId" ASC, 
-                            "CompositeOne"."CompositeOneId" ASC) AS row_number 
-                    FROM "CompositeOne"
+                        row_number() OVER (
+                            ORDER BY 
+                                "CompositeOne"."OneId" ASC, 
+                                "CompositeOne"."CompositeOneId" ASC
+                        ) AS row_number 
+                    FROM 
+                        "CompositeOne"
                 ) AS anon_1 
-                LEFT OUTER JOIN 
-                (
+                LEFT OUTER JOIN (
                     SELECT 
-                        q1."ManyId" AS "ManyId", 
-                        q1."OneId" AS "OneId", 
-                        q1."CompositeOneId" AS "CompositeOneId", 
+                        q1."CompositeMany1_ManyId" AS "CompositeMany1_ManyId", 
+                        q1."CompositeMany1_OneId" AS "CompositeMany1_OneId", 
+                        q1."CompositeMany1_CompositeOneId" AS 
+                            "CompositeMany1_CompositeOneId", 
                         q1.row_number AS row_number 
                     FROM 
                         (
                             SELECT 
-                                "CompositeMany1"."ManyId" AS "ManyId", 
-                                "CompositeMany1"."OneId" AS "OneId", 
+                                "CompositeMany1"."ManyId" AS 
+                                    "CompositeMany1_ManyId", 
+                                "CompositeMany1"."OneId" AS 
+                                    "CompositeMany1_OneId", 
                                 "CompositeMany1"."CompositeOneId" AS 
-                                    "CompositeOneId", 
+                                    "CompositeMany1_CompositeOneId", 
                                 row_number() OVER (
                                     PARTITION BY 
                                         "CompositeMany1"."OneId", 
@@ -750,381 +1566,25 @@ class TestDrowsyQueryBuilderSqlite(DrowsyDatabaseTests):
                                         "CompositeMany1"."ManyId" ASC
                                 ) AS row_number 
                             FROM 
-                                "CompositeMany" AS "CompositeMany1"
-                            WHERE
+                                "CompositeMany" AS "CompositeMany1" 
+                            WHERE 
                                 "CompositeMany1"."ManyId" = ?
-                        ) AS q1
+                        ) AS q1 
                     WHERE 
                         q1.row_number >= ? 
-                        AND 
-                        q1.row_number <= ?
+                        AND q1.row_number <= ?
                 ) AS "CompositeMany1" ON 
-                    anon_1."CompositeOne_OneId" = "CompositeMany1"."OneId" 
+                    anon_1."CompositeOne_OneId" = 
+                    "CompositeMany1"."CompositeMany1_OneId" 
                     AND 
                     anon_1."CompositeOne_CompositeOneId" = 
-                        "CompositeMany1"."CompositeOneId" 
+                    "CompositeMany1"."CompositeMany1_CompositeOneId" 
             WHERE 
                 anon_1.row_number >= ? 
                 AND 
                 anon_1.row_number <= ? 
             ORDER BY 
                 anon_1.row_number
-            """
-        ).replace(" ", "").replace("\n", "")
-        result = str(query).replace(" ", "").replace("\n", "")
-        assert expected_query == result
-
-    @staticmethod
-    def test_simple_subfilter_limit_offset(db_session):
-        """Test offset and limit in a subresource."""
-        query_builder = ModelResourceQueryBuilder()
-        query = db_session.query(Album)
-        subfilters = {
-            "tracks": SubfilterInfo(
-                filters={"track_id": {"$gte": 5}},
-                offset=1,
-                limit=1
-            )
-        }
-        query = query_builder.apply_subquery_loads(
-            query=query,
-            resource=AlbumResource(session=db_session),
-            subfilters=subfilters,
-            embeds=[],
-            dialect_override=True
-        )
-        expected_query = (
-            """
-            SELECT 
-                "Album"."AlbumId" AS "Album_AlbumId", 
-                "Album"."Title" AS "Album_Title", 
-                "Album"."ArtistId" AS "Album_ArtistId", 
-                "Track1"."TrackId" AS "Track1_TrackId", 
-                "Track1"."Name" AS "Track1_Name", 
-                "Track1"."AlbumId" AS "Track1_AlbumId", 
-                "Track1"."MediaTypeId" AS "Track1_MediaTypeId", 
-                "Track1"."GenreId" AS "Track1_GenreId", 
-                "Track1"."Composer" AS "Track1_Composer", 
-                "Track1"."Milliseconds" AS "Track1_Milliseconds", 
-                "Track1"."Bytes" AS "Track1_Bytes", 
-                "Track1"."UnitPrice" AS "Track1_UnitPrice" 
-            FROM 
-                "Album" 
-                LEFT OUTER JOIN 
-                (
-                    SELECT 
-                        q1."TrackId" AS "TrackId", 
-                        q1."Name" AS "Name", 
-                        q1."AlbumId" AS "AlbumId", 
-                        q1."MediaTypeId" AS "MediaTypeId", 
-                        q1."GenreId" AS "GenreId", 
-                        q1."Composer" AS "Composer", 
-                        q1."Milliseconds" AS "Milliseconds", 
-                        q1."Bytes" AS "Bytes", 
-                        q1."UnitPrice" AS "UnitPrice", 
-                        q1.row_number AS row_number 
-                    FROM 
-                        (
-                            SELECT 
-                                "Track1"."TrackId" AS "TrackId", 
-                                "Track1"."Name" AS "Name", 
-                                "Track1"."AlbumId" AS "AlbumId", 
-                                "Track1"."MediaTypeId" AS "MediaTypeId", 
-                                "Track1"."GenreId" AS "GenreId", 
-                                "Track1"."Composer" AS "Composer", 
-                                "Track1"."Milliseconds" AS "Milliseconds", 
-                                "Track1"."Bytes" AS "Bytes", 
-                                "Track1"."UnitPrice" AS "UnitPrice", 
-                                row_number() OVER (
-                                    PARTITION BY 
-                                        "Track1"."AlbumId" 
-                                    ORDER BY 
-                                        "Track1"."TrackId" ASC
-                                ) AS row_number 
-                            FROM 
-                                "Track" AS "Track1"
-                            WHERE 
-                                "Track1"."TrackId" >= ?
-                        ) AS q1
-                    WHERE 
-                        q1.row_number >= ? 
-                        AND 
-                        q1.row_number <= ? 
-                ) AS "Track1" ON 
-                    "Album"."AlbumId" = "Track1"."AlbumId" 
-            ORDER BY 
-                "Album"."AlbumId" ASC
-            """
-        ).replace(" ", "").replace("\n", "")
-        result = str(query).replace(" ", "").replace("\n", "")
-        assert expected_query == result
-
-    @staticmethod
-    def test_subfilter_limit_offset_sorts(db_session):
-        """Test subfiltering with sorts works with limit and offset."""
-        query_builder = ModelResourceQueryBuilder()
-        query = db_session.query(Album)
-        subfilters = {
-            "tracks": SubfilterInfo(
-                filters={"track_id": {"$gte": 5}},
-                offset=1,
-                limit=1,
-                sorts=[SortInfo(attr="name", direction="ASC")]
-            )
-        }
-        query = query_builder.apply_subquery_loads(
-            query=query,
-            resource=AlbumResource(session=db_session),
-            subfilters=subfilters,
-            embeds=[],
-            dialect_override=True
-        )
-        expected_query = (
-            """
-            SELECT 
-                "Album"."AlbumId" AS "Album_AlbumId", 
-                "Album"."Title" AS "Album_Title", 
-                "Album"."ArtistId" AS "Album_ArtistId", 
-                "Track1"."TrackId" AS "Track1_TrackId", 
-                "Track1"."Name" AS "Track1_Name", 
-                "Track1"."AlbumId" AS "Track1_AlbumId", 
-                "Track1"."MediaTypeId" AS "Track1_MediaTypeId", 
-                "Track1"."GenreId" AS "Track1_GenreId", 
-                "Track1"."Composer" AS "Track1_Composer", 
-                "Track1"."Milliseconds" AS "Track1_Milliseconds", 
-                "Track1"."Bytes" AS "Track1_Bytes", 
-                "Track1"."UnitPrice" AS "Track1_UnitPrice" 
-            FROM 
-                "Album" 
-                LEFT OUTER JOIN 
-                (
-                    SELECT 
-                        q1."TrackId" AS "TrackId", 
-                        q1."Name" AS "Name", 
-                        q1."AlbumId" AS "AlbumId", 
-                        q1."MediaTypeId" AS "MediaTypeId", 
-                        q1."GenreId" AS "GenreId", 
-                        q1."Composer" AS "Composer", 
-                        q1."Milliseconds" AS "Milliseconds", 
-                        q1."Bytes" AS "Bytes", 
-                        q1."UnitPrice" AS "UnitPrice", 
-                        q1.row_number AS row_number 
-                    FROM 
-                        (
-                            SELECT 
-                                "Track1"."TrackId" AS "TrackId", 
-                                "Track1"."Name" AS "Name", 
-                                "Track1"."AlbumId" AS "AlbumId", 
-                                "Track1"."MediaTypeId" AS "MediaTypeId", 
-                                "Track1"."GenreId" AS "GenreId", 
-                                "Track1"."Composer" AS "Composer", 
-                                "Track1"."Milliseconds" AS "Milliseconds", 
-                                "Track1"."Bytes" AS "Bytes", 
-                                "Track1"."UnitPrice" AS "UnitPrice", 
-                                row_number() OVER (
-                                    PARTITION BY 
-                                        "Track1"."AlbumId" 
-                                    ORDER BY 
-                                        "Track1"."Name" ASC
-                                ) AS row_number 
-                            FROM 
-                                "Track" AS "Track1"
-                            WHERE
-                                "Track1"."TrackId" >= ?
-                        ) AS q1
-                    WHERE 
-                        q1.row_number >= ? 
-                        AND 
-                        q1.row_number <= ?  
-                ) AS "Track1" ON 
-                    "Album"."AlbumId" = "Track1"."AlbumId" 
-            ORDER BY 
-                "Album"."AlbumId" ASC
-            """
-        ).replace(" ", "").replace("\n", "")
-        result = str(query).replace(" ", "").replace("\n", "")
-        assert expected_query == result
-
-    @staticmethod
-    def test_non_strict_bad_sublimits(db_session):
-        """Test bad sublimits don't cause failure when not strict."""
-        query_builder = ModelResourceQueryBuilder()
-        query = db_session.query(Customer)
-        query = query_builder.apply_subquery_loads(
-            query=query,
-            resource=CustomerResource(session=db_session),
-            subfilters={
-                "invoices": SubfilterInfo(
-                    offset=1,
-                    limit=10000
-                )
-            },
-            embeds=[],
-            strict=False,
-            dialect_override=True
-        )
-        expected_query = (
-            """
-            SELECT 
-                "Customer"."CustomerId" AS "Customer_CustomerId", 
-                "Customer"."FirstName" AS "Customer_FirstName", 
-                "Customer"."LastName" AS "Customer_LastName", 
-                "Customer"."Company" AS "Customer_Company", 
-                "Customer"."Address" AS "Customer_Address", 
-                "Customer"."City" AS "Customer_City", 
-                "Customer"."State" AS "Customer_State", 
-                "Customer"."Country" AS "Customer_Country", 
-                "Customer"."PostalCode" AS "Customer_PostalCode", 
-                "Customer"."Phone" AS "Customer_Phone", 
-                "Customer"."Fax" AS "Customer_Fax", 
-                "Customer"."Email" AS "Customer_Email", 
-                "Customer"."SupportRepId" AS "Customer_SupportRepId", 
-                "Invoice1"."InvoiceId" AS "Invoice1_InvoiceId", 
-                "Invoice1"."CustomerId" AS "Invoice1_CustomerId", 
-                "Invoice1"."InvoiceDate" AS "Invoice1_InvoiceDate", 
-                "Invoice1"."BillingAddress" AS "Invoice1_BillingAddress", 
-                "Invoice1"."BillingCity" AS "Invoice1_BillingCity", 
-                "Invoice1"."BillingState" AS "Invoice1_BillingState", 
-                "Invoice1"."BillingCountry" AS "Invoice1_BillingCountry", 
-                "Invoice1"."BillingPostalCode" AS "Invoice1_BillingPostalCode", 
-                "Invoice1"."Total" AS "Invoice1_Total" 
-            FROM 
-                "Customer" 
-                LEFT OUTER JOIN 
-                (
-                    SELECT 
-                        q1."InvoiceId" AS "InvoiceId", 
-                        q1."CustomerId" AS "CustomerId", 
-                        q1."InvoiceDate" AS "InvoiceDate", 
-                        q1."BillingAddress" AS "BillingAddress", 
-                        q1."BillingCity" AS "BillingCity", 
-                        q1."BillingState" AS "BillingState", 
-                        q1."BillingCountry" AS "BillingCountry", 
-                        q1."BillingPostalCode" AS "BillingPostalCode", 
-                        q1."Total" AS "Total", 
-                        q1.row_number AS row_number 
-                    FROM 
-                        (
-                            SELECT 
-                                "Invoice1"."InvoiceId" AS "InvoiceId", 
-                                "Invoice1"."CustomerId" AS "CustomerId", 
-                                "Invoice1"."InvoiceDate" AS "InvoiceDate", 
-                                "Invoice1"."BillingAddress" AS 
-                                    "BillingAddress", 
-                                "Invoice1"."BillingCity" AS "BillingCity", 
-                                "Invoice1"."BillingState" AS "BillingState", 
-                                "Invoice1"."BillingCountry" AS 
-                                    "BillingCountry", 
-                                "Invoice1"."BillingPostalCode" AS 
-                                    "BillingPostalCode", 
-                                "Invoice1"."Total" AS "Total", 
-                                row_number() OVER (
-                                    PARTITION BY 
-                                        "Invoice1"."CustomerId" 
-                                    ORDER BY 
-                                        "Invoice1"."InvoiceId" ASC
-                                ) AS row_number 
-                            FROM 
-                                "Invoice" AS "Invoice1"
-                        ) AS q1 
-                    WHERE 
-                        q1.row_number >= ? 
-                        AND 
-                        q1.row_number <= ?
-                ) AS "Invoice1" ON 
-                    "Invoice1"."CustomerId" = "Customer"."CustomerId" 
-            ORDER BY 
-                "Customer"."CustomerId" ASC
-            """
-        ).replace(" ", "").replace("\n", "")
-        result = str(query).replace(" ", "").replace("\n", "")
-        assert expected_query == result
-
-    @staticmethod
-    def test_composite_id_subquery_with_limit(db_session):
-        """Test a composite id subquery with a limit"""
-        query_builder = ModelResourceQueryBuilder()
-        query = db_session.query(CompositeNode)
-        subfilters = {
-            "children": SubfilterInfo(
-                filters={"node_id": 1},
-                offset=1,
-                limit=1
-            )
-        }
-        query = query_builder.apply_subquery_loads(
-            query=query,
-            resource=CompositeNodeResource(session=db_session),
-            subfilters=subfilters,
-            embeds=[],
-            dialect_override=True
-        )
-        expected_query = (
-            """
-            SELECT 
-                "CompositeNode"."NodeId" AS "CompositeNode_NodeId", 
-                "CompositeNode"."CompositeId" AS "CompositeNode_CompositeId", 
-                "CompositeNode1"."NodeId" AS "CompositeNode1_NodeId", 
-                "CompositeNode1"."CompositeId" AS "CompositeNode1_CompositeId" 
-            FROM 
-                "CompositeNode" 
-                LEFT OUTER JOIN 
-                "CompositeNodeToCompositeNode" AS 
-                        "CompositeNodeToCompositeNode_1" ON 
-                    "CompositeNodeToCompositeNode_1"."NodeId" = 
-                        "CompositeNode"."NodeId" 
-                    AND 
-                    "CompositeNodeToCompositeNode_1"."CompositeId" = 
-                        "CompositeNode"."CompositeId" 
-                LEFT OUTER JOIN 
-                    (
-                        SELECT 
-                            q1."NodeId" AS "NodeId", 
-                            q1."CompositeId" AS "CompositeId", 
-                            q1.row_number AS row_number 
-                        FROM 
-                        (
-                            SELECT 
-                                "CompositeNode1"."NodeId" AS "NodeId", 
-                                "CompositeNode1"."CompositeId" AS 
-                                    "CompositeId", 
-                                row_number() OVER (
-                                    PARTITION BY 
-                                        "CompositeNodeToCompositeNode".
-                                            "NodeId", 
-                                        "CompositeNodeToCompositeNode".
-                                            "CompositeId" 
-                                    ORDER BY 
-                                        "CompositeNode1"."NodeId" ASC, 
-                                        "CompositeNode1"."CompositeId" ASC
-                                ) AS row_number 
-                            FROM 
-                                "CompositeNode" AS "CompositeNode1" 
-                                JOIN 
-                                "CompositeNodeToCompositeNode" ON 
-                                    "CompositeNodeToCompositeNode".
-                                        "ChildNodeId" = 
-                                            "CompositeNode1"."NodeId" 
-                                    AND 
-                                    "CompositeNodeToCompositeNode".
-                                        "ChildCompositeId" = 
-                                            "CompositeNode1"."CompositeId"
-                            WHERE
-                                "CompositeNode1"."NodeId" = ?
-                        ) AS q1
-                        WHERE 
-                            q1.row_number >= ? 
-                            AND 
-                            q1.row_number <= ? 
-                    ) AS "CompositeNode1" ON 
-                        "CompositeNodeToCompositeNode_1"."ChildNodeId" = 
-                            "CompositeNode1"."NodeId" 
-                        AND 
-                        "CompositeNodeToCompositeNode_1"."ChildCompositeId" = 
-                            "CompositeNode1"."CompositeId" 
-            ORDER BY 
-                "CompositeNode"."NodeId" ASC, 
-                "CompositeNode"."CompositeId" ASC
             """
         ).replace(" ", "").replace("\n", "")
         result = str(query).replace(" ", "").replace("\n", "")
@@ -1155,26 +1615,30 @@ class TestDrowsyQueryBuilderSqlite(DrowsyDatabaseTests):
                 "CompositeOne"."OneId" AS "CompositeOne_OneId", 
                 "CompositeOne"."CompositeOneId" AS 
                     "CompositeOne_CompositeOneId", 
-                "CompositeMany1"."ManyId" AS "CompositeMany1_ManyId", 
-                "CompositeMany1"."OneId" AS "CompositeMany1_OneId", 
-                "CompositeMany1"."CompositeOneId" AS 
-                    "CompositeMany1_CompositeOneId" 
+                "CompositeMany1"."CompositeMany1_ManyId" AS 
+                    "CompositeMany1_CompositeMany1_ManyId", 
+                "CompositeMany1"."CompositeMany1_OneId" AS 
+                    "CompositeMany1_CompositeMany1_OneId", 
+                "CompositeMany1"."CompositeMany1_CompositeOneId" AS 
+                    "CompositeMany1_CompositeMany1_CompositeOneId" 
             FROM 
                 "CompositeOne" 
-                LEFT OUTER JOIN 
-                (
+                LEFT OUTER JOIN (
                     SELECT 
-                        q1."ManyId" AS "ManyId", 
-                        q1."OneId" AS "OneId", 
-                        q1."CompositeOneId" AS "CompositeOneId", 
+                        q1."CompositeMany1_ManyId" AS "CompositeMany1_ManyId", 
+                        q1."CompositeMany1_OneId" AS "CompositeMany1_OneId", 
+                        q1."CompositeMany1_CompositeOneId" AS 
+                            "CompositeMany1_CompositeOneId", 
                         q1.row_number AS row_number 
                     FROM 
                         (
                             SELECT 
-                                "CompositeMany1"."ManyId" AS "ManyId", 
-                                "CompositeMany1"."OneId" AS "OneId", 
+                                "CompositeMany1"."ManyId" AS 
+                                    "CompositeMany1_ManyId", 
+                                "CompositeMany1"."OneId" AS 
+                                    "CompositeMany1_OneId", 
                                 "CompositeMany1"."CompositeOneId" AS 
-                                    "CompositeOneId", 
+                                    "CompositeMany1_CompositeOneId", 
                                 row_number() OVER (
                                     PARTITION BY 
                                         "CompositeMany1"."OneId", 
@@ -1183,19 +1647,19 @@ class TestDrowsyQueryBuilderSqlite(DrowsyDatabaseTests):
                                         "CompositeMany1"."ManyId" ASC
                                 ) AS row_number 
                             FROM 
-                                "CompositeMany" AS "CompositeMany1"
-                            WHERE
+                                "CompositeMany" AS "CompositeMany1" 
+                            WHERE 
                                 "CompositeMany1"."ManyId" = ?
-                        ) AS q1
+                        ) AS q1 
                     WHERE 
                         q1.row_number >= ? 
-                        AND 
-                        q1.row_number <= ? 
+                        AND q1.row_number <= ?
                 ) AS "CompositeMany1" ON 
-                    "CompositeOne"."OneId" = "CompositeMany1"."OneId" 
+                    "CompositeOne"."OneId" = 
+                    "CompositeMany1"."CompositeMany1_OneId" 
                     AND 
                     "CompositeOne"."CompositeOneId" = 
-                        "CompositeMany1"."CompositeOneId" 
+                    "CompositeMany1"."CompositeMany1_CompositeOneId" 
             ORDER BY 
                 "CompositeOne"."OneId" ASC, 
                 "CompositeOne"."CompositeOneId" ASC
@@ -1241,6 +1705,33 @@ class TestDrowsyQueryBuilderSqlServer(DrowsyDatabaseTests):
                 if album.album_id == 2:
                     # subresource offset check
                     assert track.track_id == 16
+                assert track.track_id >= 5
+
+    @staticmethod
+    def test_simple_subfilter_limit_offset(db_session):
+        """Test offset and limit in a subresource."""
+        query_builder = ModelResourceQueryBuilder()
+        query = db_session.query(Album)
+        subfilters = {
+            "tracks": SubfilterInfo(
+                filters={"track_id": {"$gte": 5}},
+                offset=1,
+                limit=1
+            )
+        }
+        query = query_builder.apply_subquery_loads(
+            query=query,
+            resource=AlbumResource(session=db_session),
+            subfilters=subfilters,
+            embeds=[]
+        )
+        results = query.all()
+        # offset test
+        assert results[0].album_id == 1
+        assert results[0].tracks[0].track_id == 7
+        for album in results:
+            assert len(album.tracks) <= 1
+            for track in album.tracks:
                 assert track.track_id >= 5
 
     @staticmethod
@@ -1353,7 +1844,6 @@ class TestDrowsyQueryBuilderSqlServer(DrowsyDatabaseTests):
                 assert len(track.playlists) <= 5
                 for playlist in track.playlists:
                     assert playlist.playlist_id >= 6
-
 
     @staticmethod
     def test_many_to_many_subresource_limit(db_session):
