@@ -3,6 +3,7 @@ git+git://github.com/repole/mqlalchemy@dev#egg=MQLAlchemy
 inflection
 marshmallow>=3.4.0
 marshmallow-sqlalchemy>=0.22.1
+packaging
 pytest
 pytest-runner
 psycopg2
