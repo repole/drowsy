@@ -146,7 +146,8 @@ class InvoiceLine(Base):
     unit_price = Column("UnitPrice", Float, nullable=False)
     quantity = Column("Quantity", Integer, nullable=False)
 
-    invoice = orm.relationship('Invoice', backref="invoice_lines")
+    invoice = orm.relationship('Invoice', backref=backref(
+        "invoice_lines", cascade="all, delete-orphan"))
     track = orm.relationship('Track', backref=backref(
         "invoice_lines", cascade="all, delete-orphan"))
 

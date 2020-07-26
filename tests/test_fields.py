@@ -82,7 +82,6 @@ def test_field_nested_permissible_load_new():
 
 def test_field_nested_resource_provided(db_session):
     """Test providing a resource to a Relationship works."""
-    print("hi from nested_resource_provided")
     resource = AlbumResource(session=db_session)
     field = Relationship(nested=resource)
     assert field.resource == resource

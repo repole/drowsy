@@ -1,16 +1,23 @@
 language: python
+services:
+  - postgresql
+addons:
+  postgresql: "12"
+  apt:
+    packages:
+    - postgresql-12
+    - postgresql-client-12
+before_script:
+  - psql -c 'create database Drowsy;' -U postgres
 python:
   - "3.6"
   - "3.7"
   - "3.8"
   - "pypy3"
-# command to install dependencies
 install:
-  - pip install -r requirements.txt
-  - pip install pytest
+  - pip install -r requirements_test.txt
   - pip install coveralls
-# command to run tests
 script:
-  coverage run --source=drowsy -m pytest tests\ --db_types sqlite
+  coverage run --source=drowsy -m pytest tests\ --db_types sqlite,postgres
 after_success:
   coveralls

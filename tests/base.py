@@ -19,5 +19,5 @@ class DrowsyDatabaseTests(DrowsyTests):
 
     """Base class used for set up and tear down of drowsy tests."""
 
-    backends = ['sqlite', 'mssql']
+    backends = ['sqlite', 'mssql', 'postgres']
 

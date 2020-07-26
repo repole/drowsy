@@ -1094,7 +1094,7 @@ class TestDrowsyRouter(DrowsyDatabaseTests):
         """Test deleting a resource collection works."""
         query_params = {}
         router = ModelResourceRouter(session=db_session, context={})
-        result = router.delete("/tracks", query_params=query_params)
+        result = router.delete("/invoices", query_params=query_params)
         assert result is None
 
     @staticmethod

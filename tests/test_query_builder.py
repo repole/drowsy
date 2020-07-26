@@ -8,6 +8,7 @@
                 See AUTHORS for more details.
     :license: MIT - See LICENSE for more details.
 """
+import sqlite3
 from pytest import raises
 from sqlalchemy.inspection import inspect
 from drowsy.exc import BadRequestError
@@ -690,12 +691,86 @@ class TestDrowsyQueryBuilder(DrowsyDatabaseTests):
             )
         assert excinf.value.code == "invalid_subresource_multi_embed"
 
+    @staticmethod
+    def test_bad_subfilter_with_limit(db_session):
+        """Test bad subfilter using a limit fails."""
+        query_builder = ModelResourceQueryBuilder()
+        query = db_session.query(Album)
+        subfilters = {
+            "tracks": SubfilterInfo(
+                filters={"track_id": {"$bad": 5}},
+                limit=1
+            )
+        }
+        with raises(BadRequestError) as excinf:
+            query_builder.apply_subquery_loads(
+                query=query,
+                resource=AlbumResource(session=db_session),
+                subfilters=subfilters,
+                embeds=[],
+                dialect_override=True,
+                strict=True
+            )
+        assert excinf.value.code == "filters_field_op_error"
+
 
 class TestDrowsyQueryBuilderSqlite(DrowsyDatabaseTests):
 
     """Sqlite specific query builder tests."""
 
     backends = ['sqlite']
+
+    @staticmethod
+    def test_root_limit_with_subquery(db_session):
+        """Apply limit to root resource with subqueries & no row_num."""
+        query_builder = ModelResourceQueryBuilder()
+        query = db_session.query(Album)
+        subfilters = {
+            "tracks": SubfilterInfo(
+                filters={"track_id": 2}
+            )
+        }
+        query = query_builder.apply_subquery_loads(
+            query=query,
+            resource=AlbumResource(session=db_session),
+            subfilters=subfilters,
+            limit=1,
+            offset=1,
+            embeds=[],
+            dialect_override=False
+        )
+        result = query.all()
+        assert result is not None
+        assert len(result) == 1
+        assert result[0].album_id == 2
+        assert len(result[0].tracks) == 1
+        assert result[0].tracks[0].track_id == 2
+
+    @staticmethod
+    def test_root_composite_id_limit_with_subquery(db_session):
+        """Limit composite id root using subqueries without row_num."""
+        query_builder = ModelResourceQueryBuilder()
+        query = db_session.query(CompositeNode)
+        subfilters = {
+            "children": SubfilterInfo(
+                filters={"node_id": 6}
+            )
+        }
+        query = query_builder.apply_subquery_loads(
+            query=query,
+            resource=CompositeNodeResource(session=db_session),
+            subfilters=subfilters,
+            limit=1,
+            offset=0,
+            embeds=[],
+            dialect_override=False
+        )
+        result = query.all()
+        assert result is not None
+        assert len(result) == 1
+        assert result[0].node_id == 1
+        assert len(result[0].children) == 1
+        assert result[0].children[0].node_id == 6
 
     @staticmethod
     def test_root_and_nested_limit_offset(db_session):
@@ -1668,12 +1743,217 @@ class TestDrowsyQueryBuilderSqlite(DrowsyDatabaseTests):
         result = str(query).replace(" ", "").replace("\n", "")
         assert expected_query == result
 
+    @staticmethod
+    def test_self_ref_one_to_many_limit(db_session):
+        """Self referential one to many subquery with a limit"""
+        query_builder = ModelResourceQueryBuilder()
+        query = db_session.query(Employee)
+        subfilters = {
+            "subordinates": SubfilterInfo(
+                filters={"employee_id": {"$nin": [1, 2]}},
+                limit=1
+            )
+        }
+        query = query_builder.apply_subquery_loads(
+            query=query,
+            resource=EmployeeResource(session=db_session),
+            subfilters=subfilters,
+            embeds=[],
+            dialect_override=True
+        )
+        expected_query = (
+            """
+            SELECT 
+                "Employee"."EmployeeId" AS "Employee_EmployeeId", 
+                "Employee"."LastName" AS "Employee_LastName", 
+                "Employee"."FirstName" AS "Employee_FirstName", 
+                "Employee"."Title" AS "Employee_Title", 
+                "Employee"."ReportsTo" AS "Employee_ReportsTo", 
+                "Employee"."BirthDate" AS "Employee_BirthDate", 
+                "Employee"."HireDate" AS "Employee_HireDate", 
+                "Employee"."Address" AS "Employee_Address", 
+                "Employee"."City" AS "Employee_City", 
+                "Employee"."State" AS "Employee_State", 
+                "Employee"."Country" AS "Employee_Country", 
+                "Employee"."PostalCode" AS "Employee_PostalCode", 
+                "Employee"."Phone" AS "Employee_Phone", 
+                "Employee"."Fax" AS "Employee_Fax", 
+                "Employee"."Email" AS "Employee_Email", 
+                "Employee1"."Employee1_EmployeeId" AS 
+                    "Employee1_Employee1_EmployeeId", 
+                "Employee1"."Employee1_LastName" AS 
+                    "Employee1_Employee1_LastName", 
+                "Employee1"."Employee1_FirstName" AS 
+                    "Employee1_Employee1_FirstName", 
+                "Employee1"."Employee1_Title" AS "Employee1_Employee1_Title", 
+                "Employee1"."Employee1_ReportsTo" AS 
+                    "Employee1_Employee1_ReportsTo", 
+                "Employee1"."Employee1_BirthDate" AS 
+                    "Employee1_Employee1_BirthDate", 
+                "Employee1"."Employee1_HireDate" AS 
+                    "Employee1_Employee1_HireDate", 
+                "Employee1"."Employee1_Address" AS 
+                    "Employee1_Employee1_Address", 
+                "Employee1"."Employee1_City" AS "Employee1_Employee1_City", 
+                "Employee1"."Employee1_State" AS "Employee1_Employee1_State", 
+                "Employee1"."Employee1_Country" AS 
+                    "Employee1_Employee1_Country", 
+                "Employee1"."Employee1_PostalCode" AS 
+                    "Employee1_Employee1_PostalCode", 
+                "Employee1"."Employee1_Phone" AS "Employee1_Employee1_Phone", 
+                "Employee1"."Employee1_Fax" AS "Employee1_Employee1_Fax", 
+                "Employee1"."Employee1_Email" AS "Employee1_Employee1_Email" 
+            FROM 
+                "Employee" 
+                LEFT OUTER JOIN (
+                    SELECT 
+                        q1."Employee1_EmployeeId" AS "Employee1_EmployeeId", 
+                        q1."Employee1_LastName" AS "Employee1_LastName", 
+                        q1."Employee1_FirstName" AS "Employee1_FirstName", 
+                        q1."Employee1_Title" AS "Employee1_Title", 
+                        q1."Employee1_ReportsTo" AS "Employee1_ReportsTo", 
+                        q1."Employee1_BirthDate" AS "Employee1_BirthDate", 
+                        q1."Employee1_HireDate" AS "Employee1_HireDate", 
+                        q1."Employee1_Address" AS "Employee1_Address", 
+                        q1."Employee1_City" AS "Employee1_City", 
+                        q1."Employee1_State" AS "Employee1_State", 
+                        q1."Employee1_Country" AS "Employee1_Country", 
+                        q1."Employee1_PostalCode" AS "Employee1_PostalCode", 
+                        q1."Employee1_Phone" AS "Employee1_Phone", 
+                        q1."Employee1_Fax" AS "Employee1_Fax", 
+                        q1."Employee1_Email" AS "Employee1_Email", 
+                        q1.row_number AS row_number 
+                    FROM 
+                        (
+                            SELECT 
+                                "Employee1"."EmployeeId" AS 
+                                    "Employee1_EmployeeId", 
+                                "Employee1"."LastName" AS "Employee1_LastName", 
+                                "Employee1"."FirstName" AS 
+                                    "Employee1_FirstName", 
+                                "Employee1"."Title" AS "Employee1_Title", 
+                                "Employee1"."ReportsTo" AS 
+                                    "Employee1_ReportsTo", 
+                                "Employee1"."BirthDate" AS 
+                                    "Employee1_BirthDate", 
+                                "Employee1"."HireDate" AS "Employee1_HireDate", 
+                                "Employee1"."Address" AS "Employee1_Address", 
+                                "Employee1"."City" AS "Employee1_City", 
+                                "Employee1"."State" AS "Employee1_State", 
+                                "Employee1"."Country" AS "Employee1_Country", 
+                                "Employee1"."PostalCode" AS 
+                                    "Employee1_PostalCode", 
+                                "Employee1"."Phone" AS "Employee1_Phone", 
+                                "Employee1"."Fax" AS "Employee1_Fax", 
+                                "Employee1"."Email" AS "Employee1_Email", 
+                                row_number() OVER (
+                                    PARTITION BY "Employee1"."ReportsTo" 
+                                    ORDER BY 
+                                        "Employee1"."EmployeeId" ASC
+                                ) AS row_number 
+                            FROM 
+                                "Employee" AS "Employee1" 
+                            WHERE 
+                                "Employee1"."EmployeeId" NOT IN (?, ?)
+                        ) AS q1 
+                    WHERE 
+                        q1.row_number >= ? 
+                        AND q1.row_number <= ?
+                ) AS "Employee1" ON 
+                    "Employee"."EmployeeId" = "Employee1"."Employee1_ReportsTo" 
+            ORDER BY 
+                "Employee"."EmployeeId" ASC
+            """
+        ).replace(" ", "").replace("\n", "")
+        result = str(query).replace(" ", "").replace("\n", "")
+        assert expected_query == result
 
-class TestDrowsyQueryBuilderSqlServer(DrowsyDatabaseTests):
+    @staticmethod
+    def test_bad_subfilter_ignore_with_limit(db_session):
+        """Bad subfilter using a limit gets ignored when not strict."""
+        query_builder = ModelResourceQueryBuilder()
+        query = db_session.query(Album)
+        subfilters = {
+            "tracks": SubfilterInfo(
+                filters={"track_id": {"$bad": 5}},
+                limit=1
+            )
+        }
+        query = query_builder.apply_subquery_loads(
+            query=query,
+            resource=AlbumResource(session=db_session),
+            subfilters=subfilters,
+            embeds=[],
+            dialect_override=True,
+            strict=False
+        )
+        expected_query = (
+            """
+            SELECT 
+                "Album"."AlbumId" AS "Album_AlbumId", 
+                "Album"."Title" AS "Album_Title", 
+                "Album"."ArtistId" AS "Album_ArtistId", 
+                "Track1"."Track1_TrackId" AS "Track1_Track1_TrackId", 
+                "Track1"."Track1_Name" AS "Track1_Track1_Name", 
+                "Track1"."Track1_AlbumId" AS "Track1_Track1_AlbumId", 
+                "Track1"."Track1_MediaTypeId" AS "Track1_Track1_MediaTypeId", 
+                "Track1"."Track1_GenreId" AS "Track1_Track1_GenreId", 
+                "Track1"."Track1_Composer" AS "Track1_Track1_Composer", 
+                "Track1"."Track1_Milliseconds" AS "Track1_Track1_Milliseconds", 
+                "Track1"."Track1_Bytes" AS "Track1_Track1_Bytes", 
+                "Track1"."Track1_UnitPrice" AS "Track1_Track1_UnitPrice" 
+            FROM 
+                "Album" 
+                LEFT OUTER JOIN (
+                    SELECT 
+                        q1."Track1_TrackId" AS "Track1_TrackId", 
+                        q1."Track1_Name" AS "Track1_Name", 
+                        q1."Track1_AlbumId" AS "Track1_AlbumId", 
+                        q1."Track1_MediaTypeId" AS "Track1_MediaTypeId", 
+                        q1."Track1_GenreId" AS "Track1_GenreId", 
+                        q1."Track1_Composer" AS "Track1_Composer", 
+                        q1."Track1_Milliseconds" AS "Track1_Milliseconds", 
+                        q1."Track1_Bytes" AS "Track1_Bytes", 
+                        q1."Track1_UnitPrice" AS "Track1_UnitPrice", 
+                        q1.row_number AS row_number 
+                    FROM 
+                        (
+                            SELECT 
+                                "Track1"."TrackId" AS "Track1_TrackId", 
+                                "Track1"."Name" AS "Track1_Name", 
+                                "Track1"."AlbumId" AS "Track1_AlbumId", 
+                                "Track1"."MediaTypeId" AS "Track1_MediaTypeId", 
+                                "Track1"."GenreId" AS "Track1_GenreId", 
+                                "Track1"."Composer" AS "Track1_Composer", 
+                                "Track1"."Milliseconds" AS 
+                                    "Track1_Milliseconds", 
+                                "Track1"."Bytes" AS "Track1_Bytes", 
+                                "Track1"."UnitPrice" AS "Track1_UnitPrice", 
+                                row_number() OVER (
+                                    PARTITION BY "Track1"."AlbumId" 
+                                    ORDER BY 
+                                        "Track1"."TrackId" ASC
+                                ) AS row_number 
+                            FROM 
+                                "Track" AS "Track1"
+                        ) AS q1 
+                    WHERE 
+                        q1.row_number >= ? 
+                        AND q1.row_number <= ?
+                ) AS "Track1" ON "Album"."AlbumId" = "Track1"."Track1_AlbumId" 
+            ORDER BY 
+                "Album"."AlbumId" ASC
+            """
+        ).replace(" ", "").replace("\n", "")
+        result = str(query).replace(" ", "").replace("\n", "")
+        assert expected_query == result
 
-    """Sqlite specific query builder tests."""
 
-    backends = ['mssql']
+class TestDrowsyQueryBuilderRowNumSupport(DrowsyDatabaseTests):
+
+    """Query builder tests for dialects supporting row_number."""
+
+    backends = ['mssql', 'postgres']
 
     @staticmethod
     def test_root_and_nested_limit_offset(db_session):
@@ -1878,3 +2158,50 @@ class TestDrowsyQueryBuilderSqlServer(DrowsyDatabaseTests):
                 assert len(track.playlists) <= 4
                 for pl in track.playlists:
                     assert pl.playlist_id <= 6
+
+    @staticmethod
+    def test_self_ref_one_to_many_limit(db_session):
+        """Self referential one to many subquery with a limit"""
+        query_builder = ModelResourceQueryBuilder()
+        query = db_session.query(Employee)
+        subfilters = {
+            "subordinates": SubfilterInfo(
+                filters={"employee_id": {"$nin": [1, 2]}},
+                limit=1
+            )
+        }
+        query = query_builder.apply_subquery_loads(
+            query=query,
+            resource=EmployeeResource(session=db_session),
+            subfilters=subfilters,
+            embeds=[]
+        )
+        results = query.all()
+        assert len(results) == 8
+        for manager in results:
+            assert len(manager.subordinates) <= 1
+            for subordinate in manager.subordinates:
+                assert subordinate.employee_id not in [1, 2]
+
+    @staticmethod
+    def test_bad_subfilter_ignore_with_limit(db_session):
+        """Bad subfilter using a limit gets ignored when not strict."""
+        query_builder = ModelResourceQueryBuilder()
+        query = db_session.query(Album)
+        subfilters = {
+            "tracks": SubfilterInfo(
+                filters={"track_id": {"$bad": 5}},
+                limit=1
+            )
+        }
+        query = query_builder.apply_subquery_loads(
+            query=query,
+            resource=AlbumResource(session=db_session),
+            subfilters=subfilters,
+            embeds=[],
+            strict=False
+        )
+        results = query.all()
+        assert len(results) > 0
+        for album in results:
+            assert len(album.tracks) <= 1

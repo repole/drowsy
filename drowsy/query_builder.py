@@ -9,6 +9,7 @@
 #             See AUTHORS for more details.
 # :license: MIT - See LICENSE for more details.
 from collections import defaultdict
+import sqlite3
 from drowsy.fields import NestedRelated
 from drowsy.log import Loggable
 from drowsy.parser import SortInfo, SubfilterInfo
@@ -27,19 +28,25 @@ class QueryBuilder(Loggable):
 
     """Utility class for building a SQLAlchemy query."""
 
-    def row_number_supported(self, dialect, dialect_override=False):
+    def row_number_supported(self, dialect, dialect_override=None):
         """Given a SQL dialect, figure out if row_number is supported.
 
         :param str dialect: SQL dialect being used, e.g. ``"mssql"``.
         :param bool dialect_override: Can be used to force this method
-            to return ``True``.
+            to return ``True`` or ``False``.
         :return: ``True`` if the dialect supports ``row_number`` or if
-            ``dialect_override`` is ``True``.
+            ``dialect_override`` is ``True``. Otherwise ``False``.
         :rtype: bool
 
         """
-        supported_dialects = ["mssql", "postgresql", "oracle"]
-        return dialect_override or dialect.lower() in supported_dialects
+        if dialect_override is not None:
+            return dialect_override
+        supported_dialects = ["mssql", "postgresql", "oracle", "mysql",
+                              "mariadb"]
+        sqlite_ver = sqlite3.sqlite_version_info
+        if sqlite_ver[0] > 3 or (sqlite_ver[0] == 3 and sqlite_ver[1] >= 25):
+            supported_dialects.append("sqlite")  # pragma: no cover
+        return dialect.lower() in supported_dialects
 
     def _get_order_bys(self, record_class, sorts, convert_key_names_func):
         """Helper method for applying sorts.
@@ -258,7 +265,7 @@ class ModelResourceQueryBuilder(QueryBuilder):
 
     def build(self, query, resource, filters, subfilters, embeds=None,
               offset=None, limit=None, sorts=None, strict=True,
-              stack_size_limit=100, dialect_override=False):
+              stack_size_limit=100, dialect_override=None):
         """Build a complex query using user supplied parameters.
 
         :param query: A SQLAlchemy query.
@@ -286,8 +293,10 @@ class ModelResourceQueryBuilder(QueryBuilder):
         :param stack_size_limit: Used to limit the allowable complexity
             of the applied filters.
         :type stack_size_limit: int or None
-        :param bool dialect_override: ``True`` will override any
-            SQL dialect limitations. Mainly used for testing.
+        :param bool|None dialect_override: ``True`` will build query
+            with row_number support regardless of any db limitations.
+            If ``False``, will avoid using row_number even if the
+            database supports it. Mainly used for testing.
         :return: query with joins, load options, and subresource
             filters applied as appropriate.
         :raise BadRequestError: Uses the provided resource to raise
@@ -334,7 +343,8 @@ class ModelResourceQueryBuilder(QueryBuilder):
             if not sorts and offset is not None:
                 sorts = []
                 for key in resource.schema.id_keys:
-                    sorts.append(SortInfo(attr=key))
+                    attr = resource.schema.fields.get(key).data_key or key
+                    sorts.append(SortInfo(attr=attr))
             if sorts:
                 for sort in sorts:
                     if not isinstance(sort, SortInfo):
@@ -532,10 +542,11 @@ class ModelResourceQueryBuilder(QueryBuilder):
                 right_table = expression.right.table
                 child_table = inspect(child).mapper.local_table
                 if left_table == child_table and right_table == child_table:
-                    if expression.left in remote_side:
-                        child_side = expression.left
-                    else:
+                    # Self referential one to many...
+                    if expression.right in remote_side:
                         child_side = expression.right
+                    else:
+                        child_side = expression.left  # pragma: no cover
                 elif left_table == child_table:
                     child_side = expression.left
                 elif right_table == child_table:
@@ -725,7 +736,7 @@ class ModelResourceQueryBuilder(QueryBuilder):
     def apply_subquery_loads(self, query, resource, subfilters, embeds=None,
                              offset=None, limit=None, sorts=None,
                              strict=True, stack_size_limit=100,
-                             dialect_override=False):
+                             dialect_override=None):
         """Apply joins, load options, and subfilters to a query.
 
         :param query: A SQLAlchemy query.
@@ -750,8 +761,10 @@ class ModelResourceQueryBuilder(QueryBuilder):
         :param stack_size_limit: Used to limit the allowable complexity
             of the applied filters.
         :type stack_size_limit: int or None
-        :param bool dialect_override: ``True`` will override any
-            SQL dialect limitations. Mainly used for testing.
+        :param bool|None dialect_override: ``True`` will build query
+            with row_number support regardless of any db limitations.
+            If ``False``, will avoid using row_number even if the
+            database supports it. Mainly used for testing.
         :return: query with joins, load options, and subresource
             filters applied as appropriate.
         :rtype: :class:`~sqlalchemy.orm.query.Query`
@@ -822,7 +835,8 @@ class ModelResourceQueryBuilder(QueryBuilder):
                         # Need to add this node to last_node children
                         resource_model = schema.opts.model
                         model_count[resource_model] += 1
-                        # TODO - embedded_page_max_size for resources too?
+                        # NOTE - embedded_page_max_size for resources?
+                        # No real clean way to limit embedded count
                         if dialect_supported:
                             default_limit = resource.page_max_size
                         else:
@@ -951,7 +965,7 @@ class ModelResourceQueryBuilder(QueryBuilder):
                                         resource.convert_key_name
                                     )
                                 else:
-                                    # Otherwise use primary key(s)/schema ids
+                                    # Otherwise use pk(s)/schema ids
                                     order_by = []
                                     attr_names = schema.id_keys
                                     for attr_name in attr_names:
@@ -981,30 +995,28 @@ class ModelResourceQueryBuilder(QueryBuilder):
                                         last_node.alias,
                                         queryable,
                                         row_num_ent)
+                                nested_conditions = (
+                                    resource.get_required_nested_filters)
+                                q1 = resource.apply_required_filters(
+                                    q1, alias=last_node.alias)
                                 try:
-                                    nested_conditions = (
-                                        resource.get_required_nested_filters)
-                                    q1 = resource.apply_required_filters(
-                                        q1, alias=last_node.alias)
                                     q1 = self.apply_filters(
-                                            query=q1,
-                                            model_class=last_node.alias,
-                                            whitelist=resource.whitelist,
-                                            nested_conditions=(
-                                                nested_conditions),
-                                            filters=user_supplied_filters,
-                                            convert_key_names_func=(
-                                                resource.convert_key_name),
-                                            stack_size_limit=stack_size_limit
-                                        )
+                                        query=q1,
+                                        model_class=last_node.alias,
+                                        whitelist=resource.whitelist,
+                                        nested_conditions=nested_conditions,
+                                        filters=user_supplied_filters,
+                                        convert_key_names_func=(
+                                            resource.convert_key_name),
+                                        stack_size_limit=stack_size_limit
+                                    )
                                 except InvalidMqlException as exc:
-                                    if not strict:
-                                        failed = True
-                                        continue
-                                    self._handle_filter_errors(
-                                        resource=resource,
-                                        exc=exc,
-                                        subfilter_key=subfilter_key)
+                                    if strict:
+                                        # Otherwise bad filters ignored
+                                        self._handle_filter_errors(
+                                            resource=resource,
+                                            exc=exc,
+                                            subfilter_key=subfilter_key)
                                 q1 = q1.subquery("q1", with_labels=True)
                                 # limit and offset handling
                                 start = 1
@@ -1021,21 +1033,22 @@ class ModelResourceQueryBuilder(QueryBuilder):
                                     )
                                 last_node.subquery = subquery.subquery(
                                     inspect(last_node.alias).name)
-                                chld = last_node.subquery
-                                if chld is None:
-                                    chld = last_node.alias
-                                prnt = last_node.parent.subquery
-                                if prnt is None:
-                                    prnt = last_node.parent.alias
+                                child = last_node.subquery
+                                parent = last_node.parent.subquery
+                                if parent is None:
+                                    # root node won't have a subquery
+                                    parent = last_node.parent.alias
                                 if queryable is not None:
-                                    relationship = getattr(last_node.parent.alias,
-                                                           last_node.name)
-                                    last_node.join = self._get_many_to_many_join(
-                                        child=chld,
-                                        parent=prnt,
-                                        relationship=relationship,
-                                        assoc_queryable=queryable
-                                    )
+                                    relationship = getattr(
+                                        last_node.parent.alias,
+                                        last_node.name)
+                                    last_node.join = (
+                                        self._get_many_to_many_join(
+                                            child=child,
+                                            parent=parent,
+                                            relationship=relationship,
+                                            assoc_queryable=queryable
+                                        ))
                         else:
                             try:
                                 nested_conditions = (
@@ -1114,6 +1127,8 @@ class ModelResourceQueryBuilder(QueryBuilder):
                 if node.join:
                     query = query.outerjoin(node.subquery, and_(*node.join))
                 else:
+                    # Default joins used when no limit/offset used for
+                    # subquery
                     query = query.outerjoin(secondary, primaryjoin)
                     query = query.outerjoin(node.subquery, secondaryjoin)
             else:

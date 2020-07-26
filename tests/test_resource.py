@@ -20,11 +20,11 @@ from drowsy.schema import NestedOpts
 from tests.base import DrowsyDatabaseTests
 from tests.models import Album, Artist, Playlist, Track
 from tests.resources import (
-    AlbumResource, AlbumCamelResource, CustomerResource, EmployeeResource,
-    InvoiceResource, InvoiceCamelResource, PlaylistResource, TrackResource)
+    AlbumResource, AlbumCamelResource, ArtistResource, CustomerResource,
+    EmployeeResource, InvoiceResource, InvoiceCamelResource, PlaylistResource,
+    TrackResource)
 from pytest import raises
 from unittest.mock import MagicMock
-import sqlalchemy as sa
 from sqlalchemy.orm.session import Session
 
 
@@ -1025,6 +1025,20 @@ class TestDrowsyResource(DrowsyDatabaseTests):
             filters=filters
         )
         assert len(result) == 0
+
+    @staticmethod
+    def test_get_required_nested_filters_empty_string(db_session):
+        """Empty input to `get_required_nested_filters` returns None."""
+        resource = AlbumResource(session=db_session)
+        assert resource.get_required_nested_filters("") is None
+
+    @staticmethod
+    def test_get_required_nested_filters_multilevel(db_session):
+        """Ensure multiple levels of nested filters work."""
+        resource = ArtistResource(
+            session=db_session,
+            context={"user": "limited_single_filter"})
+        assert resource.get_required_nested_filters("albums.tracks") is not None
 
     # POST TESTS
 

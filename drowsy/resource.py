@@ -543,6 +543,7 @@ class BaseModelResource(BaseResourceABC):
 
         """
         schema = self.schema_cls(**self._get_schema_kwargs(self.schema_cls))
+        resource = self
         split_keys = key.split(".")
         if len(split_keys) == 1 and split_keys[0] == "":
             return None
@@ -554,29 +555,28 @@ class BaseModelResource(BaseResourceABC):
                     schema.embed([key])
                 if isinstance(field, NestedPermissibleABC):
                     with suppress(ValueError, TypeError):
-                        subresource = self.make_subresource(
+                        resource = resource.make_subresource(
                             field.data_key or key)
                         if not split_keys:
-                            if hasattr(subresource,
+                            if hasattr(resource,
                                        "get_required_filters") and callable(
-                                subresource.get_required_filters
+                                resource.get_required_filters
                             ):
-                                return subresource.get_required_filters()
+                                return resource.get_required_filters()
                             # Subresource doesn't use required filtering
-                            return None
+                            return None  # pragma: no cover
                         # not the final resource, continue traversing
-                        schema = subresource.schema
+                        schema = resource.schema
                         continue
                     # attempting to use the subresource didn't work
                     # Note - We have the following options:
                     # 1. Error out
                     # 2. Fail quietly and return None
-                    return None
+                    return None  # pragma: no cover
                 else:
                     # Note - Could be an error
                     # Defaulting to failing quietly
-                    return None
-        return None  # pragma no cover
+                    return None  # pragma: no cover
 
     def apply_required_filters(self, query, alias=None):
         """Apply required filters on this query.

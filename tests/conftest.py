@@ -31,7 +31,7 @@ def pytest_generate_tests(metafunc):
     :return: None
 
     """
-    all_db_types = ["sqlite", "mssql"]
+    all_db_types = ["sqlite", "mssql", "postgres"]
     db_types = metafunc.config.getoption("db_types")
     db_types = db_types.lower().replace(" ", "").split(",")
     if metafunc.cls:
@@ -63,11 +63,23 @@ def _db(request):
     :rtype: :class:`~sa.engine.Engine`
 
     """
-    engine = None
-    if request.param == 'mssql':
-        connect_string = ("mssql+pyodbc://@localhost/Drowsy?"
-                          "trusted_connection=yes&"
-                          "driver=ODBC+Driver+17+for+SQL+Server")
+    server_types = ["mssql", "postgres"]
+    if request.param in server_types:
+        if request.param == 'mssql':
+            connect_string = ("mssql+pyodbc://@localhost/Drowsy?"
+                              "trusted_connection=yes&"
+                              "driver=ODBC+Driver+17+for+SQL+Server")
+            sqlstr_path = os.path.join(
+                os.path.dirname(os.path.abspath(__file__)),
+                "chinook_sqlserver.sql")
+        elif request.param == 'postgres':
+            connect_string = (
+                "postgresql+psycopg2://postgres:@localhost/Drowsy")
+            sqlstr_path = os.path.join(
+                os.path.dirname(os.path.abspath(__file__)),
+                "chinook_postgres.sql")
+        else:
+            raise ValueError("Database type tests not implemented.")
         engine = sa.create_engine(connect_string)
         tables = engine.execute(
             "SELECT Table_Name FROM INFORMATION_SCHEMA.TABLES "
@@ -78,9 +90,6 @@ def _db(request):
                 tables_exist = True
                 break
         if not tables_exist:
-            sqlstr_path = os.path.join(
-                os.path.dirname(os.path.abspath(__file__)),
-                "chinook_sqlserver.sql")
             with open(sqlstr_path, 'r', encoding='utf-8-sig') as sqlstr_file:
                 sqlstr = sqlstr_file.read()
             with engine.begin() as conn:
@@ -199,6 +208,7 @@ def _engine(request, _transaction):
     # Force the engine object to use the current connection and transaction
     engine.begin = begin
     engine.execute = connection.execute
+    engine.name = connection.dialect.name
 
     # Enforce nested transactions for raw DBAPI connections
     def raw_connection():
