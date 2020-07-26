@@ -7,6 +7,9 @@ addons:
     packages:
     - postgresql-12
     - postgresql-client-12
+before_install:
+  - sudo apt-get update
+  - sudo apt-get -y install unixodbc-dev
 before_script:
   - psql -c 'create database Drowsy;' -U postgres
 python:
