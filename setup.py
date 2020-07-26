@@ -9,8 +9,9 @@ with open('drowsy/__init__.py', 'rb') as f:
 
 with open("requirements.txt") as f:
     requirements = f.read().splitlines()
-test_requirements = requirements + ["pytest", "coverage"]
-setup_requirements = test_requirements + ["pytest-runner"]
+with open("requirements_test.txt") as f:
+    test_requirements = f.read().splitlines()
+setup_requirements = test_requirements
 
 setup(
     name='Drowsy',

@@ -1,0 +1,9 @@
+SQLAlchemy>=1.0
+MQLAlchemy>=0.3
+inflection
+marshmallow>=3.4.0
+marshmallow-sqlalchemy>=0.22.1
+pytest
+pytest-runner
+pyodbc
+psycopg2
