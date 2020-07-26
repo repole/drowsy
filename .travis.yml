@@ -12,6 +12,7 @@ before_install:
   - sudo apt-get -y install unixodbc-dev
 before_script:
   - psql -c 'create database Drowsy;' -U postgres
+  - psql -c "ALTER USER postgres WITH PASSWORD 'drowsy';" -U postgres
 python:
   - "3.6"
   - "3.7"

@@ -74,7 +74,7 @@ def _db(request):
                 "chinook_sqlserver.sql")
         elif request.param == 'postgres':
             connect_string = (
-                "postgresql+psycopg2://postgres:@localhost/Drowsy")
+                "postgresql+psycopg2://postgres:drowsy@localhost/Drowsy")
             sqlstr_path = os.path.join(
                 os.path.dirname(os.path.abspath(__file__)),
                 "chinook_postgres.sql")
