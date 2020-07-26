@@ -15,7 +15,7 @@ def pytest_addoption(parser):
 
     """
     parser.addoption(
-        "--db_types", action="store", default="all",
+        "--db_types", action="store", default="sqlite",
         help="List of comma separated database types: all, sqlite, or mssql"
     )
 
@@ -66,7 +66,7 @@ def _db(request):
     server_types = ["mssql", "postgres"]
     if request.param in server_types:
         if request.param == 'mssql':
-            connect_string = ("mssql+pyodbc://@localhost/Drowsy?"
+            connect_string = ("mssql+pypyodbc://@localhost/Drowsy?"
                               "trusted_connection=yes&"
                               "driver=ODBC+Driver+17+for+SQL+Server")
             sqlstr_path = os.path.join(

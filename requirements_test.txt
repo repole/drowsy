@@ -5,5 +5,4 @@ marshmallow>=3.4.0
 marshmallow-sqlalchemy>=0.22.1
 pytest
 pytest-runner
-pyodbc
 psycopg2
