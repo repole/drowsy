@@ -7,6 +7,9 @@ addons:
     packages:
     - postgresql-12
     - postgresql-client-12
+env:
+  global:
+  - PGPORT=5433
 before_install:
   - sudo apt-get update
   - sudo apt-get -y install unixodbc-dev
