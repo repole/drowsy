@@ -13,15 +13,18 @@ before_install:
 before_script:
   - psql -c 'create database "Drowsy";' -U postgres
   - psql -c "ALTER USER postgres WITH PASSWORD 'drowsy';" -U postgres
-python:
-  - "3.6"
-  - "3.7"
-  - "3.8"
-  - "pypy3"
 install:
   - pip install -r requirements_test.txt
   - pip install coveralls
-script:
-  coverage run --source=drowsy -m pytest tests/ --db_types sqlite,postgres
 after_success:
   coveralls
+jobs:
+  include:
+    - python: "3.6"
+      script: coverage run --source=drowsy -m pytest tests/ --db_types sqlite,postgres
+    - python: "3.7"
+      script: coverage run --source=drowsy -m pytest tests/ --db_types sqlite,postgres
+    - python: "3.8"
+      script: coverage run --source=drowsy -m pytest tests/ --db_types sqlite,postgres
+    - python: "pypy3"
+      script: coverage run --source=drowsy -m pytest tests/ --db_types sqlite
