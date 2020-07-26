@@ -296,13 +296,13 @@ class TestDrowsyQueryBuilder(DrowsyDatabaseTests):
                 resource=AlbumResource(
                     session=db_session),
                 subfilters=subfilters,
-                sorts=[SortInfo(attr="title")],
+                sorts=[SortInfo(attr="album_id", direction="DESC")],
                 embeds=[],
                 dialect_override=True,
                 strict=False
             )
         result = query.first()
-        assert result.title == "...And Justice For All"
+        assert result.album_id == 347
 
     @staticmethod
     def test_subfilter_invalid_offset_fail(db_session):
