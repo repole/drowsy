@@ -6,4 +6,4 @@ marshmallow-sqlalchemy>=0.22.1
 packaging
 pytest
 pytest-runner
-psycopg2
+psycopg2-binary
