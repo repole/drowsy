@@ -16,7 +16,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy import inspect
 from drowsy import resource_class_registry
 from drowsy.base import BaseResourceABC
-from drowsy.compat import suppress
+from contextlib import suppress
 from drowsy.exc import (
     BadRequestError, PermissionValidationError, PermissionDeniedError)
 from drowsy.fields import (

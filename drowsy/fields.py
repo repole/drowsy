@@ -4,10 +4,10 @@
 
     Marshmallow fields used in resource schemas.
 
-    :copyright: (c) 2016-2020 by Nicholas Repole and contributors.
-                See AUTHORS for more details.
-    :license: MIT - See LICENSE for more details.
 """
+# :copyright: (c) 2016-2020 by Nicholas Repole and contributors.
+#             See AUTHORS for more details.
+# :license: MIT - See LICENSE for more details.
 from marshmallow.fields import Field, missing_
 from marshmallow.utils import EXCLUDE, get_value
 from marshmallow_sqlalchemy.fields import Related, ensure_list

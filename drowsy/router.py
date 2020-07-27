@@ -4,9 +4,6 @@
 
     Tools for automatically routing API url paths to resources.
 
-    Work in progress, should not be used as anything other than
-    a proof of concept at this point.
-
 """
 # :copyright: (c) 2016-2020 by Nicholas Repole and contributors.
 #             See AUTHORS for more details.

@@ -4,10 +4,10 @@
 
     Tools for class level logging.
 
-    :copyright: (c) 2016-2020 by Nicholas Repole and contributors.
-                See AUTHORS for more details.
-    :license: MIT - See LICENSE for more details.
 """
+# :copyright: (c) 2016-2020 by Nicholas Repole and contributors.
+#             See AUTHORS for more details.
+# :license: MIT - See LICENSE for more details.
 import logging
 
 _logged_classes = set()

@@ -4,10 +4,10 @@
 
     Classes for building permissions into an API.
 
-    :copyright: (c) 2016-2020 by Nicholas Repole and contributors.
-                See AUTHORS for more details.
-    :license: MIT - See LICENSE for more details.
 """
+# :copyright: (c) 2016-2020 by Nicholas Repole and contributors.
+#             See AUTHORS for more details.
+# :license: MIT - See LICENSE for more details.
 from drowsy.log import Loggable
 
 

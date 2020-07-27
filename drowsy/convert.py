@@ -4,10 +4,10 @@
 
     Convert SQLAlchemy models into Marshmallow schemas.
 
-    :copyright: (c) 2016-2020 by Nicholas Repole and contributors.
-                See AUTHORS for more details.
-    :license: MIT - See LICENSE for more details.
 """
+# :copyright: (c) 2016-2020 by Nicholas Repole and contributors.
+#             See AUTHORS for more details.
+# :license: MIT - See LICENSE for more details.
 from inflection import camelize, underscore, pluralize
 from marshmallow_sqlalchemy.convert import ModelConverter
 from drowsy.fields import APIUrl, Relationship
