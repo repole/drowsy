@@ -1,5 +1,4 @@
 .. _querying:
-.. module:: drowsy
 
 Querying
 ========
@@ -369,8 +368,8 @@ Paginate any end point (limit can be used to set page size):
 Convert Fields to camelCase
 ---------------------------
 
-Schemas can easily be defined to serialize and deserialize using camelCase
-field names to be more JavaScript friendly.
+Schemas can easily be defined to serialize and deserialize using lower
+camelCase field names to be more JavaScript convention friendly.
 
 .. code:: python
 
@@ -394,3 +393,24 @@ field names to be more JavaScript friendly.
         "title": "Balls to the Wall",
         "tracks": "/albums/2/tracks"
     }
+
+Note that the ``album_id`` field here has been converted to ``albumId``.
+
+
+Limitations
+-----------
+
+Given that we're dependent on SQLAlchemy's ORM, there are a few
+limitations to the results that we receive from the API.
+
+1. Attempting to embed (or subfilter) the same relationship multiple times
+   in the same query will result in an error. This is something intended to
+   be worked around in the future, but given the way SQLAlchemy's
+   `contains_eager` relationship loading technique works, it'll require a
+   significant change to how Drowsy handles embedding.
+
+2. The MQLAlchemy parser is an iterative process, and has a default limit
+   on how complex of a query it will attempt to parse (intended to prevent
+   malicious attempts to overload a server). If you find that you're hitting
+   this limitation in a real world use case, let us know by filing an issue
+   on GitHub.

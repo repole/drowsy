@@ -6,17 +6,17 @@ API Reference
 
 .. module:: drowsy
 
-Resource
-========
+Schemas
+=======
 
-.. automodule:: drowsy.resource
+.. automodule:: drowsy.schema
     :members:
 
 
-Schema
-======
+Resources
+=========
 
-.. automodule:: drowsy.schema
+.. automodule:: drowsy.resource
     :members:
 
 
@@ -27,6 +27,20 @@ Model Converters
     :members:
 
 
+Param Parsers
+=============
+
+.. automodule:: drowsy.parser
+    :members:
+
+
+Query Builders
+==============
+
+.. automodule:: drowsy.query_builder
+    :members:
+
+
 Fields
 ======
 
@@ -34,24 +48,17 @@ Fields
     :members:
 
 
-Param Parsing
-=============
-
-.. automodule:: drowsy.parser
-    :members:
-
-
-Query Builder
-=============
-
-.. automodule:: drowsy.query_builder
-    :members:
-
-
-Automatic Routing
-=================
+Routers
+=======
 
 .. automodule:: drowsy.router
+    :members:
+
+
+Permissions
+===========
+
+.. automodule:: drowsy.permissions
     :members:
 
 
@@ -59,4 +66,18 @@ Resource Class Registry
 =======================
 
 .. automodule:: drowsy.resource_class_registry
+    :members:
+
+
+Utilities
+=========
+
+.. automodule:: drowsy.utils
+    :members:
+
+
+Exceptions
+==========
+
+.. automodule:: drowsy.exc
     :members:
