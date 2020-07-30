@@ -1,7 +1,7 @@
 .. _permissions:
 
-Permissions and Authorization
-=============================
+Permissions Handling
+====================
 
 Given the wide scope of Drowsy, particularly with nested resources, the concept
 of permissions and authorization can feel like a daunting one to dive into. The
@@ -13,13 +13,14 @@ to be as approach agnostic as possible, while still providing the basic tools
 and entry points needed to implement permissions successfully.
 
 
+
 Reading
 -------
 
-Controlling what different users can see happens at the Resource level. All
-classes that inherit from :class:`~drowsy.resource.BaseModelResource` have a
-method :meth:`~drowsy.resource.BaseModelResource.apply_required_filters` which
-can usefully be overriden.
+Fine grained control of what  different users can see happens at the Resource
+level. Classes that inherit from :class:`~drowsy.resource.BaseModelResource`
+include :meth:`~drowsy.resource.BaseModelResource.apply_required_filters`
+which can usefully be overriden.
 
 As an example, imagine you have a ``NotificationResource`` class, and would
 like users to only be able to see their own notifications. To accomplish this,
@@ -50,14 +51,29 @@ resources, so if you were to have a ``UserResource`` with a nested
 ``NotificationResource`` embedded, the above filters are still applied to the
 nested collection of notifications.
 
+An alternative, more conservative option exists, in overriding
+:meth:`~drowsy.resource.BaseModelResource._check_method_allowed` on a Resource.
+This method is called at the beginning of each request and has access to any
+context the Resource was initialized with (e.g. which user is logged in), and
+thus can be used to explicitly deny access to a certain method type (e.g.
+denying a user access to GET or DELETE actions).
+
+In such cases there's no fine grained control involved, the user is denied
+a particular type of access to all objects in the collection.
+
 
 Create, Update, and Delete
 --------------------------
 
-All create, update, and delete permissions are handled at the schema level.
-This allows validation to occur on an instance by instance basis as data is
-being prepared for deserialization. In order to implement permissions, you
-can override the :meth:`~drowsy.schema.ResourceSchema.check_permission` method:
+Like read permissions, mutation permissions have the option of overriding
+:meth:`~drowsy.resource.BaseModelResource._check_method_allowed` to completely
+restrict access.
+
+More fine grained mutation control is handled at the schema level rather than
+at the resource level. This allows validation to occur on an instance by
+instance basis as data is being prepared for deserialization. In order to
+implement permissions, you can override the
+:meth:`~drowsy.schema.ResourceSchema.check_permission` method:
 
 
 .. code:: python

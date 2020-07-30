@@ -1,4 +1,3 @@
-.. module:: drowsy
 .. include:: ../README.rst
 
 
@@ -10,7 +9,6 @@ Getting Started
 
    installation
    quickstart
-   permissions
 
 
 Using the REST API
@@ -20,8 +18,8 @@ Using the REST API
    :maxdepth: 2
 
    querying
-   creating_updating
-   deleting
+   mutations
+   permissions
 
 
 API Reference
