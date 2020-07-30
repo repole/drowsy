@@ -59,7 +59,7 @@ a few models here:
         name = Column("Name", Unicode(120)
 
 A complete set of example model definitions can be seen in
-`models.py <../examples/chinook_api/models.py>`_.
+`models.py <_modules/examples/chinook_api/models.html>`_.
 
 
 Defining Schemas
@@ -110,8 +110,8 @@ and are very permissive. Also note that you can always explicitly define schema
 fields individually as you would in any other Marshmallow schema, if using
 one of the converters feels too much like magic for your taste.
 
-A complete set of example schema definitions can be seen in
-`schemas.py <../examples/chinook_api/schemas.py>`_.
+A complete set of example resource definitions can be seen in
+`schemas.py <_modules/examples/chinook_api/schemas.html>`_.
 
 
 Defining Resources
@@ -138,7 +138,7 @@ nested resource embedding in API query results.
 
 
 A complete set of example resource definitions can be seen in
-`resources.py <../examples/chinook_api/resources.py>`_.
+`resources.py <_modules/examples/chinook_api/resources.html>`_.
 
 
 Routing
@@ -158,18 +158,18 @@ parse out user supplied filters, embeds, and more from query parameters.
 
     import os
     import json
-    from flask import Flask
-    from flask import request, Response
+    from flask import Flask, g, request, Response
     from sqlalchemy import create_engine
-    from sqlalchemy.orm import sessionmaker
+    from sqlalchemy.exc import SQLAlchemyError
+    from sqlalchemy.orm import sessionmaker, scoped_session
     from drowsy.exc import (
         UnprocessableEntityError, BadRequestError, MethodNotAllowedError,
         ResourceNotFoundError
     )
     from drowsy.router import ModelResourceRouter
-    from chinook_api.models import *
-    from chinook_api.schemas import *
-    from chinook_api.resources import *
+    from .models import *
+    from .schemas import *
+    from .resources import *
 
 
     app = Flask(__name__)
@@ -177,16 +177,35 @@ parse out user supplied filters, embeds, and more from query parameters.
 
     # Set up SQLAlchemy session factory
     # You'll want to do this more robustly in a real app.
-    db_path = os.path.join(
+    DB_PATH = os.path.join(
         os.path.dirname(os.path.abspath(__file__)),
         "chinook.sqlite")
-    connect_string = "sqlite+pysqlite:///" + db_path
-    db_engine = create_engine(connect_string)
-    db_session_cls = sessionmaker(bind=db_engine)
+    DB_ENGINE = create_engine("sqlite+pysqlite:///" + DB_PATH)
+
+    @app.before_request
+    def prepare_db_session():
+        """Prepare a database session and attach it to Flask.g"""
+        g.db_session = scoped_session(sessionmaker(bind=DB_ENGINE))
 
 
-    @app.route("/api/<path:path>",
-               methods=["GET", "POST", "PATCH", "PUT", "DELETE"])
+    @app.teardown_request
+    def end_db_session(error):
+        """Commit any changes or rollback on failure."""
+        if hasattr(g, "db_session"):
+            db_session = g.db_session
+            try:
+                if error:
+                    raise error
+                db_session.commit()
+            except SQLAlchemyError:
+                db_session.rollback()
+            finally:
+                db_session.remove()
+
+
+    @app.route(
+        "/api/<path:path>",
+        methods=["GET", "POST", "PATCH", "PUT", "DELETE", "HEAD", "OPTIONS"])
     def api_router(path):
         """Generic API router.
 
@@ -198,7 +217,7 @@ parse out user supplied filters, embeds, and more from query parameters.
 
         """
         # get your SQLAlchemy db session however you normally would
-        db_session = db_session_cls()
+        db_session = g.db_session
         # query params are used to parse fields to include, embeds,
         # sorts, and filters.
         router = ModelResourceRouter(session=db_session)
@@ -216,7 +235,7 @@ parse out user supplied filters, embeds, and more from query parameters.
                 query_params=query_params,
                 data=request.json)
             if result is None:
-                status = 209
+                status = 204
             else:
                 result = json.dumps(result)
             return Response(
@@ -268,13 +287,16 @@ have separate routing definitions for each top level resource. You're also more
 than welcome to handle routing on your own if the included
 :class:`~drowsy.router.ModelResourceRouter` doesn't handle your use cases.
 
+A slightly more robust implementation can be seen in the example API project in
+`api.py <_modules/examples/chinook_api/api.html>`_.
+
 
 Next Steps
 ----------
 
 Now that you've got an actual API up and running, you can head over to the
-:ref:`querying`, :ref:`creating_updating`, and :ref:`deleting` sections to
-get an overview of how to interact with your new API.
+:ref:`querying` and :ref:`creating_updating` sections to get an overview of
+how to interact with your new API.
 
 You'll also want to be sure to check out the :ref:`permissions` section to
 gain an understanding of how to properly secure a Drowsy based API.
