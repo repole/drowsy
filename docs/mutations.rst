@@ -388,4 +388,4 @@ More Examples
 
 If you're looking for more examples, try taking a look through the included
 test suite, in particular the
-`test_resources <_modules/tests/test_resource.html#TestDrowsyResource>`_ file.
+`test_resource.py <_modules/tests/test_resource.html#TestDrowsyResource>`_ file.
