@@ -14,7 +14,6 @@ from sqlalchemy import (
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import backref
 from sqlalchemy.schema import ForeignKeyConstraint
-from sqlalchemy.sql.sqltypes import NullType
 
 Base = declarative_base()
 metadata = Base.metadata
@@ -320,10 +319,3 @@ class CompositeMany(Base):
             ['CompositeOne.OneId', 'CompositeOne.CompositeOneId']
         ),
     )
-
-
-t_sqlite_sequence = Table(
-    'sqlite_sequence', metadata,
-    Column('name', NullType),
-    Column('seq', NullType)
-)
