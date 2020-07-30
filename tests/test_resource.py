@@ -1,13 +1,13 @@
 """
-    drowsy.tests.test_resource
-    ~~~~~~~~~~~~~~~~~~~~~~~~~~
+    tests.test_resource
+    ~~~~~~~~~~~~~~~~~~~
 
     Resource tests for Drowsy.
 
-    :copyright: (c) 2016-2020 by Nicholas Repole and contributors.
-                See AUTHORS for more details.
-    :license: MIT - See LICENSE for more details.
 """
+# :copyright: (c) 2016-2020 by Nicholas Repole and contributors.
+#             See AUTHORS for more details.
+# :license: MIT - See LICENSE for more details.
 from marshmallow.exceptions import RegistryError
 import drowsy.resource_class_registry as registry
 from drowsy.base import ResourceABC, NestableResourceABC, SchemaResourceABC
@@ -1372,7 +1372,7 @@ class TestDrowsyResource(DrowsyDatabaseTests):
 
     @staticmethod
     def test_delete_resource_not_found(db_session):
-        """Test deleting a non existant resource fails."""
+        """Test deleting a non existent resource fails."""
         resource = AlbumResource(session=db_session)
         with raises(ResourceNotFoundError) as excinf:
             resource.delete(9999999)

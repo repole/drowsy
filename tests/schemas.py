@@ -1,15 +1,14 @@
 """
-    drowsy.tests.schemas
-    ~~~~~~~~~~~~~~~~~~~~
+    tests.schemas
+    ~~~~~~~~~~~~~
 
     Schemas used for test purposes.
 
-    :copyright: (c) 2016-2018 by Nicholas Repole and contributors.
-                See AUTHORS for more details.
-    :license: MIT - See LICENSE for more details.
 """
+# :copyright: (c) 2016-2020 by Nicholas Repole and contributors.
+#             See AUTHORS for more details.
+# :license: MIT - See LICENSE for more details.
 from drowsy.convert import CamelModelResourceConverter
-from drowsy.exc import PermissionValidationError
 from drowsy.fields import Relationship
 from drowsy.permissions import DisallowAllOpPermissions
 from drowsy.schema import ModelResourceSchema

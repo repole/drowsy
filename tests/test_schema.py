@@ -1,13 +1,13 @@
 """
-    drowsy.tests.test_parser
-    ~~~~~~~~~~~~~~~~~~~~~~~~
+    tests.test_parser
+    ~~~~~~~~~~~~~~~~~
 
     Parser tests for Drowsy.
 
-    :copyright: (c) 2016-2019 by Nicholas Repole and contributors.
-                See AUTHORS for more details.
-    :license: MIT - See LICENSE for more details.
 """
+# :copyright: (c) 2016-2020 by Nicholas Repole and contributors.
+#             See AUTHORS for more details.
+# :license: MIT - See LICENSE for more details.
 from marshmallow import fields
 from marshmallow.exceptions import ValidationError
 from drowsy.convert import ModelResourceConverter
@@ -28,6 +28,7 @@ def test_schema_default_get_instance():
     class TestSchema(ResourceSchema):
         class Meta:
             instance_cls = Album
+
     assert TestSchema().get_instance({}) is None
 
 

@@ -1,13 +1,13 @@
 """
-    drowsy.tests.test_router
-    ~~~~~~~~~~~~~~~~~~~~~~~~
+    tests.test_router
+    ~~~~~~~~~~~~~~~~~
 
     Router tests for Drowsy.
 
-    :copyright: (c) 2016-2020 by Nicholas Repole and contributors.
-                See AUTHORS for more details.
-    :license: MIT - See LICENSE for more details.
 """
+# :copyright: (c) 2016-2020 by Nicholas Repole and contributors.
+#             See AUTHORS for more details.
+# :license: MIT - See LICENSE for more details.
 import json
 from pytest import raises
 from drowsy.exc import (

@@ -1,13 +1,13 @@
 """
-    drowsy.tests.resources
-    ~~~~~~~~~~~~~~~~~~~~~~
+    tests.resources
+    ~~~~~~~~~~~~~~~
 
     Resources used for test purposes.
 
-    :copyright: (c) 2016-2018 by Nicholas Repole and contributors.
-                See AUTHORS for more details.
-    :license: MIT - See LICENSE for more details.
 """
+# :copyright: (c) 2016-2020 by Nicholas Repole and contributors.
+#             See AUTHORS for more details.
+# :license: MIT - See LICENSE for more details.
 from drowsy.resource import ModelResource
 from .schemas import (
     AlbumCamelSchema, AlbumSchema, ArtistCamelSchema, ArtistSchema,
@@ -79,6 +79,7 @@ class TrackResource(ModelResource):
     def get_required_filters(self, alias=None):
         model = alias or self.model
         if self.context.get("user") == "limited":
+            # NOTE: Should split this out into a different test...
             filters = (model.track_id != 130, )
             return filters
         elif self.context.get("user") == "limited_single_filter":

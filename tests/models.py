@@ -1,14 +1,13 @@
-## -*- coding: utf-8 -*-\
 """
-    drowsy.tests.models
-    ~~~~~~~~~~~~~~~~~~~
+    tests.models
+    ~~~~~~~~~~~~
 
     SQLAlchemy models for the Chinook database.
 
-    :copyright: (c) 2016-2019 by Nicholas Repole and contributors.
-                See AUTHORS for more details.
-    :license: MIT - See LICENSE for more details.
 """
+# :copyright: (c) 2016-2020 by Nicholas Repole and contributors.
+#             See AUTHORS for more details.
+# :license: MIT - See LICENSE for more details.
 from sqlalchemy import (
     Column, DateTime, ForeignKey, Integer, Table, Unicode, orm, and_, Float
 )

@@ -1,3 +1,13 @@
+"""
+    tests.conftest
+    ~~~~~~~~~~~~~~
+
+    PyTest configuration for Drowsy tests.
+
+"""
+# :copyright: (c) 2016-2020 by Nicholas Repole and contributors.
+#             See AUTHORS for more details.
+# :license: MIT - See LICENSE for more details.
 import contextlib
 import pytest
 import os

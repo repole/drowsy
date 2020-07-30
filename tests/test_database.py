@@ -1,13 +1,13 @@
 """
-    drowsy.tests.test_database
-    ~~~~~~~~~~~~~~~~~~~~~~~~~~
+    tests.test_database
+    ~~~~~~~~~~~~~~~~~~~
 
     Test database checking for Drowsy.
 
-    :copyright: (c) 2016-2020 by Nicholas Repole and contributors.
-                See AUTHORS for more details.
-    :license: MIT - See LICENSE for more details.
 """
+# :copyright: (c) 2016-2020 by Nicholas Repole and contributors.
+#             See AUTHORS for more details.
+# :license: MIT - See LICENSE for more details.
 from .base import DrowsyDatabaseTests
 from .models import Album
 

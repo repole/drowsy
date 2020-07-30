@@ -1,14 +1,13 @@
 """
-    drowsy.tests.test_query_builder
-    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    tests.test_query_builder
+    ~~~~~~~~~~~~~~~~~~~~~~~~
 
     Query builder tests for Drowsy.
 
-    :copyright: (c) 2016-2020 by Nicholas Repole and contributors.
-                See AUTHORS for more details.
-    :license: MIT - See LICENSE for more details.
 """
-import sqlite3
+# :copyright: (c) 2016-2020 by Nicholas Repole and contributors.
+#             See AUTHORS for more details.
+# :license: MIT - See LICENSE for more details.
 from pytest import raises
 from sqlalchemy.inspection import inspect
 from drowsy.exc import BadRequestError

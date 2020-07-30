@@ -1,13 +1,13 @@
 """
-    drowsy.tests.test_fields
-    ~~~~~~~~~~~~~~~~~~~~~~~~
+    tests.test_fields
+    ~~~~~~~~~~~~~~~~~
 
     Fields tests for Drowsy.
 
-    :copyright: (c) 2016-2020 by Nicholas Repole and contributors.
-                See AUTHORS for more details.
-    :license: MIT - See LICENSE for more details.
 """
+# :copyright: (c) 2016-2020 by Nicholas Repole and contributors.
+#             See AUTHORS for more details.
+# :license: MIT - See LICENSE for more details.
 from pytest import raises
 from collections import namedtuple
 from drowsy.base import EmbeddableMixinABC, NestedPermissibleABC
@@ -94,8 +94,9 @@ def test_field_nested_resource_class_provided(db_session):
         tracks = Relationship(nested=TrackResource)
 
     schema = TestSchema(session=db_session)
-    assert isinstance(schema.fields["tracks"].resource,
-                      TrackResource)
+    field = schema.fields["tracks"]
+    assert isinstance(field, NestedPermissibleABC)
+    assert isinstance(field.resource, TrackResource)
 
 
 def test_field_bad_nested_resource_provided():

@@ -1,13 +1,13 @@
 """
-    drowsy.tests.test_integration
-    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    tests.test_integration
+    ~~~~~~~~~~~~~~~~~~~~~~
 
     Integration tests for Drowsy.
 
-    :copyright: (c) 2016-2020 by Nicholas Repole and contributors.
-                See AUTHORS for more details.
-    :license: MIT - See LICENSE for more details.
 """
+# :copyright: (c) 2016-2020 by Nicholas Repole and contributors.
+#             See AUTHORS for more details.
+# :license: MIT - See LICENSE for more details.
 from drowsy.parser import ModelQueryParamParser
 from .base import DrowsyDatabaseTests
 from .resources import *

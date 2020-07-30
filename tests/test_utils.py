@@ -1,13 +1,13 @@
 """
-    drowsy.tests.test_utils
-    ~~~~~~~~~~~~~~~~~~~~~~~
+    tests.test_utils
+    ~~~~~~~~~~~~~~~~
 
     Utility function tests for Drowsy.
 
-    :copyright: (c) 2018-2020 by Nicholas Repole and contributors.
-                See AUTHORS for more details.
-    :license: MIT - See LICENSE for more details.
 """
+# :copyright: (c) 2016-2020 by Nicholas Repole and contributors.
+#             See AUTHORS for more details.
+# :license: MIT - See LICENSE for more details.
 from mqlalchemy.utils import dummy_gettext
 from .schemas import MsAlbumSchema
 from drowsy.utils import get_field_by_data_key, get_error_message
