@@ -1033,7 +1033,6 @@ class BaseResourceABC(SchemaResourceABC, NestableResourceABC):
                     schema.embed([key])
                 if isinstance(field, Nested):
                     if isinstance(field, NestedPermissibleABC):
-                        from drowsy.compat import suppress
                         with suppress(ValueError, TypeError):
                             subresource = self.make_subresource(
                                 field.data_key or key)
@@ -1070,7 +1069,6 @@ class BaseResourceABC(SchemaResourceABC, NestableResourceABC):
                     schema.embed([key])
                 if isinstance(field, Nested):
                     if isinstance(field, NestedPermissibleABC):
-                        from drowsy.compat import suppress
                         with suppress(ValueError, TypeError):
                             subresource = self.make_subresource(
                                 field.data_key or key)
