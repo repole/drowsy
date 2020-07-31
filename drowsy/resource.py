@@ -740,10 +740,10 @@ class BaseModelResource(BaseResourceABC):
             if exc.code == "filters_field_op_error":
                 if exc.kwargs.get("subresource_key") is None:
                     # This error is due to a bad ID key provided.
-                    raise self.make_error("resource_not_found", ident=ident)
+                    exc = self.make_error("resource_not_found", ident=ident)
             raise exc
         except (ValueError, TypeError, InvalidMqlException):
-            raise self.make_error("resource_not_found", ident=ident)
+            raise self.make_error("unexpected_error")  # pragma: no cover
         instance = query.all()
         if instance:
             return schema.dump(instance[0])
