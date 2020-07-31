@@ -387,8 +387,8 @@ Along with ``_subquery_``, you can also specify a ``_limit_`` and/or
 ``_offset_``, and optionally ``_sorts_`` to essentially paginate the nested
 objects. By default, the nested objects will be sorted by their identifying
 data key(s), so if you want the first two tracks of an Album you can try a
-query like `/api/albums/112?tracks._limit_=2`. If you want the next two,
-you can use `/api/albums/112?tracks._limit_=2&tracks._offset_=2`.
+query like ``/api/albums/112?tracks._limit_=2``. If you want the next two,
+you can use ``/api/albums/112?tracks._limit_=2&tracks._offset_=2``.
 
 Tying all of this together, the below is essentially the second page of Metal
 tracks (2 per page) on a particular album, sorted by name descending (note the
