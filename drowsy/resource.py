@@ -650,7 +650,7 @@ class BaseModelResource(BaseResourceABC):
             sorts=sorts,
             strict=strict,
             stack_size_limit=100,
-            dialect_override=False)
+            dialect_override=None)
         return query
 
     @property
@@ -736,7 +736,13 @@ class BaseModelResource(BaseResourceABC):
                 filters=filters,
                 subfilters=subfilters,
                 embeds=embeds)
-        except (ValueError, TypeError, InvalidMqlException, BadRequestError):
+        except BadRequestError as exc:
+            if exc.code == "filters_field_op_error":
+                if exc.kwargs.get("subresource_key") is None:
+                    # This error is due to a bad ID key provided.
+                    raise self.make_error("resource_not_found", ident=ident)
+            raise exc
+        except (ValueError, TypeError, InvalidMqlException):
             raise self.make_error("resource_not_found", ident=ident)
         instance = query.all()
         if instance:
