@@ -19,88 +19,88 @@ from .models import (
 class AlbumSchema(ModelResourceSchema):
     class Meta:
         model = Album
-        model_converter = CamelModelResourceConverter
+        include_relationships = True
 
 
 class ArtistSchema(ModelResourceSchema):
     class Meta:
         model = Artist
-        model_converter = CamelModelResourceConverter
+        include_relationships = True
 
 
 class InvoiceLineSchema(ModelResourceSchema):
     class Meta:
         model = InvoiceLine
-        model_converter = CamelModelResourceConverter
+        include_relationships = True
 
 
 class InvoiceSchema(ModelResourceSchema):
     class Meta:
         model = Invoice
-        model_converter = CamelModelResourceConverter
+        include_relationships = True
 
 
 class EmployeeSchema(ModelResourceSchema):
     class Meta:
         model = Employee
-        model_converter = CamelModelResourceConverter
+        include_relationships = True
 
 
 class CustomerSchema(ModelResourceSchema):
     class Meta:
         model = Customer
-        model_converter = CamelModelResourceConverter
+        include_relationships = True
 
 
 class PlaylistSchema(ModelResourceSchema):
     class Meta:
         model = Playlist
-        model_converter = CamelModelResourceConverter
+        include_relationships = True
 
 
 class MediaTypeSchema(ModelResourceSchema):
     class Meta:
         model = MediaType
-        model_converter = CamelModelResourceConverter
+        include_relationships = True
 
 
 class GenreSchema(ModelResourceSchema):
     class Meta:
         model = Genre
-        model_converter = CamelModelResourceConverter
+        include_relationships = True
 
 
 class TrackSchema(ModelResourceSchema):
     class Meta:
         model = Track
-        model_converter = CamelModelResourceConverter
+        include_relationships = True
 
 
 class TrackPermissionsSchema(ModelResourceSchema):
     class Meta:
         model = Track
-        model_converter = CamelModelResourceConverter
+        include_relationships = True
 
 
 class NodeSchema(ModelResourceSchema):
     class Meta:
         model = Node
-        model_converter = CamelModelResourceConverter
+        include_relationships = True
 
 
 class CompositeNodeSchema(ModelResourceSchema):
     class Meta:
         model = CompositeNode
-        model_converter = CamelModelResourceConverter
+        include_relationships = True
 
 
 class CompositeOneSchema(ModelResourceSchema):
     class Meta:
         model = CompositeOne
-        model_converter = CamelModelResourceConverter
+        include_relationships = True
 
 
 class CompositeManySchema(ModelResourceSchema):
     class Meta:
         model = CompositeMany
-        model_converter = CamelModelResourceConverter
+        include_relationships = True

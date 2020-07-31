@@ -75,7 +75,7 @@ main building block to creating schemas around your models.
 
 .. code:: python
 
-    from drowsy.convert import CamelModelResourceConverter
+    from drowsy.convert import ModelResourceConverter
     from drowsy.schema import ModelResourceSchema
     from chinook_api.models import (
         Album, Artist, CompositeOne, CompositeMany, CompositeNode,
@@ -96,13 +96,15 @@ main building block to creating schemas around your models.
             model_converter = CamelModelResourceConverter
 
 
-Here we're using a :class:`~drowsy.convert.CamelModelResourceConverter` to
+Here we're using a :class:`~drowsy.convert.ModelResourceConverter` to
 do a lot of work behind the scenes for us. The job of the converter is to take
 fields from the specified ``model`` and turn them into fields for the schema.
-In this case, using the :class:`~drowsy.convert.CamelModelResourceConverter`
-rather than the standard :class:`~drowsy.convert.ModelResourceConverter` will
-convert field names like ``album_id`` to ``albumId``, to make the serialized
-result conform to standard JSON best practices.
+By default, fields are named by using the attr names of the SQLAlchemy model.
+
+If we were to use :class:`~drowsy.convert.CamelModelResourceConverter`
+rather than the default :class:`~drowsy.convert.ModelResourceConverter`, it
+would convert field names like ``album_id`` to ``albumId``, to make the
+serialized result conform to standard JSON best practices.
 
 There's a good chance you'll want to extend one of the included converters
 and create your own, as currently they include child resources by default

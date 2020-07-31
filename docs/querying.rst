@@ -3,111 +3,18 @@
 Querying
 ========
 
-Say you’re building an API for your music collection, and you want to be
-able to accept query params and use them to filter results. An example
-using Flask might look like:
+Querying your Drowsy based API can be done via GET requests and supports a wide
+range of filtering, nested embedding, and pagination options.
 
-.. code:: python
+The examples below will walk you through some query basics and advanced
+features using the API described in :ref:`quickstart`. If you want to follow
+along, run the example ``chinook_api`` app and try these same get requests
+yourself.
 
-    from flask import Flask
-    from flask import request
-    import inflection
-    from models import *
-    from drowsy.schema import ModelSchema
-    from drowsy.resource import ModelResource
-    from drowsy.router import ModelResurceRouter
-    from drowsy import class_registry
-
-    # Should handle this in a separate file and import these...
-    # Create schemas for your models
-    # Fields are auto generated based on the SQLAlchemy model using
-    # drowsy's built in ModelConverter. Any field can easily be
-    # overriden to support hiding a field, marking it as read only,
-    # or customized in pretty much any other way.
-    # Overriding ModelSchema and using a custom ModelConverter is also
-    # an option.
-    class AlbumSchema(ModelSchema):
-       class Meta:
-           model = Album
-
-    # Create a resource for your schema
-    class AlbumResource(ModelResource):
-        class Meta:
-            schema_class = AlbumSchema
-
-    # Also be sure to either create schemas and resources for all your
-    # other models, or expliclity exclude relationship fields on your
-    # schemas that may reference models that don't have associated
-    # schemas and resources.
-    # Or in simpler terms, if you want to be able to embed tracks in
-    # an album resource, you need to have defined a tracks resource.
-
-
-    @app.route("/api/<path:path>",
-               methods=["GET", "POST", "PATCH", "PUT", "DELETE"])
-    def api_router(path):
-        """Generic API router.
-
-        You'll probably want to be more specific with your routing.
-
-        """
-        # get your SQLAlchemy db session however you normally would
-        db_session = ...
-        # query params are used to parse fields to include, embeds,
-        # sorts, and filters.
-        query_params = request.values.to_dict()
-        errors = None
-        status = 200
-        try:
-            if request.method.lower() == "POST":
-                status = 201
-            result = router.dispatcher(
-                request.method,
-                path,
-                query_params=query_params,
-                data=request.json)
-            if result is None:
-                status = 209
-            else:
-                result = simplejson.dumps(
-                    result,
-                    indent=4,
-                    sort_keys=True)
-            return Response(
-                result,
-                mimetype="application/json",
-                status=status)
-        except UnprocessableEntityError as e:
-            status = 433
-            errors = e.errors
-        except MethodNotAllowedError as e:
-            status = 405
-        except BadRequestError as e:
-            status = 400
-        except ResourceNotFoundError as e:
-            status = 404
-        if e:
-            result = {"message": e.message, "code": e.kwargs["code"]}
-            if errors:
-                result["errors"] = errors
-            return Response(
-                simplejson.dumps(
-                    result,
-                    indent=4,
-                    sort_keys=True
-                ),
-                mimetype="application/json",
-                status=status)
-
-Note the use of the ``ModelResourceRouter`` is very much optional and is used
-purely for brevity here. Separate end points for each resource type could, and
-probably should, be used in most situations.
-
-Once a resource has an endpoint set up for it, some very powerful filtering
-and resource creating or updating can be done.
 
 Filtering by Unique Identifier
 ------------------------------
+
 Access individual resources using their primary key value (or setting a custom
 field to use as an ID on the ModelResource object):
 
@@ -130,7 +37,8 @@ field to use as an ID on the ModelResource object):
 
 Collection Filtering
 --------------------
-By default, any field or nested resource field that isn't `load_only` can be
+
+By default, any field or nested resource field that isn't ``load_only`` can be
 queried. This can be turned on or off on a field by field basis if desired.
 
 Query for things that are >, >=, =<, <, != by appending -gt, -gte,
@@ -187,6 +95,7 @@ Query text fields for partial matches using -like.
 
 Advanced Filtering
 ------------------
+
 Query using complex MQLAlchemy style filters:
 
 .. sourcecode:: http
@@ -222,7 +131,9 @@ Query using complex MQLAlchemy style filters:
 
 Embedding Relationships and Fields
 ----------------------------------
-Embed full relationships or fields of relationships:
+
+Embed full relationships or fields of relationships by specifying ``embeds``
+as a query string parameter:
 
 .. sourcecode:: http
 
@@ -377,6 +288,7 @@ camelCase field names to be more JavaScript convention friendly.
         class Meta:
             model = Album
             converter = CamelModelResourceConverter
+            include_relationships = True
 
 .. sourcecode:: http
 
@@ -397,20 +309,207 @@ camelCase field names to be more JavaScript convention friendly.
 Note that the ``album_id`` field here has been converted to ``albumId``.
 
 
+Nested Queries
+--------------
+
+One of the more powerful things Drowsy allows is to query nested relationships
+of objects. This can take a few different forms, the first of which involves
+filtering top level objects based on whether their relationships meet a
+particular example:
+
+
+.. sourcecode:: http
+
+    GET /api/albums?tracks.track_id=1 HTTP/1.1
+
+.. sourcecode:: http
+
+    HTTP/1.1 200 OK
+
+    [
+        {
+            "album_id": 1,
+            "artist": "/albums/1/artist",
+            "self": "/albums/1",
+            "title": "For Those About To Rock We Salute You",
+            "tracks": "/albums/1/tracks"
+        }
+    ]
+
+Here we're looking for all albums that contain an object in ``tracks`` that
+has a ``track_id`` of ``1``. Seeing as a track can only ever be in one
+album, a more realistic query much be something like
+``/api/albums?tracks.genre.name=Rock``, which would return all albums
+that contain a track that has a genre of Rock.
+
+The other way you query nested resources is by filtering the results of your
+embeds. For example, perhaps you want to retrieve an album, embed it's tracks,
+and only include the tracks with a genre of Rock:
+
+.. sourcecode:: http
+
+    GET /api/albums/112?tracks._subquery_.genre.name=Rock HTTP/1.1
+
+.. sourcecode:: http
+
+    HTTP/1.1 200 OK
+
+    {
+        "self": "/albums/112",
+        "artist": "/albums/112/artist",
+        "tracks": [
+            {
+                "composer": "Steve Harris",
+                "unit_price": 0.99,
+                "invoice_lines": "/tracks/1393/invoice_lines",
+                "media_type": "/tracks/1393/media_type",
+                "self": "/tracks/1393",
+                "bytes": 11737216,
+                "playlists": "/tracks/1393/playlists",
+                "album": "/tracks/1393/album",
+                "track_id": 1393,
+                "name": "The Number Of The Beast",
+                "milliseconds": 293407,
+                "genre": "/tracks/1393/genre"
+            }
+        ],
+        "album_id": 112,
+        "title": "The Number of The Beast"
+    }
+
+This same album contains 9 other tracks (all classified as Metal), but in
+our result we get the lone Rock track on the album. Note the use of
+``_subquery_`` in the filter can be overridden with some other syntax
+if you prefer by providing an alternative to
+:meth:`~drowsy.parser.ModelQueryParamParser.parse_subfilters`.
+
+Along with ``_subquery_``, you can also specify a ``_limit_`` and/or
+``_offset_``, and optionally ``_sorts_`` to essentially paginate the nested
+objects. By default, the nested objects will be sorted by their identifying
+data key(s), so if you want the first two tracks of an Album you can try a
+query like `/api/albums/112?tracks._limit_=2`. If you want the next two,
+you can use `/api/albums/112?tracks._limit_=2&tracks._offset_=2`.
+
+Tying all of this together, the below is essentially the second page of Metal
+tracks (2 per page) on a particular album, sorted by name descending (note the
+``-`` in front of the provided sort).
+
+.. sourcecode:: http
+
+    GET /api/albums/112?tracks._subquery_.genre.name=Metal&tracks._limit_=2&tracks._offset_=2&tracks._sorts_=-name HTTP/1.1
+
+.. sourcecode:: http
+
+    HTTP/1.1 200 OK
+
+    {
+        "self": "/albums/112",
+        "title": "The Number of The Beast",
+        "tracks": [
+            {
+                "self": "/tracks/1391",
+                "track_id": 1391,
+                "media_type": "/tracks/1391/media_type",
+                "bytes": 2849181,
+                "genre": "/tracks/1391/genre",
+                "composer": "Steve Harris",
+                "name": "Invaders",
+                "playlists": "/tracks/1391/playlists",
+                "milliseconds": 203180,
+                "invoice_lines": "/tracks/1391/invoice_lines",
+                "unit_price": 0.99,
+                "album": "/tracks/1391/album"
+            },
+            {
+                "self": "/tracks/1390",
+                "track_id": 1390,
+                "media_type": "/tracks/1390/media_type",
+                "bytes": 6006107,
+                "genre": "/tracks/1390/genre",
+                "composer": "Steve Harris",
+                "name": "Hallowed Be Thy Name",
+                "playlists": "/tracks/1390/playlists",
+                "milliseconds": 428669,
+                "invoice_lines": "/tracks/1390/invoice_lines",
+                "unit_price": 0.99,
+                "album": "/tracks/1390/album"
+            }
+        ],
+        "artist": "/albums/112/artist",
+        "album_id": 112
+    }
+
+For reference, the ``_sorts_`` parameter can also be a comma separated list if
+you want to provide multiple sort criteria.
+
+Lastly, the simplest way to access nested objects is to access them as their own
+collection:
+
+.. sourcecode:: http
+
+    GET /api/albums/264/tracks HTTP/1.1
+
+.. sourcecode:: http
+
+    HTTP/1.1 200 OK
+
+    [
+        {
+            "self": "/tracks/3352",
+            "track_id": 3352,
+            "media_type": "/tracks/3352/media_type",
+            "bytes": 5327463,
+            "genre": "/tracks/3352/genre",
+            "composer": "Karsh Kale/Vishal Vaid",
+            "name": "Distance",
+            "playlists": "/tracks/3352/playlists",
+            "milliseconds": 327122,
+            "invoice_lines": "/tracks/3352/invoice_lines",
+            "unit_price": 0.99,
+            "album": "/tracks/3352/album"
+        },
+        {
+            "self": "/tracks/3358",
+            "track_id": 3358,
+            "media_type": "/tracks/3358/media_type",
+            "bytes": 6034098,
+            "genre": "/tracks/3358/genre",
+            "composer": "Karsh Kale",
+            "name": "One Step Beyond",
+            "playlists": "/tracks/3358/playlists",
+            "milliseconds": 366085,
+            "invoice_lines": "/tracks/3358/invoice_lines",
+            "unit_price": 0.99,
+            "album": "/tracks/3358/album"
+        }
+    ]
+
+You can also supply filters, sorts, pagination, or any other parameters to such
+a request the same way you would any other query.
+
+
 Limitations
 -----------
 
-Given that we're dependent on SQLAlchemy's ORM, there are a few
-limitations to the results that we receive from the API.
+While Drowsy is incredibly flexible in how much it will let you do in one
+single query, there are a few limitations to note:
 
-1. Attempting to embed (or subfilter) the same relationship multiple times
+1. Attempting to embed (or subquery) the same relationship multiple times
    in the same query will result in an error. This is something intended to
    be worked around in the future, but given the way SQLAlchemy's
-   `contains_eager` relationship loading technique works, it'll require a
+   ``contains_eager`` relationship loading technique works, it'll require a
    significant change to how Drowsy handles embedding.
 
-2. The MQLAlchemy parser is an iterative process, and has a default limit
-   on how complex of a query it will attempt to parse (intended to prevent
-   malicious attempts to overload a server). If you find that you're hitting
-   this limitation in a real world use case, let us know by filing an issue
-   on GitHub.
+2. The MQLAlchemy parser used by Drowsy is an iterative process, and has a
+   default limit on how complex of a query it will attempt to parse (intended
+   to prevent malicious attempts to overload a server). If you find that
+   you're hitting this limitation in a real world use case, let us know by
+   filing an issue on GitHub.
+
+
+More Examples
+-------------
+
+The included test suite, in particular the
+`test_query_builder.py <_modules/tests/test_query_builder.html#TestDrowsyResource>`_
+file contains more in depth examples that may be useful to look through.
