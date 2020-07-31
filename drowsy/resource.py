@@ -742,8 +742,8 @@ class BaseModelResource(BaseResourceABC):
                     # This error is due to a bad ID key provided.
                     exc = self.make_error("resource_not_found", ident=ident)
             raise exc
-        except (ValueError, TypeError, InvalidMqlException):
-            raise self.make_error("unexpected_error")  # pragma: no cover
+        except (ValueError, TypeError, InvalidMqlException):  # pragma: no cover
+            raise self.make_error("unexpected_error")
         instance = query.all()
         if instance:
             return schema.dump(instance[0])
