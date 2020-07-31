@@ -1,0 +1,6 @@
+flask
+packaging
+pytest
+pytest-runner
+psycopg2
+pyodbc
