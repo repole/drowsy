@@ -1,0 +1,4 @@
+flask
+packaging
+pytest
+pytest-runner

@@ -1,15 +1,20 @@
 """
-    drowsy.tests.resources
-    ~~~~~~~~~~~~~~~~~~~~~~
+    chinook_api.resources
+    ~~~~~~~~~~~~~~~~~~~~~
 
-    Resources used for test purposes.
+    Resources used for Chinook API purposes.
 
-    :copyright: (c) 2016 by Nicholas Repole and contributors.
-                See AUTHORS for more details.
-    :license: MIT - See LICENSE for more details.
 """
+# :copyright: (c) 2020 by Nicholas Repole and contributors.
+#             See AUTHORS for more details.
+# :license: MIT - See LICENSE for more details.
 from drowsy.resource import ModelResource
-from drowsy.tests.schemas import *
+from .schemas import (
+    AlbumSchema, ArtistSchema, CompositeManySchema, CompositeOneSchema,
+    CompositeNodeSchema, CustomerSchema, EmployeeSchema, GenreSchema,
+    InvoiceLineSchema, InvoiceSchema, MediaTypeSchema, NodeSchema,
+    PlaylistSchema, TrackSchema
+)
 
 
 class AlbumResource(ModelResource):
@@ -60,3 +65,23 @@ class TrackResource(ModelResource):
 class ArtistResource(ModelResource):
     class Meta:
         schema_cls = ArtistSchema
+
+
+class NodeResource(ModelResource):
+    class Meta:
+        schema_cls = NodeSchema
+
+
+class CompositeNodeResource(ModelResource):
+    class Meta:
+        schema_cls = CompositeNodeSchema
+
+
+class CompositeOneResource(ModelResource):
+    class Meta:
+        schema_cls = CompositeOneSchema
+
+
+class CompositeManyResource(ModelResource):
+    class Meta:
+        schema_cls = CompositeManySchema

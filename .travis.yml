@@ -1,17 +1,26 @@
 language: python
-python:
-  - "2.7"
-  - "3.3"
-  - "3.4"
-  - "3.5"
-  - "pypy"
-  - "pypy3"
-# command to install dependencies
+services:
+  - postgresql
+addons:
+  postgresql: "10"
+  apt:
+    packages:
+    - postgresql-10
+    - postgresql-client-10
+before_install:
+  - sudo apt-get update
+  - sudo apt-get -y install unixodbc-dev
+before_script:
+  - psql -c 'create database "Drowsy";' -U postgres
+  - psql -c "ALTER USER postgres WITH PASSWORD 'drowsy';" -U postgres
 install:
-  - pip install -r requirements.txt
+  - pip install -r requirements_test.txt
   - pip install coveralls
-# command to run tests
+python:
+  - "3.6"
+  - "3.7"
+  - "3.8"
 script:
-  coverage run --source=drowsy setup.py test
+  coverage run --source=drowsy -m pytest tests/ --db_types sqlite,postgres
 after_success:
   coveralls

@@ -4,11 +4,10 @@
 
     Utility functions for Drowsy.
 
-    :copyright: (c) 2016 by Nicholas Repole and contributors.
-                See AUTHORS for more details.
-    :license: MIT - See LICENSE for more details.
 """
-from marshmallow.compat import basestring
+# :copyright: (c) 2016-2020 by Nicholas Repole and contributors.
+#             See AUTHORS for more details.
+# :license: MIT - See LICENSE for more details.
 
 
 def get_error_message(error_messages, key, gettext=None, **kwargs):
@@ -31,33 +30,39 @@ def get_error_message(error_messages, key, gettext=None, **kwargs):
     :param dict kwargs: Any additional arguments that may be passed
         to a callable error message, or used to translate and/or
         format an error message string.
+    :raise KeyError: If the ``error_messages`` dict does not contain
+        the provided ``key``.
+    :return: An error message with the supplied kwargs injected.
+    :rtype: str
 
     """
     error = error_messages[key]
     msg = error if not callable(error) else error(**kwargs)
-    if isinstance(msg, basestring):
+    if isinstance(msg, str):
         if callable(gettext):
             return gettext(msg, **kwargs)
-        else:
-            return msg % kwargs
+        return msg % kwargs
     return msg
 
 
-def get_field_by_dump_name(schema, dump_name):
-    """Helper method to get a field from schema by dump name.
+def get_field_by_data_key(schema, data_key):
+    """Helper method to get a field from schema by data_key name.
 
     :param schema: Instantiated schema.
-    :param dump_name: Name as the field as it was serialized.
+    :type schema: :class:`~marshmallow.schema.Schema`
+    :param str data_key: Name as the field as it was serialized.
     :return: The schema field if found, None otherwise.
+    :rtype: :class:`~marshmallow.fields.Field` or None
 
     """
     field = None
-    if hasattr(schema, "fields_by_dump_to"):
-        if dump_name in schema.fields_by_dump_to:
-            field = schema.fields_by_dump_to[dump_name]
+    if hasattr(schema, "fields_by_data_key"):
+        if data_key in schema.fields_by_data_key:
+            field = schema.fields_by_data_key[data_key]
     else:
         for field_name in schema.fields:
-            if schema.fields[field_name].dump_to == dump_name:
+            field_data_name = schema.fields[field_name].data_key or field_name
+            if field_data_name == data_key:
                 field = schema.fields[field_name]
                 break
     return field

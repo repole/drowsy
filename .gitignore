@@ -8,11 +8,13 @@ __pycache__/
 # Distribution / packaging
 .Python
 env/
+venv/
 build/
 develop-eggs/
 dist/
 downloads/
 eggs/
+.eggs/
 lib/
 lib64/
 parts/
@@ -66,3 +68,6 @@ target/
 # Project Specific
 libs/
 user_data/
+
+# lint
+lint.txt

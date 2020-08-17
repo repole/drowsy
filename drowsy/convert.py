@@ -4,10 +4,10 @@
 
     Convert SQLAlchemy models into Marshmallow schemas.
 
-    :copyright: (c) 2016 by Nicholas Repole and contributors.
-                See AUTHORS for more details.
-    :license: MIT - See LICENSE for more details.
 """
+# :copyright: (c) 2016-2020 by Nicholas Repole and contributors.
+#             See AUTHORS for more details.
+# :license: MIT - See LICENSE for more details.
 from inflection import camelize, underscore, pluralize
 from marshmallow_sqlalchemy.convert import ModelConverter
 from drowsy.fields import APIUrl, Relationship
@@ -49,7 +49,7 @@ class ModelResourceConverter(ModelConverter):
         """
         super(ModelResourceConverter, self)._add_column_kwargs(
             kwargs, prop.columns[0])
-        # TODO - use different error messages?
+        # PENDING - use different error messages?
         # due to Marshmallow not having i18n support, may have
         # to use different error messages that don't have any
         # variables in them.
@@ -67,15 +67,22 @@ class ModelResourceConverter(ModelConverter):
 
         """
         nullable = True
+        required = False
         for pair in prop.local_remote_pairs:
             if not pair[0].nullable:
                 if prop.uselist is True:
                     nullable = False
+                    required = False
+                else:
+                    for column in prop.local_columns:
+                        if column.nullable is False:
+                            nullable = False
+                            required = True
                 break
         kwargs.update({
-            "nested": prop.mapper.class_.__name__ + 'Schema',
-            "resource_cls": prop.mapper.class_.__name__ + 'Resource',
+            "nested": prop.mapper.class_.__name__ + 'Resource',
             "allow_none": nullable,
+            "required": required,
             "many": prop.uselist
         })
 
@@ -86,8 +93,8 @@ class ModelResourceConverter(ModelConverter):
             determine a corresponding field.
         :type prop: :class:`~sqlalchemy.orm.properties.ColumnProperty`
             or :class:`~sqlalchemy.orm.properties.RelationshipProperty`
-        :param instance: `True` if this method should return an actual
-            instance of a field, `False` to return the actual field
+        :param instance: ``True`` if this method should return an actual
+            instance of a field, ``False`` to return the actual field
             class.
         :param kwargs: Keyword args to be used in the construction of
             the field.
@@ -96,6 +103,7 @@ class ModelResourceConverter(ModelConverter):
         :rtype: :class:`~marshmallow.fields.Field` or type
 
         """
+
         field_class = self._get_field_class_for_property(prop)
         if not instance:
             return field_class
@@ -137,14 +145,17 @@ class ModelResourceConverter(ModelConverter):
         """
         return underscore(pluralize(model_name))
 
-    def fields_for_model(self, model, include_fk=False, fields=None,
+    def fields_for_model(self, model, *, include_fk=False,
+                         include_relationships=False, fields=None,
                          exclude=None, base_fields=None, dict_cls=dict):
         """Generate fields for the provided model.
 
         :param model: The SQLAlchemy model the generated fields
             correspond to.
-        :param bool include_fk: `True` if fields should be generated for
-            foreign keys, `False` otherwise.
+        :param bool include_fk: ``True`` if fields should be generated
+            for foreign keys, ``False`` otherwise.
+        :param bool include_relationships: ``True`` if relationship
+            fields should be generated, ``False`` otherwise.
         :param fields: A collection of field names to generate.
         :type fields: :class:`~collections.Iterable` or None
         :param exclude: A collection of field names not to generate.
@@ -161,6 +172,7 @@ class ModelResourceConverter(ModelConverter):
         result = super(ModelResourceConverter, self).fields_for_model(
             model=model,
             include_fk=include_fk,
+            include_relationships=include_relationships,
             fields=fields,
             exclude=exclude,
             base_fields=base_fields,
@@ -187,8 +199,7 @@ class CamelModelResourceConverter(ModelResourceConverter):
         """
         super(CamelModelResourceConverter, self)._add_column_kwargs(
             kwargs, prop)
-        kwargs["load_from"] = camelize(prop.key, uppercase_first_letter=False)
-        kwargs["dump_to"] = camelize(prop.key, uppercase_first_letter=False)
+        kwargs["data_key"] = camelize(prop.key, uppercase_first_letter=False)
 
     def _add_relationship_kwargs(self, kwargs, prop):
         """Update the provided kwargs based on the relationship given.
@@ -204,8 +215,7 @@ class CamelModelResourceConverter(ModelResourceConverter):
         """
         super(CamelModelResourceConverter, self)._add_relationship_kwargs(
             kwargs, prop)
-        kwargs["load_from"] = camelize(prop.key, uppercase_first_letter=False)
-        kwargs["dump_to"] = camelize(prop.key, uppercase_first_letter=False)
+        kwargs["data_key"] = camelize(prop.key, uppercase_first_letter=False)
 
     @staticmethod
     def _model_name_to_endpoint_name(model_name):

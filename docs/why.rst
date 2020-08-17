@@ -3,30 +3,24 @@
 Why?
 ====
 
-Aren't there a million other libraries with similar goals?
-----------------------------------------------------------
+Motivations
+-----------
 
-There are, but they don't offer quite the same level of depth.
+This project started from a desire to be able to query and modify
+nested resources. Since its beginning, GraphQL has hit the mainstream
+and become a popular way to accomplish those same goals, but I don't
+believe the break from REST is a necessary one, and this library aims to
+help provide similar features through a REST API.
 
-The first thing I wanted was more power over was querying my SQLAlchemy
-models via query string parameters. I wanted to be able to do more than
-simply check equality on top level attributes. I wanted to be able to
-query sub resources, check for attributes greater than or less than a
-supplied input, and do all of that with explicitly defined permissions.
 
-For more info on this portion of the library, see the
-:ref:`querying <querying>` section.
+What makes Drowsy different?
+----------------------------
 
-The second thing I wanted was to be able to create and update SQLAlchemy
-objects and their and sub resources using POST/PUT/PATCH input.
-Imagine a scenario where you want a user to be able to create an album and
-all associated tracks with it using a single POST request. In a traditional
-RESTful API, you might make a POST request to create the album, then numerous
-additional POST requests to create each track. This can certainly get the
-job done, but often times in similar situations, a sort of all in one
-transaction is desired, where if any part of the process fails, all of it
-should fail. Many RESTful API frameworks make this inherently difficult to
-accomplish.
+While there are plenty of toolkits and libraries out there to help make
+building REST APIs easier, Drowsy attempts to distinguish itself in the
+depth of access to nested resources it provides.
 
-See the :ref:`creating and updating resources <creating_updating>` section for
-an example of how this works.
+It does this by making some very opinionated choices in ORM (SQLAlchemy),
+serialization and deserialization library (Marshmallow), and language
+(Python). Beyond those choices, Drowsy allows a great deal of flexibility
+and freedom in how to build your API through its modularity.

@@ -1,9 +1,7 @@
-=======
+.. _support:
+
 Support
 =======
 
-File an issue on github, or feel free to email me at 
-n.repole+restfulchemy@gmail.com.
-
-.. n.repole+drowsy@gmail.com
-   :target: n.repole+drowsy@gmail.com
+The best way to get support is to file an
+`issue on GitHub <https://github.com/repole/drowsy/issues>`_.

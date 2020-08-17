@@ -4,10 +4,16 @@
 
     Exceptions for Drowsy.
 
-    :copyright: (c) 2016 by Nicholas Repole and contributors.
-                See AUTHORS for more details.
-    :license: MIT - See LICENSE for more details.
 """
+# :copyright: (c) 2016-2020 by Nicholas Repole and contributors.
+#             See AUTHORS for more details.
+# :license: MIT - See LICENSE for more details.
+from marshmallow.exceptions import ValidationError
+
+MISSING_ERROR_MESSAGE = (
+    "An error was raised by `{class_name}` with the key `{key}`, "
+    "but no such key exists in the `error_messages` dictionary."
+)
 
 
 class DrowsyError(Exception):
@@ -26,6 +32,7 @@ class DrowsyError(Exception):
         self.code = code
         self.message = message
         self.kwargs = kwargs
+        super(DrowsyError, self).__init__()
 
 
 class UnprocessableEntityError(DrowsyError):
@@ -44,6 +51,24 @@ class UnprocessableEntityError(DrowsyError):
         """
         self.errors = errors
         super(UnprocessableEntityError, self).__init__(code, message, **kwargs)
+
+
+class PermissionDeniedError(DrowsyError):
+
+    """Exception for when provided data is unable to be deserialized."""
+
+    def __init__(self, code, message, errors, **kwargs):
+        """Initializes a new permission denied error.
+
+        :param str code: Error code for easier lookup.
+        :param str message: Description of the error.
+        :param dict errors: A field by field breakdown of errors.
+        :param dict kwargs: Any additional arguments may be stored along
+            with the message and errors as well.
+
+        """
+        self.errors = errors
+        super(PermissionDeniedError, self).__init__(code, message, **kwargs)
 
 
 class BadRequestError(DrowsyError):
@@ -67,15 +92,29 @@ class ResourceNotFoundError(DrowsyError):
     pass
 
 
-class OffsetLimitParseError(DrowsyError):
+class ParseError(DrowsyError):
+
+    """Generic exception class for parsing errors."""
+
+    pass
+
+
+class OffsetLimitParseError(ParseError):
 
     """Generic exception class for offset or limit parsing errors."""
 
     pass
 
 
-class FilterParseError(DrowsyError):
+class FilterParseError(ParseError):
 
     """Generic exception class for filter parsing errors."""
+
+    pass
+
+
+class PermissionValidationError(ValidationError):
+
+    """Generic schema exception class for an unauthorized action."""
 
     pass
