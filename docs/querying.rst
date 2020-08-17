@@ -8,7 +8,7 @@ range of filtering, nested embedding, and pagination options.
 
 The examples below will walk you through some query basics and advanced
 features using the API described in :ref:`quickstart`. If you want to follow
-along, run the example ``chinook_api`` app and try these same get requests
+along, run the example ``chinook_api`` app and try these same GET requests
 yourself.
 
 
