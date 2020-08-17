@@ -87,13 +87,13 @@ main building block to creating schemas around your models.
     class AlbumSchema(ModelResourceSchema):
         class Meta:
             model = Album
-            model_converter = CamelModelResourceConverter
+            model_converter = ModelResourceConverter
 
 
     class ArtistSchema(ModelResourceSchema):
         class Meta:
             model = Artist
-            model_converter = CamelModelResourceConverter
+            model_converter = ModelResourceConverter
 
 
 Here we're using a :class:`~drowsy.convert.ModelResourceConverter` to
@@ -104,7 +104,7 @@ By default, fields are named by using the attr names of the SQLAlchemy model.
 If we were to use :class:`~drowsy.convert.CamelModelResourceConverter`
 rather than the default :class:`~drowsy.convert.ModelResourceConverter`, it
 would convert field names like ``album_id`` to ``albumId``, to make the
-serialized result conform to standard JSON best practices.
+serialized result conform to standard JSON naming convention.
 
 There's a good chance you'll want to extend one of the included converters
 and create your own, as currently they include child resources by default

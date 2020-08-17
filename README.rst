@@ -5,18 +5,18 @@ Drowsy
 
 GraphQL type features in a REST API using SQLAlchemy and Marshmallow.
 
-Aims to provide a similar feature set to GraphQL, and shares some similarities
-with projects like Django-Tastypie and Flask-RESTful while also being web
-framework agnostic.
+Drowsy aims to provide a similar feature set to GraphQL, and shares some
+similarities with projects like Django-Tastypie and Flask-RESTful while
+also being web framework agnostic.
 
 Get started by visiting our Docs_ and checking out the Quickstart section.
 
 
 Key Features
 ------------
-Given a series of SQLAlchemy_ models, corresponding schemas and resources based
-off those models can be easily defined (or dynamically generated). By using
-those resources, the following features are made available:
+Given a series of SQLAlchemy_ models, corresponding Marshmallow_ schemas and
+Drowsy resources based off those models can be easily defined (or dynamically
+generated). By using those resources, the following features are made available:
 
 * Filter any resource collection by any field or nested resource field. Filters
   are not limited to an equality check, but can also handle ``>``, ``>=``,

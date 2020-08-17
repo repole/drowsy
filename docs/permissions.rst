@@ -51,7 +51,7 @@ resources, so if you were to have a ``UserResource`` with a nested
 ``NotificationResource`` embedded, the above filters are still applied to the
 nested collection of notifications.
 
-An alternative, more conservative option exists, in overriding
+Access to a particular method can also be denied by overriding
 :meth:`~drowsy.resource.BaseModelResource._check_method_allowed` on a Resource.
 This method is called at the beginning of each request and has access to any
 context the Resource was initialized with (e.g. which user is logged in), and
@@ -59,7 +59,10 @@ thus can be used to explicitly deny access to a certain method type (e.g.
 denying a user access to GET or DELETE actions).
 
 In such cases there's no fine grained control involved, the user is denied
-a particular type of access to all objects in the collection.
+a particular type of access to all objects in the collection. It's also
+important to note that this won't directly impact nested resources, so
+denying GET access to a user for a resource won't block them from viewing
+that same resource as part of a nested collection.
 
 
 Create, Update, and Delete

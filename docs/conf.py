@@ -15,6 +15,7 @@ import ast
 import os
 import re
 import sys
+from collections import OrderedDict
 root_path = os.path.join(
     os.path.dirname(os.path.abspath(__file__)), '..')
 sys.path.insert(0, root_path)
@@ -114,7 +115,23 @@ html_theme = 'alabaster'
 # Theme options are theme-specific and customize the look and feel of a theme
 # further.  For a list of options available for each theme, see the
 # documentation.
-#html_theme_options = {}
+
+html_theme_options = {
+    "logo": "drowsy-logo.png",
+    "description_font_style": "italic",
+    "description": "GraphQL type features in a REST API",
+    "code_font_size": "0.8em",
+    "warn_bg": "#FFC",
+    "warn_border": "#EEE",
+    "extra_nav_links": OrderedDict(
+        [
+            ("drowsy @ PyPI", "https://pypi.python.org/pypi/drowsy"),
+            ("marshmallow @ GitHub", "https://github.com/repole/drowsy"),
+            ("Issue Tracker", "https://github.com/repole/drowsy/issues"),
+        ]
+    ),
+}
+
 
 # Add any paths that contain custom themes here, relative to this directory.
 #html_theme_path = []
