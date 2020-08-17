@@ -76,7 +76,7 @@ def _db(request):
     server_types = ["mssql", "postgres"]
     if request.param in server_types:
         if request.param == 'mssql':
-            connect_string = ("mssql+pypyodbc://@localhost/Drowsy?"
+            connect_string = ("mssql+pyodbc://@localhost/Drowsy?"
                               "trusted_connection=yes&"
                               "driver=ODBC+Driver+17+for+SQL+Server")
             sqlstr_path = os.path.join(
