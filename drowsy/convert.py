@@ -10,6 +10,7 @@
 # :license: MIT - See LICENSE for more details.
 from inflection import camelize, underscore, pluralize
 from marshmallow_sqlalchemy.convert import ModelConverter
+from sqlalchemy.orm.descriptor_props import SynonymProperty
 from drowsy.fields import APIUrl, Relationship
 
 
@@ -169,14 +170,32 @@ class ModelResourceConverter(ModelConverter):
         :rtype: dict or the provided dict_cls
 
         """
-        result = super(ModelResourceConverter, self).fields_for_model(
-            model=model,
-            include_fk=include_fk,
-            include_relationships=include_relationships,
-            fields=fields,
-            exclude=exclude,
-            base_fields=base_fields,
-            dict_cls=dict_cls)
+        result = dict_cls()
+        base_fields = base_fields or {}
+        for prop in model.__mapper__.iterate_properties:
+            key = self._get_field_name(prop)
+            if self._should_exclude_field(
+                    prop, fields=fields, exclude=exclude):  # pragma: no cover
+                # Allow marshmallow to validate and exclude the field key.
+                result[key] = None
+                continue
+            if isinstance(prop, SynonymProperty):  # pragma: no cover
+                continue
+            if hasattr(prop, "columns"):
+                if not include_fk:
+                    # Only skip a column if there is no overridden
+                    # column which does not have a Foreign Key and
+                    # it's not a PK
+                    for column in prop.columns:
+                        if column.primary_key or not column.foreign_keys:
+                            break
+                    else:
+                        continue
+            if not include_relationships and hasattr(prop, "direction"):
+                continue  # pragma: no cover
+            field = base_fields.get(key) or self.property2field(prop)
+            if field:
+                result[key] = field
         result["self"] = APIUrl(
             endpoint_name=self._model_name_to_endpoint_name(model.__name__))
         return result

@@ -319,3 +319,23 @@ class CompositeMany(Base):
             ['CompositeOne.OneId', 'CompositeOne.CompositeOneId']
         ),
     )
+
+
+class PrimaryPkExample(Base):
+    """Parent model for testing FK that's part of a PK."""
+
+    __tablename__ = "PrimaryPkExample"
+
+    parent_id = Column("ParentId", Integer, primary_key=True)
+
+
+class ForeignPkExample(Base):
+    """Child model for testing FK that's part of a PK."""
+
+    __tablename__ = "ForeignPkExample"
+
+    child_id = Column("ChildId", Integer, primary_key=True)
+    parent_id = Column("ParentId", ForeignKey("PrimaryPkExample.ParentId"), primary_key=True)
+
+    parent = orm.relationship('PrimaryPkExample', backref="children")
+
