@@ -19,7 +19,7 @@ from tests.schemas import (
     CustomerSchema, TrackPermissionsSchema, TrackSchema
 )
 import tests.resources
-from tests.models import Album, Track
+from tests.models import Album, Track, ForeignPkExample
 from pytest import raises
 
 
@@ -84,7 +84,6 @@ def test_convert_property2field_instance():
 
 def test_convert_fk_as_pk():
     """Test converter handles ForeignKey as part of Primary properly."""
-    from tests.models import ForeignPkExample
     converter = ModelResourceConverter()
     converted_fields = converter.fields_for_model(
         ForeignPkExample,
