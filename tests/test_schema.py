@@ -19,7 +19,7 @@ from tests.schemas import (
     CustomerSchema, TrackPermissionsSchema, TrackSchema
 )
 import tests.resources
-from tests.models import Album, Track
+from tests.models import Album, Track, ForeignPkExample
 from pytest import raises
 
 
@@ -80,6 +80,21 @@ def test_convert_property2field_instance():
     converter = ModelResourceConverter()
     result = converter.property2field(Album.album_id.prop, instance=False)
     assert result == fields.Integer
+
+
+def test_convert_fk_as_pk():
+    """Test converter handles ForeignKey as part of Primary properly."""
+    converter = ModelResourceConverter()
+    converted_fields = converter.fields_for_model(
+        ForeignPkExample,
+        include_fk=False,
+        include_relationships=True,
+        fields=None,
+        exclude=None,
+        base_fields=None,
+        dict_cls=dict
+    )
+    assert "parent_id" in converted_fields is not None
 
 
 class TestDrowsySchema(DrowsyDatabaseTests):

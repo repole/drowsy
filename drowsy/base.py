@@ -1066,7 +1066,7 @@ class BaseResourceABC(SchemaResourceABC, NestableResourceABC):
                 if not split_keys:
                     return ".".join(result_keys)
                 if isinstance(field, EmbeddableMixinABC):
-                    schema.embed([key])
+                    schema.embed([field.name])
                 if isinstance(field, Nested):
                     if isinstance(field, NestedPermissibleABC):
                         with suppress(ValueError, TypeError):
