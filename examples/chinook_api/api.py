@@ -15,6 +15,7 @@ from flask import Flask, request, Response, url_for, g
 from sqlalchemy import create_engine
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import sessionmaker, scoped_session
+from swagger_ui import flask_api_doc
 from drowsy.exc import (
     UnprocessableEntityError, BadRequestError, MethodNotAllowedError,
     ResourceNotFoundError
@@ -22,9 +23,14 @@ from drowsy.exc import (
 from drowsy.resource import ResourceCollection
 from drowsy.router import ModelResourceRouter
 from .resources import *
+from .openapi import spec
 
 app = Flask(__name__)
-
+flask_api_doc(
+    app,
+    config_url='http://localhost:5000/api/swagger.json',
+    url_prefix='/api/doc',
+    title='API doc')
 LOGGER = logging.getLogger('api')
 
 # Set up SQLAlchemy session factory
@@ -63,6 +69,15 @@ def url_for_other_page(page):
         request.view_args.items() | request.args.to_dict().items())
     args['page'] = page
     return url_for(request.endpoint, **args)
+
+
+@app.route("/api/swagger.json", methods=["GET"])
+def swagger_spec_router():
+    """Serve up our swagger spec."""
+    spec_dict = spec.to_dict()
+    # You'll want to find a smarter way to avoid hardcoding a URL
+    spec_dict["servers"] = [{"url": "http://localhost:5000"}]
+    return json.dumps(spec_dict)
 
 
 @app.route(
