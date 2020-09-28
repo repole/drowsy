@@ -595,7 +595,7 @@ class ModelResourceSchema(ResourceSchema, SQLAlchemyAutoSchema):
             the wrong type.
 
         """
-        id_data_keys = {self.fields[key].data_key for key in self.id_keys}
+        id_data_keys = {self.fields[key].data_key or key for key in self.id_keys}
         if set(id_data_keys).issubset(data.keys()):
             # data includes primary key columns
             # attempt to generate filters
