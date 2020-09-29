@@ -11,11 +11,14 @@
 #             See AUTHORS for more details.
 # :license: MIT - See LICENSE for more details.
 import collections.abc
+from contextlib import suppress
 from marshmallow.fields import Field, Nested, missing_
 from marshmallow.utils import is_collection
 from marshmallow.validate import ValidationError
+from sqlalchemy.inspection import inspect
+from sqlalchemy.orm.interfaces import ONETOMANY
+from sqlalchemy.sql.elements import BinaryExpression, BooleanClauseList
 from drowsy import resource_class_registry
-from contextlib import suppress
 from drowsy.exc import (
     BadRequestError, UnprocessableEntityError, MethodNotAllowedError,
     PermissionDeniedError, ResourceNotFoundError, MISSING_ERROR_MESSAGE)
@@ -411,8 +414,50 @@ class NestedPermissibleABC(Nested, Loggable):
 
         """
         permissions = self.permissions_cls(**self._get_permission_cls_kwargs())
-        # TODO - Sort out strict stuff
-        strict = False
+        # Handle removing required in places where a SQLAlchemy
+        # relationship will automatically fill in the value.
+        relationship = getattr(self.parent.opts.model, self.name)
+        child_model = self.schema.opts.model
+        backref_name = relationship.prop.backref
+        if backref_name:
+            backref_field = self.schema.fields.get(backref_name[0])
+            if backref_field:
+                backref_field.required = False
+        if relationship.prop.direction == ONETOMANY:
+            # For relationship Album.tracks
+            # we want to remove "required" for TrackSchema.album_id
+            # and/or TrackSchema.album.
+            primary_expressions = []
+            # First, figure out the join conditions
+            if isinstance(relationship.prop.primaryjoin, BinaryExpression):
+                primary_expressions.append(relationship.prop.primaryjoin)
+            elif isinstance(relationship.prop.primaryjoin, BooleanClauseList):
+                primary_expressions = relationship.prop.primaryjoin.clauses
+            for expression in primary_expressions:
+                # find if left or right is the parent side
+                remote_side = relationship.prop.remote_side
+                left_table = expression.left.table
+                right_table = expression.right.table
+                child_table = inspect(child_model).mapper.local_table
+                if left_table == child_table and right_table == child_table:
+                    # Self referential one to many...
+                    if expression.right in remote_side:
+                        child_side = expression.right
+                    else:
+                        child_side = expression.left  # pragma: no cover
+                elif left_table == child_table:
+                    child_side = expression.left
+                elif right_table == child_table:
+                    child_side = expression.right
+                else:
+                    # Shouldn't ever get here...
+                    raise ValueError  # pragma: no cover
+                child_insp = inspect(inspect(child_model).class_)
+                for column_key in child_insp.columns.keys():
+                    if child_insp.columns[column_key].key == child_side.key:
+                        fk_field = self.schema.fields.get(column_key)
+                        if fk_field:
+                            fk_field.required = False
         result = None
         parent = self.parent.instance
         if self.many:
