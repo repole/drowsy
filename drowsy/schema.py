@@ -420,10 +420,10 @@ class ResourceSchema(Schema, Loggable):
         failure = False
         for i, obj in enumerate(data):
             # embeds
-            for key in obj:
-                if (key in self.fields and
-                        isinstance(self.fields[key], (EmbeddableMixinABC,))):
-                    self.embed([key])
+            for data_key in obj:
+                field = self.fields_by_data_key.get(data_key)
+                if field and isinstance(field, (EmbeddableMixinABC,)):
+                    self.embed([field.name])
             try:
                 # Handle self.instance and determine the action type
                 self.instance = instance or self.get_instance(obj)
@@ -488,7 +488,7 @@ class ResourceSchema(Schema, Loggable):
     def check_permission(self, data, instance, action):
         """Checks if this action is permissible to attempt.
 
-        Does nothing by default, but can be overriden to check if a
+        Does nothing by default, but can be overridden to check if a
         create, update, or delete action is permissible before
         performing any other validation or attempting the action.
 
@@ -529,9 +529,6 @@ class ModelResourceSchema(ResourceSchema, SQLAlchemyAutoSchema):
 
         Also runs :meth:`process_context` upon completion.
 
-        :param extra: Additional attributes to be added to the
-            serialized result.
-        :type extra: dict or None
         :param only: Fields to be included in the serialized result.
         :type only: tuple or list or None
         :param exclude: Fields to be excluded from the serialized
