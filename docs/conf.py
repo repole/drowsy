@@ -126,7 +126,7 @@ html_theme_options = {
     "extra_nav_links": OrderedDict(
         [
             ("drowsy @ PyPI", "https://pypi.python.org/pypi/drowsy"),
-            ("marshmallow @ GitHub", "https://github.com/repole/drowsy"),
+            ("drowsy @ GitHub", "https://github.com/repole/drowsy"),
             ("Issue Tracker", "https://github.com/repole/drowsy/issues"),
         ]
     ),
