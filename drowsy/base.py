@@ -420,7 +420,11 @@ class NestedPermissibleABC(Nested, Loggable):
         child_model = self.schema.opts.model
         backref_name = relationship.prop.backref
         if backref_name:
-            backref_field = self.schema.fields.get(backref_name[0])
+            backref_name = backref_name[0]
+        else:
+            backref_name = relationship.prop.back_populates
+        if backref_name:
+            backref_field = self.schema.fields.get(backref_name)
             if backref_field:
                 backref_field.required = False
         if relationship.prop.direction == ONETOMANY:
@@ -458,6 +462,7 @@ class NestedPermissibleABC(Nested, Loggable):
                         fk_field = self.schema.fields.get(column_key)
                         if fk_field:
                             fk_field.required = False
+                        break
         result = None
         parent = self.parent.instance
         if self.many:
