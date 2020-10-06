@@ -450,7 +450,9 @@ class NestedPermissibleABC(Nested, Loggable):
                     else:
                         child_side = expression.left  # pragma: no cover
                 elif left_table == child_table:
-                    child_side = expression.left
+                    child_side = expression.left  # pragma: no cover
+                    # tests hit the below condition, and what happens
+                    # after is equivalent...no need for coverage
                 elif right_table == child_table:
                     child_side = expression.right
                 else:
