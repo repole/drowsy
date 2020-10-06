@@ -20,9 +20,9 @@ from drowsy.schema import NestedOpts
 from tests.base import DrowsyDatabaseTests
 from tests.models import Album, Artist, Playlist, Track
 from tests.resources import (
-    AlbumResource, AlbumCamelResource, ArtistResource, CustomerResource,
-    EmployeeResource, InvoiceResource, InvoiceCamelResource, PlaylistResource,
-    TrackResource)
+    AlbumResource, AlbumCamelResource, ArtistResource, CompositeNodeResource,
+    CompositeOneResource, CustomerResource, EmployeeResource, InvoiceResource,
+    InvoiceCamelResource, PlaylistResource, TrackResource)
 from pytest import raises
 from unittest.mock import MagicMock
 from sqlalchemy.orm.session import Session
@@ -1073,6 +1073,82 @@ class TestDrowsyResource(DrowsyDatabaseTests):
         with raises(PermissionDeniedError):
             resource.post(data)
 
+    @staticmethod
+    def test_post_self_ref(db_session):
+        """Self referential object creation."""
+        resource = EmployeeResource(session=db_session)
+        data = {
+            "first_name": "John",
+            "last_name": "Doe",
+            "subordinates": [
+                {"employee_id": 2},
+                {"employee_id": 3}
+            ]
+        }
+        result = resource.post(data=data)
+        assert result is not None
+        assert len(result.get("subordinates", [])) == 2
+        assert result["subordinates"][0].get("employee_id") == 2
+        assert result["subordinates"][1].get("employee_id") == 3
+
+    @staticmethod
+    def test_post_fk_as_pk(db_session):
+        """Nested object creation where the PK is a FK."""
+        resource = TrackResource(session=db_session)
+        data = {
+            "name": "New TestTrack",
+            "album": {
+                "album_id": "347",
+            },
+            "media_type": {
+                "media_type_id": 1
+            },
+            "milliseconds": 1,
+            "unit_price": 1.0,
+            "track_stats": {
+                "downloads": 100
+            }
+        }
+        result = resource.post(data=data)
+        assert result is not None
+        assert result["track_id"] == result["track_stats"]["track_id"]
+
+    @staticmethod
+    def test_post_composite_nested(db_session):
+        """Nested object creation with a composite key."""
+        resource = CompositeNodeResource(session=db_session)
+        data = {
+            "node_id": 10,
+            "composite_id": 1,
+            "children": [
+                {
+                    "node_id": 11,
+                    "composite_id": 1
+                }
+            ]
+        }
+        result = resource.post(data=data)
+        assert result is not None
+        assert result["node_id"] == 10
+        assert result["children"][0]["node_id"] == 11
+
+    @staticmethod
+    def test_post_composite_nested_one_to_many(db_session):
+        """Nested one to many creation with a composite key."""
+        resource = CompositeOneResource(session=db_session)
+        data = {
+            "one_id": 6,
+            "composite_one_id": 1,
+            "many": [
+                {
+                    "many_id": 7
+                }
+            ]
+        }
+        result = resource.post(data=data)
+        assert result is not None
+        assert result["one_id"] == 6
+        assert result["many"][0]["many_id"] == 7
 
     # POST COLLECTION TESTS
 

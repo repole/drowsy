@@ -11,6 +11,7 @@
 from inflection import camelize, underscore, pluralize
 from marshmallow_sqlalchemy.convert import ModelConverter
 from sqlalchemy.orm.descriptor_props import SynonymProperty
+from sqlalchemy.orm.interfaces import ONETOMANY, MANYTOMANY
 from drowsy.fields import APIUrl, Relationship
 
 
@@ -69,17 +70,20 @@ class ModelResourceConverter(ModelConverter):
         """
         nullable = True
         required = False
-        for pair in prop.local_remote_pairs:
-            if not pair[0].nullable:
-                if prop.uselist is True:
-                    nullable = False
-                    required = False
-                else:
-                    for column in prop.local_columns:
-                        if column.nullable is False:
+        if prop.direction in (ONETOMANY, MANYTOMANY):
+            # lists shouldn't be set to None
+            nullable = False
+        else:
+            for pair in prop.local_remote_pairs:
+                for fk in pair[0].foreign_keys:
+                    referenced_col = fk.column
+                    if referenced_col == pair[1]:
+                        if not pair[0].nullable:
+                            # if we got to this point, the local side
+                            # of the relationship is the FK side, and
+                            # it has a required value.
                             nullable = False
                             required = True
-                break
         kwargs.update({
             "nested": prop.mapper.class_.__name__ + 'Resource',
             "allow_none": nullable,

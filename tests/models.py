@@ -213,6 +213,25 @@ class Track(Base):
     media_type = orm.relationship('MediaType')
 
 
+class TrackStats(Base):
+
+    """SQLAlchemy model for the Track table in our database."""
+
+    __tablename__ = 'TrackStats'
+
+    track_id = Column("TrackId", ForeignKey('Track.TrackId'), primary_key=True)
+    downloads = Column("Downloads", Integer, nullable=False)
+
+    track = orm.relationship(
+        'Track',
+        backref=backref(
+            "track_stats",
+            uselist=False,
+            cascade="all, delete-orphan"
+        )
+    )
+
+
 t_CompositeNodeToCompositeNode = Table(
     'CompositeNodeToCompositeNode', metadata,
     Column(
@@ -307,7 +326,7 @@ class CompositeMany(Base):
 
     __tablename__ = "CompositeMany"
 
-    many_id = Column("ManyId", Integer, primary_key=True)
+    many_id = Column("ManyId", Integer, primary_key=True, autoincrement=False)
     one_id = Column("OneId", Integer)
     composite_one_id = Column("CompositeOneId", Integer)
 
@@ -335,7 +354,10 @@ class ForeignPkExample(Base):
     __tablename__ = "ForeignPkExample"
 
     child_id = Column("ChildId", Integer, primary_key=True)
-    parent_id = Column("ParentId", ForeignKey("PrimaryPkExample.ParentId"), primary_key=True)
+    parent_id = Column(
+        "ParentId",
+        ForeignKey("PrimaryPkExample.ParentId"),
+        primary_key=True)
 
     parent = orm.relationship('PrimaryPkExample', backref="children")
 

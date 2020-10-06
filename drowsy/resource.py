@@ -531,7 +531,7 @@ class BaseModelResource(BaseResourceABC):
     def get_required_nested_filters(self, key):
         """For a given dot separated data key, return required filters.
 
-        Uses :meth:`get_requird_filters` from child resources.
+        Uses :meth:`get_required_filters` from child resources.
 
         :param str key: Dot notation field name. For example, if trying
             to query an album, this may look something like
@@ -889,19 +889,23 @@ class BaseModelResource(BaseResourceABC):
             raise self.make_error("commit_failure")
         return self.get(ident, embeds=self._get_embed_history(schema))
 
-    def _get_embed_history(self, schema, key=None):
+    def _get_embed_history(self, schema, data_key=None):
         """Figure out what fields were embedded from write operation.
 
         We perform a GET after an individual resource write in order to
         safely make sure only accessible data is returned, but need to
         reverse engineer which fields were embedded along the way.
 
-        :param schema:
-        :param key:
+        :param schema: The schema used to deserialize data. May have
+            been modified during that process.
+        :type schema: :class:`~drowsy.schema.ResourceSchema`
+        :param str|None data_key: Dot notation data key, can be provided
+            if checking a specific data_key rather than the whole
+            schema.
 
         """
         results = set()
-        key = key or ""
+        key = data_key or ""
         found = False
         for field_key in schema.fields:
             field = schema.fields[field_key]

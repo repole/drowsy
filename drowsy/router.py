@@ -417,7 +417,7 @@ class ModelResourceRouter(ResourceRouterABC):
     """
 
     def __init__(self, resource=None, error_messages=None, context=None,
-                 session=None):
+                 session=None, convert_type_func=None):
         """Sets up router error messages and translations.
 
         :param resource: A resource instance. If none is provided,
@@ -428,11 +428,16 @@ class ModelResourceRouter(ResourceRouterABC):
         :param error_messages: Optional dictionary of error messages,
             useful if you want to override the default errors.
         :type error_messages: dict or None
-
+        :param callable|None convert_type_func: Function with two args,
+            the first being a string value, and the second a SQLAlchemy
+            column type to convert that value to. If no value is
+            provided, defaults to using ``convert_to_alchemy_type`` from
+            ``MQLAlchemy``.
 
         """
         self._context = context
         self._session = session
+        self._convert_type_func = convert_type_func or convert_to_alchemy_type
         super(ModelResourceRouter, self).__init__(resource, error_messages)
 
     @property
@@ -583,7 +588,7 @@ class ModelResourceRouter(ResourceRouterABC):
                     for i, id_key in enumerate(id_keys):
                         model_attr = getattr(resource.model, id_key)
                         target_type = type(model_attr.property.columns[0].type)
-                        value = convert_to_alchemy_type(ident[i], target_type)
+                        value = self._convert_type_func(ident[i], target_type)
                         query_session = query_session.filter(
                             model_attr == value)
                     instance = query_session.first()

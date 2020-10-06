@@ -4,6 +4,7 @@ DROP TABLE IF EXISTS dbo.Customer;
 DROP TABLE IF EXISTS dbo.Employee;
 DROP TABLE IF EXISTS dbo.PlaylistTrack;
 DROP TABLE IF EXISTS dbo.Playlist;
+DROP TABLE IF EXISTS dbo.TrackStats;
 DROP TABLE IF EXISTS dbo.Track;
 DROP TABLE IF EXISTS dbo.Album;
 DROP TABLE IF EXISTS dbo.Artist;
@@ -13,6 +14,8 @@ DROP TABLE IF EXISTS dbo.NodeToNode;
 DROP TABLE IF EXISTS dbo.[Node];
 DROP TABLE IF EXISTS dbo.CompositeNodeToCompositeNode;
 DROP TABLE IF EXISTS dbo.CompositeNode;
+DROP TABLE IF EXISTS dbo.CompositeMany;
+DROP TABLE IF EXISTS dbo.CompositeOne;
 
 CREATE TABLE [Artist]
 (
@@ -4255,6 +4258,25 @@ INSERT INTO Track(TrackId, [Name], AlbumId, MediaTypeId, GenreId, Composer, Mill
 INSERT INTO Track(TrackId, [Name], AlbumId, MediaTypeId, GenreId, Composer, Milliseconds, Bytes, UnitPrice) VALUES(3502,'Quintet for Horn, Violin, 2 Violas, and Cello in E Flat Major, K. 407/386c: III. Allegro',346,2,24,'Wolfgang Amadeus Mozart',221331,3665114,0.98999999999999999111);
 INSERT INTO Track(TrackId, [Name], AlbumId, MediaTypeId, GenreId, Composer, Milliseconds, Bytes, UnitPrice) VALUES(3503,'Koyaanisqatsi',347,2,10,'Philip Glass',206005,3305164,0.98999999999999999111);
 SET IDENTITY_INSERT dbo.Track OFF;
+
+
+CREATE TABLE [TrackStats]
+(
+    [TrackId] INTEGER PRIMARY KEY NOT NULL,
+    [Downloads] INTEGER NOT NULL,
+    FOREIGN KEY ([TrackId]) REFERENCES [Track] ([TrackId])
+		ON DELETE NO ACTION ON UPDATE NO ACTION
+);
+INSERT INTO TrackStats(TrackId, Downloads) VALUES(1,10);
+INSERT INTO TrackStats(TrackId, Downloads) VALUES(2,9);
+INSERT INTO TrackStats(TrackId, Downloads) VALUES(3,8);
+INSERT INTO TrackStats(TrackId, Downloads) VALUES(4,7);
+INSERT INTO TrackStats(TrackId, Downloads) VALUES(5,6);
+INSERT INTO TrackStats(TrackId, Downloads) VALUES(6,5);
+INSERT INTO TrackStats(TrackId, Downloads) VALUES(7,4);
+INSERT INTO TrackStats(TrackId, Downloads) VALUES(8,3);
+INSERT INTO TrackStats(TrackId, Downloads) VALUES(9,2);
+INSERT INTO TrackStats(TrackId, Downloads) VALUES(10,1);
 
 
 CREATE TABLE [PlaylistTrack]
@@ -15865,6 +15887,36 @@ INSERT INTO NodeToNode(NodeId, ChildNodeId) VALUES(6,7);
 INSERT INTO NodeToNode(NodeId, ChildNodeId) VALUES(7,8);
 INSERT INTO NodeToNode(NodeId, ChildNodeId) VALUES(8,9);
 INSERT INTO NodeToNode(NodeId, ChildNodeId) VALUES(9,1);
+
+
+CREATE TABLE [CompositeOne]
+(
+    [OneId] INTEGER NOT NULL,
+    [CompositeOneId] INTEGER NOT NULL,
+	PRIMARY KEY([OneId], [CompositeOneId])
+);
+
+INSERT INTO CompositeOne(OneId, CompositeOneId) VALUES(1,1);
+INSERT INTO CompositeOne(OneId, CompositeOneId) VALUES(2,1);
+INSERT INTO CompositeOne(OneId, CompositeOneId) VALUES(3,1);
+INSERT INTO CompositeOne(OneId, CompositeOneId) VALUES(4,1);
+INSERT INTO CompositeOne(OneId, CompositeOneId) VALUES(5,1);
+
+
+CREATE TABLE [CompositeMany]
+(
+    [ManyId] INTEGER NOT NULL,
+    [OneId] INTEGER,
+    [CompositeOneId] INTEGER,
+	PRIMARY KEY([ManyId]),
+	FOREIGN KEY([OneId], [CompositeOneId]) REFERENCES [CompositeOne]([OneId], [CompositeOneId]) ON DELETE NO ACTION ON UPDATE NO ACTION
+);
+
+INSERT INTO CompositeMany(ManyId, OneId, CompositeOneId) VALUES(1,1,1);
+INSERT INTO CompositeMany(ManyId, OneId, CompositeOneId) VALUES(2,1,1);
+INSERT INTO CompositeMany(ManyId, OneId, CompositeOneId) VALUES(3,1,1);
+INSERT INTO CompositeMany(ManyId, OneId, CompositeOneId) VALUES(4,2,1);
+INSERT INTO CompositeMany(ManyId, OneId, CompositeOneId) VALUES(5,2,1);
 
 
 CREATE INDEX [IFK_AlbumArtistId] ON [Album] ([ArtistId]);
