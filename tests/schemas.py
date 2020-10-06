@@ -14,7 +14,8 @@ from drowsy.permissions import DisallowAllOpPermissions
 from drowsy.schema import ModelResourceSchema
 from .models import (
     Album, Artist, CompositeOne, CompositeMany, CompositeNode, Customer,
-    Employee, Genre, Invoice, InvoiceLine, MediaType, Node, Playlist, Track
+    Employee, Genre, Invoice, InvoiceLine, MediaType, Node, Playlist, Track,
+    TrackStats
 )
 from marshmallow import fields
 from marshmallow_sqlalchemy.schema import SQLAlchemyAutoSchema
@@ -93,6 +94,12 @@ class TrackPermissionsSchema(ModelResourceSchema):
         include_relationships = True
     album = Relationship(
         "AlbumResource", many=False, permissions_cls=DisallowAllOpPermissions)
+
+
+class TrackStatsSchema(ModelResourceSchema):
+    class Meta:
+        model = TrackStats
+        include_relationships = True
 
 
 class AlbumSchema(ModelResourceSchema):

@@ -17,7 +17,7 @@ from .schemas import (
     GenreCamelSchema, GenreSchema, InvoiceLineCamelSchema, InvoiceLineSchema,
     InvoiceCamelSchema, InvoiceSchema, MediaTypeCamelSchema, MediaTypeSchema,
     NodeCamelSchema, NodeSchema, PlaylistCamelSchema, PlaylistSchema,
-    TrackCamelSchema, TrackSchema
+    TrackCamelSchema, TrackSchema, TrackStatsSchema
 )
 
 
@@ -86,6 +86,11 @@ class TrackResource(ModelResource):
             filters = model.track_id != 130
             return filters
         return None
+
+
+class TrackStatsResource(ModelResource):
+    class Meta:
+        schema_cls = TrackStatsSchema
 
 
 class ArtistResource(ModelResource):
