@@ -418,6 +418,7 @@ class ResourceSchema(Schema, Loggable):
         results = []
         errors = {}
         failure = False
+        id_data_keys = {self.fields[k].data_key or k for k in self.id_keys}
         for i, obj in enumerate(data):
             # embeds
             for data_key in obj:
@@ -445,6 +446,16 @@ class ResourceSchema(Schema, Loggable):
                     self.instance = self.opts.instance_cls()
                 kwargs["instance"] = self.instance
                 kwargs["unknown"] = EXCLUDE
+                if action == "update":
+                    # Avoid providing identifier values as part of the
+                    # load. Helps ensure SQLAlchemy doesn't run an
+                    # unnecessary update on the PK fields.
+                    new_obj = obj.copy()
+                    for pair in zip(self.id_keys, id_data_keys):
+                        if new_obj.get(pair[1]) == getattr(
+                                self.instance, pair[0]):
+                            new_obj.pop(pair[1])
+                    obj = new_obj
                 result = super(ResourceSchema, self).load(
                     obj, many=False, **kwargs)
                 results.append(result)
