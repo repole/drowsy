@@ -198,6 +198,7 @@ class ResourceSchema(Schema, Loggable):
             load_only=load_only,
             dump_only=dump_only,
             partial=partial)
+        self.loaded_data = None
         self.parent_resource = parent_resource
         self.instance = instance
         self._fields_by_data_key = None
@@ -396,11 +397,12 @@ class ResourceSchema(Schema, Loggable):
             taken are not allowed.
 
         """
-        # inherit nested opts from parent if not already set
+        self.loaded_data = data
         many = many if many is not None else self.many
         supplied_action = action
         if not many:
             data = [data]
+        # inherit nested opts from parent if not already set
         self.nested_opts = nested_opts or self.nested_opts
         if (not self.nested_opts and
                 self.parent_resource and
@@ -418,7 +420,9 @@ class ResourceSchema(Schema, Loggable):
         results = []
         errors = {}
         failure = False
+        id_data_keys = {self.fields[k].data_key or k for k in self.id_keys}
         for i, obj in enumerate(data):
+            self.loaded_data = obj
             # embeds
             for data_key in obj:
                 field = self.fields_by_data_key.get(data_key)
@@ -445,8 +449,23 @@ class ResourceSchema(Schema, Loggable):
                     self.instance = self.opts.instance_cls()
                 kwargs["instance"] = self.instance
                 kwargs["unknown"] = EXCLUDE
-                result = super(ResourceSchema, self).load(
-                    obj, many=False, **kwargs)
+                if action == "update":
+                    # Avoid providing identifier values as part of the
+                    # load. Helps ensure SQLAlchemy doesn't run an
+                    # unnecessary update on the PK fields.
+                    new_obj = obj.copy()
+                    for pair in zip(self.id_keys, id_data_keys):
+                        if new_obj.get(pair[1]) == getattr(
+                                self.instance, pair[0]):
+                            new_obj.pop(pair[1])
+                    obj = new_obj
+                    result = self.instance  # data only pk, no updates
+                    if len(obj.keys()) > 0:
+                        result = super(ResourceSchema, self).load(
+                            obj, many=False, **kwargs)
+                else:
+                    result = super(ResourceSchema, self).load(
+                        obj, many=False, **kwargs)
                 results.append(result)
             except PermissionValidationError as exc:
                 if many:
@@ -465,6 +484,7 @@ class ResourceSchema(Schema, Loggable):
             results = results[0]
             errors = errors.get(0)
             data = data[0]
+        self.loaded_data = data
         if not failure:
             return results
         else:
@@ -632,14 +652,36 @@ class ModelResourceSchema(ResourceSchema, SQLAlchemyAutoSchema):
         """Deserialize the provided data into a SQLAlchemy object.
 
         :param dict|list<dict> data: Data to be loaded into an instance.
-        :param session: Optional database session. Will be used in place
-            of ``self.session`` if provided.
+        :param bool|None many: `True` if loading a collection. `None`
+            defers to the schema default, other values will act as an
+            override.
         :param instance: SQLAlchemy model instance data should be loaded
             into. If ``None`` is provided at this point or when the
             class was initialized, an instance will either be determined
             using the provided data via :meth:`get_instance`, or if that
             fails a new instance will be created.
+        :param nested_opts: Dictionary of :class:`NestedOpts`, where the
+            top level key is a field name for a nested field, and the
+            value for that key is a :class:`NestedOpts` instance. Used
+            to determine if the entire nested collection is to be
+            replaced, or simply appended to/removed from on load.
+            Overwrites the value set in the schema initializer.
+        :type nested_opts: dict<str, NestedOpts>
+        :param str|None action: Used as part of a permissions check.
+            Possible values include `"create"` if a new object is
+            being created, `"update"` is an existing object is being
+            updated, or `"delete"` if the object is to be deleted.
+            If `None` is provided, the method will deduce the action
+            based on whether an existing instance is found in the
+            database (`"update"`) or not (`"create"`). If loading a
+            collection, any value passed will be applied to all
+            objects.
+        :param session: Optional database session. Will be used in place
+            of ``self.session`` if provided.
         :return: An instance with the provided data loaded into it.
+        :raise ValidationError: If any errors are encountered.
+        :raise PermissionValidationError: If any of the actions being
+            taken are not allowed.
 
         """
         # Adding things to kwargs to play nice with super...
