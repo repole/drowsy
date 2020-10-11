@@ -2,6 +2,22 @@
 Changes
 =======
 
+Release 0.1.3
+=============
+
+Features Added
+--------------
+* Data is now attached to ``ResourceSchema`` as ``loaded_data`` while
+  being loaded. Allows for option of child schemas to see what data the
+  parent is currently loading.
+* Nested objects will no longer trigger an ``"update"`` action when the
+  object has no data provided other than identifying keys.
+
+Bug Fixes
+---------
+* Avoid updating primary key's unnecessarily on loads of existing objects.
+
+
 Release 0.1.2
 =============
 
