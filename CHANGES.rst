@@ -2,6 +2,15 @@
 Changes
 =======
 
+Release 0.1.4
+=============
+
+Features Added
+--------------
+* ``OpPermissionsABC.check`` and classes that inherit from it now receive the
+  ``field`` that made the call as a parameter.
+
+
 Release 0.1.3
 =============
 
