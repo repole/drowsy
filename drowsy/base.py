@@ -251,7 +251,8 @@ class NestedPermissibleABC(Nested, Loggable):
             operation=operation,
             obj_data=obj_data,
             instance=instance,
-            context=self.context)
+            context=self.context,
+            field=self)
         if not permissible:
             simple_key = "permission_denied"
             key = simple_key + "_" + operation
