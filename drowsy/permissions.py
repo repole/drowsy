@@ -20,7 +20,7 @@ class OpPermissionsABC(Loggable):
         self.kwargs = kwargs
 
     def check(self, operation, obj_data, instance=None, context=None,
-              **kwargs):
+              field=None, **kwargs):
         """Check if the given action is allowed.
 
         :param str operation: Action type. Options include ``"add"``,
@@ -34,6 +34,8 @@ class OpPermissionsABC(Loggable):
             data yet to be loaded into it.
         :param context: The context of the current action. May include
             info such as the current user.
+        :param field: The Marshmallow field that triggered the
+            permission check.
         :param kwargs: Any additional arguments that may be used for
             checking permissions.
         :return: ``True`` if no error is raised.
@@ -48,7 +50,7 @@ class AllowAllOpPermissions(OpPermissionsABC):
     """Allows any and all actions on a relationship."""
 
     def check(self, operation, obj_data, instance=None, context=None,
-              **kwargs):
+              field=None, **kwargs):
         """Check if the given action is allowed.
 
         Always returns ``True``.
@@ -64,6 +66,8 @@ class AllowAllOpPermissions(OpPermissionsABC):
             data yet to be loaded into it.
         :param context: The context of the current action. May include
             info such as the current user.
+        :param field: The Marshmallow field that triggered the
+            permission check.
         :param kwargs: Any additional arguments that may be used for
             checking permissions.
         :return: ``True`` if no error is raised.
@@ -78,7 +82,7 @@ class DisallowAllOpPermissions(OpPermissionsABC):
     """Disallows any and all actions on a relationship."""
 
     def check(self, operation, obj_data, instance=None, context=None,
-              **kwargs):
+              field=None, **kwargs):
         """Check if the given action is allowed.
 
         Always returns ``False``.
@@ -94,6 +98,8 @@ class DisallowAllOpPermissions(OpPermissionsABC):
             data yet to be loaded into it.
         :param context: The context of the current action. May include
             info such as the current user.
+        :param field: The Marshmallow field that triggered the
+            permission check.
         :param kwargs: Any additional arguments that may be used for
             checking permissions.
         :return: ``True`` if no error is raised.
