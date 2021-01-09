@@ -46,7 +46,7 @@ Query for things that are >, >=, =<, <, != by appending -gt, -gte,
 
 .. sourcecode:: http
 
-    GET /api/albums?album_id-lte=10&album_id-gt>8 HTTP/1.1
+    GET /api/albums?album_id-lte=10&album_id-gt=8 HTTP/1.1
 
 .. sourcecode:: http
 
@@ -74,7 +74,7 @@ Query text fields for partial matches using -like.
 
 .. sourcecode:: http
 
-    GET /api/albums?albums?title-like=salute HTTP/1.1
+    GET /api/albums?title-like=salute HTTP/1.1
 
 .. sourcecode:: http
 
@@ -182,7 +182,7 @@ Use limit for any end point:
 
 .. sourcecode:: http
 
-    GET /api/albums&limit=2 HTTP/1.1
+    GET /api/albums?limit=2 HTTP/1.1
 
 .. sourcecode:: http
 
@@ -210,7 +210,7 @@ Use offset for any end point:
 
 .. sourcecode:: http
 
-    GET /api/albums&limit=1&offset=1 HTTP/1.1
+    GET /api/albums?limit=1&offset=1 HTTP/1.1
 
 .. sourcecode:: http
 
@@ -231,7 +231,7 @@ Paginate any end point (limit can be used to set page size):
 
 .. sourcecode:: http
 
-    GET /api/albums&page=2limit=5 HTTP/1.1
+    GET /api/albums?page=2limit=5 HTTP/1.1
 
 .. sourcecode:: http
 

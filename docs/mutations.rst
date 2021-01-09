@@ -250,7 +250,7 @@ It's up to you to decide how you'd want such an attempt to delete an Album to
 impact it's children Tracks. In the
 `models used in our example API <_modules/examples/chinook_api/models.html>`_,
 note that on the ``Track.album`` relationship, a backref is used to create
-the ``Album.tracks`` relationship, and the cascade rule of ``delete-orphan"``
+the ``Album.tracks`` relationship, and the cascade rule of ``"delete-orphan"``
 is used in this case to specify that the deletion of an Album should cascade
 to all of its Tracks.
 
@@ -333,7 +333,7 @@ it like so:
 
     {
 
-        "ablum_id": 349,
+        "album_id": 349,
         "tracks": [
             {
                 "$op": "remove",
