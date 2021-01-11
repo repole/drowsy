@@ -2,6 +2,15 @@
 Changes
 =======
 
+
+Release 0.1.5
+=============
+
+Bug Fixes
+---------
+* Fix issue with required filters failing a boolean comparison.
+
+
 Release 0.1.4
 =============
 
