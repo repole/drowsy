@@ -598,9 +598,12 @@ class BaseModelResource(BaseResourceABC):
 
         """
         filters = self.get_required_filters(alias=alias)
-        if filters:
+        if filters is not None:
             if isinstance(filters, list) or isinstance(filters, tuple):
-                return query.filter(*filters)
+                if filters:
+                    # this looks redundant, but it's checking if
+                    # the collection is empty rather than None
+                    return query.filter(*filters)
             else:
                 return query.filter(filters)
         return query
