@@ -3,6 +3,14 @@ Changes
 =======
 
 
+Release 0.1.6
+=============
+
+Bug Fixes
+---------
+* Remove redundant application of required filters.
+
+
 Release 0.1.5
 =============
 
