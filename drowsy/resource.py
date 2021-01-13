@@ -641,7 +641,7 @@ class BaseModelResource(BaseResourceABC):
         else:
             query = session
         # apply filters
-        query = self.apply_required_filters(query)
+        # Note that required filters are applied by query builder too
         query = self.query_builder.build(
             query=query,
             resource=self,
