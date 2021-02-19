@@ -5,7 +5,7 @@
     Tools for building SQLAlchemy queries.
 
 """
-# :copyright: (c) 2016-2020 by Nicholas Repole and contributors.
+# :copyright: (c) 2016-2021 by Nicholas Repole and contributors.
 #             See AUTHORS for more details.
 # :license: MIT - See LICENSE for more details.
 from collections import defaultdict
@@ -16,12 +16,29 @@ from drowsy.parser import SortInfo, SubfilterInfo
 from drowsy.utils import get_field_by_data_key
 from sqlalchemy import and_, func, or_
 from sqlalchemy.inspection import inspect
-from sqlalchemy.orm import aliased, contains_eager
+from sqlalchemy.orm import aliased, contains_eager, subqueryload
 from sqlalchemy.orm.interfaces import MANYTOMANY, ONETOMANY
 from sqlalchemy.sql.elements import BinaryExpression, BooleanClauseList
+from sqlalchemy.sql.selectable import Alias, Subquery
 from mqlalchemy import (
-    apply_mql_filters, InvalidMqlException, MqlFieldError,
+    InvalidMqlException, MqlBuilder, MqlFieldError,
     MqlFieldPermissionError, MqlTooComplex)
+
+
+def manipulate_filters_to_list(filters):
+    """Return filters as a list of filters, regardless of input format.
+
+    :param filters: SQLAlchemy filters to be applied to a query
+    :type filters: SQLAlchemy expression, list, tuple, or None
+
+    """
+    if isinstance(filters, tuple):
+        return list(filters)
+    if filters is None:
+        return []
+    if not isinstance(filters, list):
+        return [filters]
+    return filters
 
 
 class QueryBuilder(Loggable):
@@ -154,6 +171,58 @@ class QueryBuilder(Loggable):
             query = query.limit(limit)
         return query
 
+    def _generate_filters(self, model_class, filters, whitelist=None,
+                          nested_conditions=None, stack_size_limit=100,
+                          convert_key_names_func=str, gettext=None):
+        """
+
+        :param model_class:
+        :param filters:
+        :param whitelist:
+        :param nested_conditions:
+        :param stack_size_limit:
+        :param convert_key_names_func:
+        :param gettext:
+        :return:
+
+
+        Apply filters to a query using MQLAlchemy.
+
+        :param query: A SQLAlchemy session or query.
+        :param model_class: The model having filters applied to it.
+        :param filters: The MQLAlchemy style filters to apply.
+        :type filters: dict or None
+        :param whitelist: Used to determine what attributes are
+            acceptable to be queried.
+        :type whitelist: callable, list, set, or None
+        :param nested_conditions: Callable accepting one param, or
+            dict, where the key/param is a dot separated relationship
+            name, and the return value is any required SQL expressions
+            for filtering that relationship.
+        :type nested_conditions: callable, dict, or None
+        :param stack_size_limit: Used to limit the allowable complexity
+            of the applied filters.
+        :type stack_size_limit: int or None
+        :param callable convert_key_names_func: Used to convert the
+            attr names from user input (perhaps in camelCase) to the
+            model format (likely in under_score format).
+        :param gettext: Used to translate any errors.
+        :type gettext: callable or None
+        :raise InvalidMQLException: Raised in cases where invalid
+            filters were supplied.
+        :return: The query with filters applied.
+
+        """
+        return MqlBuilder().parse_mql_filters(
+            model_class,
+            filters=filters,
+            nested_conditions=nested_conditions,
+            whitelist=whitelist,
+            stack_size_limit=stack_size_limit,
+            convert_key_names_func=convert_key_names_func,
+            gettext=gettext
+        )
+
     def apply_filters(self, query, model_class, filters, whitelist=None,
                       nested_conditions=None, stack_size_limit=100,
                       convert_key_names_func=str, gettext=None):
@@ -184,7 +253,7 @@ class QueryBuilder(Loggable):
         :return: The query with filters applied.
 
         """
-        return apply_mql_filters(
+        return MqlBuilder().apply_mql_filters(
             query,
             model_class,
             filters=filters,
@@ -212,7 +281,8 @@ class ModelResourceQueryBuilder(QueryBuilder):
                      subquery=None, limit=None, limit_source=None, offset=None,
                      sorts=None, convert_key_name=None, whitelist=None,
                      relationship_direction=None, joined=False, option=None,
-                     join=None):
+                     join=None, filters=None, id_keys=None, strategy=None,
+                     unaliased_filters=None):
             """
 
             :param str name: Name of the subresource.
@@ -262,6 +332,10 @@ class ModelResourceQueryBuilder(QueryBuilder):
             self.joined = joined
             self.option = option
             self.join = join or []
+            self.id_keys = id_keys or []
+            self.filters = filters or []
+            self.unaliased_filters = unaliased_filters or []
+            self.strategy = strategy
 
     def build(self, query, resource, filters, subfilters, embeds=None,
               offset=None, limit=None, sorts=None, strict=True,
@@ -389,12 +463,11 @@ class ModelResourceQueryBuilder(QueryBuilder):
                 parent_col_name = expression.right.name
                 child_expr = expression.left
                 child_col_name = expression.left.name
-            from sqlalchemy.sql.selectable import Alias
-            if isinstance(parent, Alias):
+            if isinstance(parent, Alias) or isinstance(parent, Subquery):
                 parent_expr = getattr(
                     parent.c,
                     parent.name + "_" + parent_col_name)
-            if isinstance(child, Alias):
+            if isinstance(child, Alias) or isinstance(child, Subquery):
                 child_expr = getattr(
                     child.c,
                     assoc_queryable.name + "_" + child_col_name)
@@ -728,7 +801,7 @@ class ModelResourceQueryBuilder(QueryBuilder):
                     if values:
                         query = query.filter(
                             getattr(record_class, id_key).in_(values))
-                query = query.from_self()
+                # query = query.from_self()
         for order_by in order_bys:
             query = query.order_by(order_by)
         return query
@@ -868,7 +941,8 @@ class ModelResourceQueryBuilder(QueryBuilder):
                             children=[],
                             convert_key_name=resource.convert_key_name,
                             whitelist=resource.whitelist,
-                            relationship_direction=relationship_direction
+                            relationship_direction=relationship_direction,
+                            id_keys=resource.schema.id_keys
                         )
                         # This takes care of embedding when is_embed
                         new_node.subquery = resource.apply_required_filters(
@@ -1051,20 +1125,45 @@ class ModelResourceQueryBuilder(QueryBuilder):
                                         ))
                         else:
                             try:
-                                nested_conditions = (
-                                    resource.get_required_nested_filters)
-                                subquery = resource.apply_required_filters(
-                                    subquery, alias=last_node.alias)
-                                last_node.subquery = self.apply_filters(
-                                        query=subquery,
-                                        model_class=last_node.alias,
-                                        whitelist=resource.whitelist,
-                                        nested_conditions=nested_conditions,
-                                        filters=user_supplied_filters,
-                                        convert_key_names_func=(
-                                            resource.convert_key_name),
-                                        stack_size_limit=stack_size_limit
-                                    ).subquery(inspect(last_node.alias).name)
+                                req_filters = resource.get_required_filters(
+                                    alias=last_node.alias)
+                                new_filters = self._generate_filters(
+                                    model_class=last_node.alias,
+                                    filters=user_supplied_filters,
+                                    nested_conditions=(
+                                        resource.get_required_nested_filters),
+                                    whitelist=resource.whitelist,
+                                    stack_size_limit=stack_size_limit,
+                                    convert_key_names_func=(
+                                        resource.convert_key_name)
+                                )
+                                # hacky....need a smarter way to do this
+                                clean_req_filters = (
+                                    resource.get_required_filters())
+                                clean_new_filters = self._generate_filters(
+                                    model_class=inspect(
+                                        last_node.alias).class_,
+                                    filters=user_supplied_filters,
+                                    nested_conditions=(
+                                        resource.get_required_nested_filters),
+                                    whitelist=resource.whitelist,
+                                    stack_size_limit=stack_size_limit,
+                                    convert_key_names_func=(
+                                        resource.convert_key_name)
+                                )
+                                last_node.filters = manipulate_filters_to_list(
+                                    req_filters) + manipulate_filters_to_list(
+                                    new_filters)
+                                last_node.unaliased_filters = (
+                                        manipulate_filters_to_list(
+                                            clean_req_filters) +
+                                        manipulate_filters_to_list(
+                                            clean_new_filters))
+                                if last_node.filters:
+                                    subquery = subquery.filter(
+                                        *last_node.filters)
+                                last_node.subquery = subquery.subquery(
+                                    inspect(last_node.alias).name)
                             except InvalidMqlException as exc:
                                 if not strict:
                                     failed = True
@@ -1109,40 +1208,141 @@ class ModelResourceQueryBuilder(QueryBuilder):
         for node in nodes:
             if node.name == "$root":
                 continue
+            strategy = self._decide_strategy(node, model_count)
             relationship = getattr(inspect(node.parent.alias).class_,
                                    node.name)
-            left = node.parent.subquery
-            if left is None:
-                left = node.parent.alias
-            join_info = relationship.prop._create_joins(
-                source_selectable=inspect(left).selectable,
-                dest_selectable=inspect(node.subquery).selectable,
-                source_polymorphic=True,
-                dest_polymorphic=True,
-                of_type_mapper=inspect(node.alias).mapper)
-            primaryjoin = join_info[0]
-            secondaryjoin = join_info[1]
-            secondary = join_info[4]
-            if secondary is not None:
-                if node.join:
-                    query = query.outerjoin(node.subquery, and_(*node.join))
+            if strategy == "join":
+                left = node.parent.subquery
+                if left is None:
+                    left = node.parent.alias
+                join_info = relationship.prop._create_joins(
+                    source_selectable=inspect(left).selectable,
+                    dest_selectable=inspect(node.subquery).selectable,
+                    source_polymorphic=True,
+                    of_type_entity=inspect(node.alias))
+                primaryjoin = join_info[0]
+                secondaryjoin = join_info[1]
+                secondary = join_info[4]
+                if secondary is not None:
+                    if node.join:
+                        query = query.outerjoin(
+                            node.subquery, and_(*node.join))
+                    else:
+                        # Default joins used when no limit/offset used for
+                        # subquery
+                        query = query.outerjoin(secondary, primaryjoin)
+                        query = query.outerjoin(node.subquery, secondaryjoin)
                 else:
-                    # Default joins used when no limit/offset used for
-                    # subquery
-                    query = query.outerjoin(secondary, primaryjoin)
-                    query = query.outerjoin(node.subquery, secondaryjoin)
-            else:
-                query = query.outerjoin(node.subquery, primaryjoin)
-            if node.parent and node.parent.option:
-                node.option = node.parent.option.contains_eager(
-                    node.name,
-                    alias=node.subquery)
-            else:
-                node.option = contains_eager(
-                    node.name,
-                    alias=node.subquery)
+                    query = query.outerjoin(node.subquery, primaryjoin)
+                if node.parent and node.parent.option:
+                    node.option = node.parent.option.contains_eager(
+                        node.name,
+                        alias=node.subquery)
+                else:
+                    node.option = contains_eager(
+                        node.name,
+                        alias=node.subquery)
+            elif strategy == "subqueryload":
+                # Subquery loads are never applied when there's a
+                # duplicate model type in the load chain, so aliasing
+                # isn't necessary.
+                if node.parent and node.parent.name == "$root":
+                    relationship = getattr(node.parent.alias,
+                                           node.name)
+                if node.parent and node.parent.option:
+                    node.option = node.parent.option.subqueryload(
+                        relationship.and_(*node.unaliased_filters))
+                else:
+                    node.option = subqueryload(
+                        relationship.and_(*node.unaliased_filters))
             if not node.children:
                 subfilter_options.append(node.option)
         if subfilter_options:
             query = query.options(*subfilter_options)
         return query
+
+    def _decide_strategy(self, node, model_count):
+        """For a given node, decide the load strategy.
+
+        Relationships with uselist=False will always use joined eager
+        loading unless a parent (or grandparent, etc.) used selectinload
+        or subqueryload.
+
+        Relationships with uselist=True will use joined eager loading
+        if the subresource (as represented by the node) uses a limit
+        and/or offset, or if any of their descendants need limit/offset.
+        Otherwise it'll use either selectinload or subqueryload.
+
+        The goal here is to avoid exponential row increase on joins
+        when possible, which joins+contains_eager can cause. There are
+        probably better ways to optimize this, and ideally we should let
+        the user define which relationships they want loaded in what way
+        ahead of time, but for now this should serve as relatively sane
+        defaults.
+
+        :param SubqueryNode node: Corresponds to a nested resource
+            relationship.
+        :return: The load strategy to use. Does also modify the node
+            object by setting its ``strategy`` attr.
+        :param dict model_count: A dictionary where the key is a
+            model class, and the value is the number of times that
+            model is referenced in our data load.
+
+        """
+        # Find the root model type
+        # this is needed to prevent unaliased self referential relations
+        # from using subqueryload/selectinload...only an issue when the
+        # root model is the same as a child model.
+        parent = node.parent
+        root = node
+        while parent:
+            root = parent
+            parent = parent.parent
+        unaliased_root = inspect(root.alias).class_
+        unaliased_node = inspect(node.alias).class_
+        if node.limit or node.offset or (
+                node.parent and node.parent.strategy == "join") or (
+                unaliased_node == unaliased_root):
+            node.strategy = "join"
+            return node.strategy
+        # TODO - strategy = "selectinload"
+        strategy = "subqueryload"
+        if node.parent and len(node.parent.id_keys) > 1:
+            strategy = "subqueryload"
+        children_limit_offset = False
+        children_composite_key = False
+        children_self_ref_root = False
+        duplicate_model = False
+        node_queue = [node]
+        while node_queue:
+            node = node_queue.pop(0)
+            for child in node.children:
+                unaliased_child = inspect(child.alias).class_
+                if model_count[unaliased_child] > 1:
+                    duplicate_model = True
+                if unaliased_root == unaliased_child:
+                    children_self_ref_root = True
+                if child.limit or child.offset:
+                    children_limit_offset = True
+                if len(child.id_keys) > 1 and child.children:
+                    children_composite_key = True
+                if children_limit_offset and children_composite_key:
+                    node_queue = []
+                    break
+                else:
+                    node_queue.append(child)
+        if children_limit_offset or children_self_ref_root or duplicate_model:
+            # stuck using contains eager to be safe...
+            # needs refinement later, but this will get the job done
+            node.strategy = "join"
+            return node.strategy
+        elif children_composite_key:
+            # we're going to have to use subqueryload at some point
+            # SQLAlchemy doesn't allow a subqueryload after a
+            # selectinload....
+            # NOTE - has no effect now, will be useful when we build in
+            # selectinload support as the default.
+            node.strategy = "subqueryload"
+            return node.strategy
+        node.strategy = strategy
+        return node.strategy

@@ -4,17 +4,21 @@
 
     PyTest configuration for Drowsy tests.
 
+    This is adapted from pytest-flask-sqlalchemy:
+    https://github.com/jeancochrane/pytest-flask-sqlalchemy/
+
+    Corresponding license (MIT) of that code can be found at:
+    https://github.com/jeancochrane/pytest-flask-sqlalchemy/blob/master/LICENSE
+
 """
-# :copyright: (c) 2016-2020 by Nicholas Repole and contributors.
-#             See AUTHORS for more details.
-# :license: MIT - See LICENSE for more details.
 import contextlib
 import pytest
 import os
 import sqlalchemy as sa
 from packaging import version
-from sqlalchemy.orm import sessionmaker
+from sqlalchemy.orm import sessionmaker, scoped_session
 from unittest.mock import MagicMock
+from sqlalchemy.engine.base import RootTransaction
 
 
 def pytest_addoption(parser):
@@ -59,7 +63,7 @@ def pytest_generate_tests(metafunc):
         metafunc.parametrize("_db", targets, indirect=True)
 
 
-@pytest.fixture(scope='session')
+@pytest.fixture(scope='function')
 def _db(request):
     """Set up a database engine for this test run.
 
@@ -112,7 +116,7 @@ def _db(request):
         db_path = os.path.join(
             os.path.dirname(os.path.abspath(__file__)), "chinook.sqlite")
         connect_string = "sqlite+pysqlite:///" + db_path
-        engine = sa.create_engine(connect_string)
+        engine = sa.create_engine(connect_string, echo=True)
     return engine
 
 
@@ -130,20 +134,28 @@ def _transaction(request, _db):
     :rtype: :class:`~sa.engine.Engine`
 
     """
+    def noop(*args, **kwargs):
+        return None
+
     # Start a transaction
     connection = _db.connect()
     transaction = connection.begin()
     # Bind a session to the transaction. The empty `binds` dict is
     # necessary when specifying a `bind` option.
     options = dict(bind=connection, binds={})
-    session = sessionmaker(**options)()
+    session_factory = scoped_session(sessionmaker(**options))
+    session = session_factory()
     # Make sure the session, connection, and transaction can't be closed
     # by accident in the codebase
     connection.force_close = connection.close
-    transaction.force_rollback = transaction.rollback
-    connection.close = lambda: None
-    transaction.rollback = lambda: None
-    session.close = lambda: None
+    # transaction.force_rollback = transaction.rollback
+    connection.close = noop
+    # transaction.rollback = lambda: None
+    RootTransaction.__slots__ = ("connection", "is_active", "rollback",
+                                 "force_rollback")
+    RootTransaction.force_rollback = RootTransaction.rollback
+    RootTransaction.rollback = noop
+    session.close = noop
     # Begin a nested transaction (any new transactions created in the
     # codebase will be held until this outer transaction is committed or
     # closed)
@@ -156,7 +168,6 @@ def _transaction(request, _db):
             # ensure that state is expired the way
             # session.commit() at the top level normally does
             session.expire_all()
-
             session.begin_nested()
 
     # Force the connection to use nested transactions
@@ -174,12 +185,12 @@ def _transaction(request, _db):
     @request.addfinalizer
     def teardown_transaction():
         # Delete the session
-        # session.remove()
+        session.close()
         # Rollback the transaction and return the connection to the pool
         transaction.force_rollback()
         connection.force_close()
 
-    return connection, transaction, session
+    return connection, session.transaction, session
 
 
 @pytest.fixture(scope='function')
@@ -199,7 +210,7 @@ def _engine(request, _transaction):
     # https://docs.sqlalchemy.org/en/latest/changelog/migration_13.html
     if version.parse(sa.__version__) < version.parse('1.3'):
         engine.contextual_connect.return_value = connection
-    else:
+    elif hasattr(engine, "_contextual_connect"):
         engine._contextual_connect.return_value = connection
 
     # References to `Engine.dialect` should redirect to the Connection (this

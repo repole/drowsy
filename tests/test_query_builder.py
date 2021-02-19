@@ -608,29 +608,39 @@ class TestDrowsyQueryBuilder(DrowsyDatabaseTests):
                 assert child.node_id == 1
 
     @staticmethod
-    def test_root_composite_id_limit_with_subquery(db_session):
+    def test_root_composite_id_limit_with_subquery(caplog, db_session):
         """Limit to a composite id root resource using subqueries."""
-        query_builder = ModelResourceQueryBuilder()
-        query = db_session.query(CompositeNode)
-        subfilters = {
-            "children": SubfilterInfo(
-                filters={"node_id": 6}
+        import logging
+        logging.basicConfig()
+        logger = logging.getLogger('sqlalchemy')
+        logger.addHandler(logging.StreamHandler())
+        logger.addHandler(logging.FileHandler(filename="test.log"))
+        logger.setLevel(logging.INFO)
+        caplog.set_level(logging.INFO, logger='sqlalchemy')
+        with caplog.at_level(logging.INFO, logger="sqlalchemy"):
+            logger.info("WTF")
+            query_builder = ModelResourceQueryBuilder()
+            query = db_session.query(CompositeNode)
+            subfilters = {
+                "children": SubfilterInfo(
+                    filters={"node_id": 6}
+                )
+            }
+            query = query_builder.apply_subquery_loads(
+                query=query,
+                resource=CompositeNodeResource(session=db_session),
+                subfilters=subfilters,
+                limit=1,
+                offset=0,
+                embeds=[]
             )
-        }
-        query = query_builder.apply_subquery_loads(
-            query=query,
-            resource=CompositeNodeResource(session=db_session),
-            subfilters=subfilters,
-            limit=1,
-            offset=0,
-            embeds=[]
-        )
-        result = query.all()
-        assert result is not None
-        assert len(result) == 1
-        assert result[0].node_id == 1
-        assert len(result[0].children) == 1
-        assert result[0].children[0].node_id == 6
+            result = query.all()
+            assert result is not None
+            assert len(result) == 1
+            assert result[0].node_id == 1
+            assert len(result[0].children) == 1
+            assert result[0].children[0].node_id == 6
+        return
 
     @staticmethod
     def test_root_limit_with_subquery(db_session):
@@ -1241,7 +1251,8 @@ class TestDrowsyQueryBuilderSqlite(DrowsyDatabaseTests):
                 "CompositeNode"."CompositeId" ASC
             """
         ).replace(" ", "").replace("\n", "")
-        result = str(query).replace(" ", "").replace("\n", "")
+        result = str(query).replace(" ", "").replace("\n", "").replace(
+            "[POSTCOMPILE_NodeId_1]", "?,?")
         assert expected_query == result
 
     @staticmethod
@@ -1853,7 +1864,8 @@ class TestDrowsyQueryBuilderSqlite(DrowsyDatabaseTests):
                             FROM 
                                 "Employee" AS "Employee1" 
                             WHERE 
-                                "Employee1"."EmployeeId" NOT IN (?, ?)
+                                "Employee1"."EmployeeId" NOT IN (
+                                    [POSTCOMPILE_EmployeeId_1])
                         ) AS q1 
                     WHERE 
                         q1.row_number >= ? 

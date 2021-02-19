@@ -5,7 +5,7 @@
     Base classes for building resources and model resources.
 
 """
-# :copyright: (c) 2016-2020 by Nicholas Repole and contributors.
+# :copyright: (c) 2016-2021 by Nicholas Repole and contributors.
 #             See AUTHORS for more details.
 # :license: MIT - See LICENSE for more details.
 import math
@@ -1207,17 +1207,18 @@ class BaseModelResource(BaseResourceABC):
             filters=filters,
             strict=strict)
         instances = query.all()
-        for instance in instances:
-            # NOTE: No risk of BadRequestError here due to no embeds
-            # or fields being passed to make_schema
-            schema = self.make_schema(partial=True)
-            try:
-                schema.check_permission(data={}, instance=instance,
-                                        action="delete")
-            except PermissionValidationError:
-                self.session.rollback()
-                raise self.make_error("permission_denied")
-            self.session.delete(instance)
+        with self.session.no_autoflush:
+            for instance in instances:
+                # NOTE: No risk of BadRequestError here due to no embeds
+                # or fields being passed to make_schema
+                schema = self.make_schema(partial=True)
+                try:
+                    schema.check_permission(data={}, instance=instance,
+                                            action="delete")
+                except PermissionValidationError:
+                    self.session.rollback()
+                    raise self.make_error("permission_denied")
+                self.session.delete(instance)
         try:
             self.session.commit()
         except SQLAlchemyError:  # pragma: no cover
