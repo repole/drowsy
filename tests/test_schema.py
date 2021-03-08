@@ -12,7 +12,7 @@ from marshmallow import fields
 from marshmallow.exceptions import ValidationError
 from drowsy.convert import ModelResourceConverter
 from drowsy.exc import PermissionValidationError
-from drowsy.schema import NestedOpts, ResourceSchema
+from drowsy.schema import ResourceSchema
 from tests.base import DrowsyDatabaseTests
 from tests.schemas import (
     AlbumSchema, AlbumCamelSchema, ArtistSchema,
@@ -302,11 +302,10 @@ class TestDrowsySchema(DrowsyDatabaseTests):
             "album_id": 2,
             "tracks": [
                 {"track_id": 1}
-            ]
+            ],
+            "$options": {"tracks": {"partial": False}}
         }
-        nested_opts = {"tracks": NestedOpts(partial=False)}
-        schema = AlbumSchema(session=db_session, nested_opts=nested_opts,
-                             partial=True)
+        schema = AlbumSchema(session=db_session, partial=True)
         result = schema.load(data)
         assert result.tracks[0].track_id == 1
         assert len(result.tracks) == 1
@@ -321,13 +320,13 @@ class TestDrowsySchema(DrowsyDatabaseTests):
                  "playlists": [
                      {"playlist_id": 1}
                  ]}
-            ]
+            ],
+            "$options": {
+                "tracks": {"partial": False},
+                "tracks.playlists": {"partial": False}
+            }
         }
-        nested_opts = {
-            "tracks": NestedOpts(partial=False),
-            "tracks.playlists": NestedOpts(partial=False)}
-        schema = AlbumSchema(session=db_session, nested_opts=nested_opts,
-                             partial=True)
+        schema = AlbumSchema(session=db_session, partial=True)
         result = schema.load(data)
         assert len(result.tracks[0].playlists) == 1
 

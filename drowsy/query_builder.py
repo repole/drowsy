@@ -1315,8 +1315,8 @@ class ModelResourceQueryBuilder(QueryBuilder):
         duplicate_model = False
         node_queue = [node]
         while node_queue:
-            node = node_queue.pop(0)
-            for child in node.children:
+            current_node = node_queue.pop(0)
+            for child in current_node.children:
                 unaliased_child = inspect(child.alias).class_
                 if model_count[unaliased_child] > 1:
                     duplicate_model = True

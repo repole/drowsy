@@ -5,7 +5,7 @@
     Tools for automatically routing API url paths to resources.
 
 """
-# :copyright: (c) 2016-2020 by Nicholas Repole and contributors.
+# :copyright: (c) 2016-2021 by Nicholas Repole and contributors.
 #             See AUTHORS for more details.
 # :license: MIT - See LICENSE for more details.
 import inflection
@@ -23,7 +23,6 @@ from drowsy.parser import ModelQueryParamParser
 from drowsy.resource import BaseModelResource
 import drowsy.resource_class_registry as class_registry
 from drowsy.resource_class_registry import RegistryError
-from drowsy.schema import NestedOpts
 from drowsy.utils import get_error_message
 
 
@@ -646,25 +645,23 @@ class ModelResourceRouter(ResourceRouterABC):
                 try:
                     if method.lower() in ("put", "delete"):
                         nested_opts = {
-                            relation_name: NestedOpts(partial=False)
+                            relation_name: {"partial": False}
                         }
                         if method.lower() == "delete":
                             data = {
-                                relation_name: []
+                                relation_name: [],
+                                "$options": nested_opts
                             }
                         else:
                             data = {
-                                relation_name: data
+                                relation_name: data,
+                                "$options": nested_opts
                             }
                     else:
-                        nested_opts = {
-                            relation_name: NestedOpts(partial=True)
-                        }
                         data = {
                             relation_name: data
                         }
-                    result = parent_resource.patch(ident=ident, data=data,
-                                                   nested_opts=nested_opts)
+                    result = parent_resource.patch(ident=ident, data=data)
                     if method.lower() == "delete":
                         return None
                     else:

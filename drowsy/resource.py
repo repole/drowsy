@@ -441,21 +441,6 @@ class BaseModelResource(BaseResourceABC):
         """
         return ModelResourceQueryBuilder()
 
-    def _convert_nested_opts(self, nested_opts):
-        """Converts the key names for user supplied nested opts.
-
-        :param dict nested_opts: Dictionary of nested load options.
-        :return: An equivalent dictionary with key names converted from
-            the user supplied key to one that can be used internally.
-
-        """
-        if not isinstance(nested_opts, dict):
-            raise TypeError("Supplied nested_opts must be a dict.")
-        new_nested_opts = {}
-        for key in nested_opts:
-            new_nested_opts[self.convert_key_name(key)] = nested_opts[key]
-        return new_nested_opts
-
     def _get_ident_filters(self, ident):
         """Generate MQLAlchemy filters using a resource identity.
 
@@ -752,13 +737,10 @@ class BaseModelResource(BaseResourceABC):
             return schema.dump(instance[0])
         raise self.make_error("resource_not_found", ident=ident)
 
-    def post(self, data, nested_opts=None):
+    def post(self, data):
         """Create a new resource and store it in the db.
 
         :param dict data: Data used to create a new resource.
-        :param dict|None nested_opts: Any explicit nested load options.
-            These can be used to control whether a nested resource
-            collection should be replaced entirely or only modified.
         :raise UnprocessableEntityError: If the supplied data cannot be
             processed.
         :raise MethodNotAllowedError: If this method hasn't been marked
@@ -771,12 +753,10 @@ class BaseModelResource(BaseResourceABC):
         # NOTE: No risk of BadRequestError here due to no embeds or
         # fields being passed to make_schema
         schema = self.make_schema(partial=False)
-        nested_opts = nested_opts or {}
         try:
             instance = schema.load(
                 data,
                 session=self.session,
-                nested_opts=self._convert_nested_opts(nested_opts),
                 action="create")
         except PermissionValidationError:
             self.session.rollback()
@@ -796,15 +776,12 @@ class BaseModelResource(BaseResourceABC):
         ident = tuple(ident)
         return self.get(ident, embeds=self._get_embed_history(schema))
 
-    def put(self, ident, data, nested_opts=None):
+    def put(self, ident, data):
         """Replace the current object with the supplied one.
 
         :param ident: A value used to identify this resource.
             See :meth:`get` for more info.
         :param dict data: Data used to replace the resource.
-        :param dict|None nested_opts: Any explicit nested load options.
-            These can be used to control whether a nested resource
-            collection should be replaced entirely or only modified.
         :raise ResourceNotFoundError: If no such resource exists.
         :raise UnprocessableEntityError: If the supplied data cannot be
             processed.
@@ -815,7 +792,6 @@ class BaseModelResource(BaseResourceABC):
 
         """
         self._check_method_allowed("PUT")
-        nested_opts = nested_opts or {}
         instance = self._get_instance(ident)
         if not instance:
             raise self.make_error("resource_not_found", ident=ident)
@@ -829,7 +805,6 @@ class BaseModelResource(BaseResourceABC):
                 data,
                 instance=instance,
                 session=self.session,
-                nested_opts=self._convert_nested_opts(nested_opts),
                 action="update")
         except PermissionValidationError:
             self.session.rollback()
@@ -844,15 +819,12 @@ class BaseModelResource(BaseResourceABC):
             raise self.make_error("commit_failure")
         return self.get(ident, embeds=self._get_embed_history(schema))
 
-    def patch(self, ident, data, nested_opts=None):
+    def patch(self, ident, data):
         """Update the identified resource with the supplied data.
 
         :param ident: A value used to identify this resource.
             See :meth:`get` for more info.
         :param dict data: Data used to update the resource.
-        :param dict|None nested_opts: Any explicit nested load options.
-            These can be used to control whether a nested resource
-            collection should be replaced entirely or only modified.
         :raise ResourceNotFoundError: If no such resource exists.
         :raise UnprocessableEntityError: If the supplied data cannot be
             processed.
@@ -865,7 +837,6 @@ class BaseModelResource(BaseResourceABC):
         # Refactor - Only three lines here different from put.
         # TODO - deleting a subresource calls patch, odd error potential
         self._check_method_allowed("PATCH")
-        nested_opts = nested_opts or {}
         instance = self._get_instance(ident)
         # NOTE: No risk of BadRequestError here due to no embeds or
         # fields being passed to make_schema
@@ -877,7 +848,6 @@ class BaseModelResource(BaseResourceABC):
                 data,
                 instance=instance,
                 session=self.session,
-                nested_opts=self._convert_nested_opts(nested_opts),
                 action="update")
         except PermissionValidationError:
             self.session.rollback()
@@ -1039,13 +1009,10 @@ class BaseModelResource(BaseResourceABC):
         dump = schema.dump(records, many=True)
         return ResourceCollection(dump, count)
 
-    def post_collection(self, data, nested_opts=None):
+    def post_collection(self, data):
         """Create multiple resources in the collection of resources.
 
         :param list data: List of resources to be created.
-        :param dict|None nested_opts: Any explicit nested load options.
-            These can be used to control whether a nested resource
-            collection should be replaced entirely or only modified.
         :raise UnprocessableEntityError: If the supplied data cannot be
             processed.
         :raise MethodNotAllowedError: If this method hasn't been marked
@@ -1054,7 +1021,6 @@ class BaseModelResource(BaseResourceABC):
 
         """
         self._check_method_allowed("POST")
-        nested_opts = nested_opts or {}
         if not isinstance(data, list):
             raise self.make_error("invalid_collection_input", data=data)
         errors = {}
@@ -1068,7 +1034,6 @@ class BaseModelResource(BaseResourceABC):
                 instance = schema.load(
                     obj,
                     session=self.session,
-                    nested_opts=self._convert_nested_opts(nested_opts),
                     action="create")
                 self.session.add(instance)
             except PermissionValidationError as exc:
@@ -1089,20 +1054,17 @@ class BaseModelResource(BaseResourceABC):
             self.session.rollback()
             raise self.make_error("commit_failure")
 
-    def put_collection(self, data, nested_opts=None):
+    def put_collection(self, data):
         """Raises an error since this method has no obvious use.
 
         :param list data: A list of object data. Would theoretically
             be used to replace the entire collection.
-        :param dict|None nested_opts: Any explicit nested load options.
-            These can be used to control whether a nested resource
-            collection should be replaced entirely or only modified.
         :raise MethodNowAllowedError: When not overridden.
 
         """
         raise self.make_error("method_not_allowed", method="PUT", data=data)
 
-    def patch_collection(self, data, nested_opts=None):
+    def patch_collection(self, data):
         """Update a collection of resources.
 
         Individual items may be updated accordingly as part of the
@@ -1113,9 +1075,6 @@ class BaseModelResource(BaseResourceABC):
             the collection; otherwise the object must already be in the
             collection. If ``$op`` is set to ``"remove"``, it is
             accordingly removed from the collection.
-        :param dict|None nested_opts: Any explicit nested load options.
-            These can be used to control whether a nested resource
-            collection should be replaced entirely or only modified.
         :raise UnprocessableEntityError: If the supplied data cannot be
             processed.
         :raise MethodNotAllowedError: If this method hasn't been marked
@@ -1124,7 +1083,6 @@ class BaseModelResource(BaseResourceABC):
 
         """
         self._check_method_allowed("PATCH")
-        nested_opts = nested_opts or {}
         errors = {}
         permission_failure = False
         validation_failure = False
@@ -1148,7 +1106,6 @@ class BaseModelResource(BaseResourceABC):
                 instance = schema.load(
                     obj,
                     session=self.session,
-                    nested_opts=self._convert_nested_opts(nested_opts),
                     action=action)
                 if action == "create":
                     self.session.add(instance)

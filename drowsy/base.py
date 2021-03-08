@@ -7,7 +7,7 @@
     Needed to avoid circular imports between resource and field.
 
 """
-# :copyright: (c) 2016-2020 by Nicholas Repole and contributors.
+# :copyright: (c) 2016-2021 by Nicholas Repole and contributors.
 #             See AUTHORS for more details.
 # :license: MIT - See LICENSE for more details.
 import collections.abc
@@ -222,7 +222,7 @@ class NestedPermissibleABC(Nested, Loggable):
 
     def _permissible(self, permissions, operation, obj_data, instance,
                      errors, index, strict):
-        """Returns true of the operation being taken is allowed.
+        """Returns true if the operation being taken is allowed.
 
         :param permissions: An instance of a permissions object.
         :type permissions: :class:`~drowsy.permissions.OpPermissionsABC`
@@ -468,6 +468,7 @@ class NestedPermissibleABC(Nested, Loggable):
                         break
         result = None
         parent = self.parent.instance
+        errors = {}
         if self.many:
             obj_datum = value
             if not is_collection(value):
@@ -475,15 +476,23 @@ class NestedPermissibleABC(Nested, Loggable):
                                       type=value.__class__.__name__)
             else:
                 nested_opts = self.parent.nested_opts or {}
-                nested_opt = nested_opts.get(self.name)
-                if nested_opt is not None and not nested_opt.partial:
+                nested_opt = nested_opts.get(self.data_key or self.name)
+                if nested_opt is not None and not nested_opt.get(
+                        "partial", True):
                     # Full update of this collection, reset it to empty
-                    setattr(parent, self.name, [])
+                    # TODO - check permission to remove collection...
+                    if self._permissible(permissions=permissions,
+                                         obj_data=value,
+                                         operation="replace",
+                                         index=None,
+                                         errors=errors,
+                                         strict=True,
+                                         instance=None):
+                        setattr(parent, self.name, [])
         else:
             # Treat this like a list until it comes time to actually
             # to actually modify the value.
             obj_datum = [value]
-        errors = {}
         # each item in value is a sub instance
         for i, obj_data in enumerate(obj_datum):
             if not isinstance(obj_data, dict):

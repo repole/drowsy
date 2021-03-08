@@ -16,7 +16,6 @@ from drowsy.exc import (
     ResourceNotFoundError, UnprocessableEntityError)
 from drowsy.parser import SubfilterInfo, SortInfo
 from drowsy.resource import ResourceCollection, PaginationInfo
-from drowsy.schema import NestedOpts
 from tests.base import DrowsyDatabaseTests
 from tests.models import Album, Artist, Playlist, Track
 from tests.resources import (
@@ -1366,29 +1365,15 @@ class TestDrowsyResource(DrowsyDatabaseTests):
         """Test nested opts work as expected."""
         data = [{
             "album_id": 1,
-            "tracks": [{"track_id": 1}]
+            "tracks": [{"track_id": 1}],
+            "$options": {"tracks": {"partial": False}}
         }]
         resource = AlbumResource(session=db_session)
-        resource.patch_collection(
-            data,
-            nested_opts={"tracks": NestedOpts(partial=False)})
+        resource.patch_collection(data)
         db_result = db_session.query(Album).filter(
             Album.album_id == 1).first()
         assert db_result is not None
         assert len(db_result.tracks) == 1
-
-    @staticmethod
-    def test_patch_collection_nested_opts_fail(db_session):
-        """Test invalid nested opts fail."""
-        data = [{
-            "album_id": 1,
-            "tracks": [{"track_id": 1}]
-        }]
-        resource = AlbumResource(session=db_session)
-        with raises(TypeError):
-            resource.patch_collection(
-                data,
-                nested_opts="test")
 
     # PUT TESTS
 

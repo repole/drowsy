@@ -5,7 +5,7 @@
     Classes for building REST API friendly, model based schemas.
 
 """
-# :copyright: (c) 2016-2020 by Nicholas Repole and contributors.
+# :copyright: (c) 2016-2021 by Nicholas Repole and contributors.
 #             See AUTHORS for more details.
 # :license: MIT - See LICENSE for more details.
 from marshmallow.decorators import post_load
@@ -21,25 +21,6 @@ from drowsy.exc import MISSING_ERROR_MESSAGE, PermissionValidationError
 from drowsy.fields import EmbeddableMixinABC
 from drowsy.log import Loggable
 from drowsy.utils import get_error_message
-
-
-class NestedOpts(object):
-
-    """Options for how to load a nested schema.
-
-    Currently only used to determine whether an entire nested collection
-    should be replaced, or appended/removed from on load.
-
-    """
-
-    def __init__(self, partial=False):
-        """Initialize load options for a nested schema.
-
-        :param bool partial: ``True`` if the entire nested collection
-            should be replaced on load.
-
-        """
-        self.partial = partial
 
 
 class ResourceSchemaOpts(SchemaOpts):
@@ -152,7 +133,7 @@ class ResourceSchema(Schema, Loggable):
 
     def __init__(self,  only=None, exclude=(), many=False, context=None,
                  load_only=(), dump_only=(), partial=False, instance=None,
-                 parent_resource=None, nested_opts=None, error_messages=None):
+                 parent_resource=None, error_messages=None):
         """Sets additional member vars on top of `ResourceSchema`.
 
         Also runs :meth:`process_context` upon completion.
@@ -182,12 +163,6 @@ class ResourceSchema(Schema, Loggable):
             schema.
         :type parent_resource: :class:`~drowsy.base.BaseResourceABC` or
             None
-        :param nested_opts: Dictionary of :class:`NestedOpts`, where the
-            top level key is a field name for a nested field, and the
-            value for that key is a :class:`NestedOpts` instance. Used
-            to determine if the entire nested collection is to be
-            replaced, or simply appended to/removed from on load.
-        :type nested_opts: dict<str, NestedOpts>
 
         """
         super(ResourceSchema, self).__init__(
@@ -202,7 +177,7 @@ class ResourceSchema(Schema, Loggable):
         self.parent_resource = parent_resource
         self.instance = instance
         self._fields_by_data_key = None
-        self.nested_opts = nested_opts
+        self.nested_opts = None
         self.embedded = {}
         messages = {}
         for cls in reversed(self.__class__.__mro__):
@@ -362,8 +337,7 @@ class ResourceSchema(Schema, Loggable):
             return instance
         return self.opts.instance_cls(**data)
 
-    def load(self, data, *, many=None, instance=None, nested_opts=None,
-             action=None, **kwargs):
+    def load(self, data, *, many=None, instance=None, action=None, **kwargs):
         """Deserialize the provided data into an object.
 
         :param dict|list<dict> data: Data to be loaded into an instance.
@@ -375,13 +349,6 @@ class ResourceSchema(Schema, Loggable):
             class was initialized, an instance will either be determined
             using the provided data via :meth:`get_instance`, or if that
             fails a new instance will be created.
-        :param nested_opts: Dictionary of :class:`NestedOpts`, where the
-            top level key is a field name for a nested field, and the
-            value for that key is a :class:`NestedOpts` instance. Used
-            to determine if the entire nested collection is to be
-            replaced, or simply appended to/removed from on load.
-            Overwrites the value set in the schema initializer.
-        :type nested_opts: dict<str, NestedOpts>
         :param str|None action: Used as part of a permissions check.
             Possible values include `"create"` if a new object is
             being created, `"update"` is an existing object is being
@@ -402,27 +369,31 @@ class ResourceSchema(Schema, Loggable):
         supplied_action = action
         if not many:
             data = [data]
-        # inherit nested opts from parent if not already set
-        self.nested_opts = nested_opts or self.nested_opts
-        if (not self.nested_opts and
-                self.parent_resource and
-                getattr(self.parent_resource, "parent_field", None) and
-                getattr(self.parent_resource.parent_field, "parent", None) and
-                getattr(self.parent_resource.parent_field.parent,
-                        "nested_opts", None)):
-            self.nested_opts = {}
-            parent_schema = self.parent_resource.parent_field.parent
-            parent_nested_opts = parent_schema.nested_opts
-            for key in parent_nested_opts:
-                child_key = ".".join(key.split(".")[1:])
-                if child_key:
-                    self.nested_opts[child_key] = parent_nested_opts[key]
         results = []
         errors = {}
         failure = False
         id_data_keys = {self.fields[k].data_key or k for k in self.id_keys}
         for i, obj in enumerate(data):
             self.loaded_data = obj
+            self.nested_opts = obj.pop("$options", None)
+            if (not self.nested_opts and
+                    self.parent_resource and
+                    getattr(self.parent_resource, "parent_field", None) and
+                    getattr(self.parent_resource.parent_field, "parent",
+                            None) and
+                    getattr(self.parent_resource.parent_field.parent,
+                            "nested_opts", None)):
+                self.nested_opts = {}
+                parent_field = self.parent_resource.parent_field
+                parent_schema = parent_field.parent
+                parent_nested_opts = parent_schema.nested_opts
+                for key in parent_nested_opts:
+                    split_key = key.split(".")
+                    relation_key = parent_field.data_key or parent_field.name
+                    if split_key and split_key[0] == relation_key:
+                        child_key = ".".join(split_key[1:])
+                        if child_key:
+                            self.nested_opts[child_key] = parent_nested_opts[key]
             # embeds
             for data_key in obj:
                 field = self.fields_by_data_key.get(data_key)
@@ -544,7 +515,7 @@ class ModelResourceSchema(ResourceSchema, SQLAlchemyAutoSchema):
 
     def __init__(self,  only=None, exclude=(), many=False, context=None,
                  load_only=(), dump_only=(), partial=False, instance=None,
-                 parent_resource=None, nested_opts=None, session=None):
+                 parent_resource=None, session=None):
         """Sets additional member vars on top of `SQLAlchemyAutoSchema`.
 
         Also runs :meth:`process_context` upon completion.
@@ -574,12 +545,6 @@ class ModelResourceSchema(ResourceSchema, SQLAlchemyAutoSchema):
             schema.
         :type parent_resource: :class:`~drowsy.base.ModelResource` or
             None
-        :param nested_opts: Dictionary of :class:`NestedOpts`, where the
-            top level key is a field name for a nested field, and the
-            value for that key is a :class:`NestedOpts` instance. Used
-            to determine if the entire nested collection is to be
-            replaced, or simply appended to/removed from on load.
-        :type nested_opts: dict<str, NestedOpts>
         :param session: SQLAlchemy database session.
 
         """
@@ -592,8 +557,7 @@ class ModelResourceSchema(ResourceSchema, SQLAlchemyAutoSchema):
             dump_only=dump_only,
             partial=partial,
             instance=instance,
-            parent_resource=parent_resource,
-            nested_opts=nested_opts
+            parent_resource=parent_resource
         )
         # Though SQLAlchemyAutoSchema init does get called,
         # the session portion of things doesn't make
@@ -647,8 +611,8 @@ class ModelResourceSchema(ResourceSchema, SQLAlchemyAutoSchema):
             return [col.key for col in get_primary_keys(self.opts.model)]
         return result
 
-    def load(self, data, *, many=None, instance=None, nested_opts=None,
-             action=None, session=None, **kwargs):
+    def load(self, data, *, many=None, instance=None, action=None,
+             session=None, **kwargs):
         """Deserialize the provided data into a SQLAlchemy object.
 
         :param dict|list<dict> data: Data to be loaded into an instance.
@@ -660,13 +624,6 @@ class ModelResourceSchema(ResourceSchema, SQLAlchemyAutoSchema):
             class was initialized, an instance will either be determined
             using the provided data via :meth:`get_instance`, or if that
             fails a new instance will be created.
-        :param nested_opts: Dictionary of :class:`NestedOpts`, where the
-            top level key is a field name for a nested field, and the
-            value for that key is a :class:`NestedOpts` instance. Used
-            to determine if the entire nested collection is to be
-            replaced, or simply appended to/removed from on load.
-            Overwrites the value set in the schema initializer.
-        :type nested_opts: dict<str, NestedOpts>
         :param str|None action: Used as part of a permissions check.
             Possible values include `"create"` if a new object is
             being created, `"update"` is an existing object is being
@@ -691,5 +648,4 @@ class ModelResourceSchema(ResourceSchema, SQLAlchemyAutoSchema):
         with kwargs["session"].no_autoflush:
             # prevent bad child data from causing a premature flush
             return super(ModelResourceSchema, self).load(
-                data, many=many, action=action, nested_opts=nested_opts,
-                **kwargs)
+                data, many=many, action=action, **kwargs)
