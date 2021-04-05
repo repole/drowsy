@@ -348,7 +348,27 @@ This is analogous to a DELETE request to the subresource itself:
 
     DELETE /api/album/349/tracks/1 HTTP/1.1
 
-Or similarly you could remove all Tracks from the Album:
+If you want to remove all tracks from an album, you can use the `"$options"`
+keyword as part of your request payload:
+
+.. sourcecode:: http
+
+    PATCH /api/album HTTP/1.1
+
+    {
+
+        "album_id": 349,
+        "tracks": [],
+        "$options": {
+            "tracks": {"partial": false}
+        }
+    }
+
+Here you're stating the intent that you will be replacing the contents
+of the tracks relationship entirely, not adding or removing items one at a
+time (as is the default, or if `"partial"` was set to `true` in the above).
+
+Or similarly you could remove all Tracks from the Album in a DELETE request:
 
 .. sourcecode:: http
 

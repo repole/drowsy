@@ -70,7 +70,10 @@ Create, Update, and Delete
 
 Like read permissions, mutation permissions have the option of overriding
 :meth:`~drowsy.resource.BaseModelResource._check_method_allowed` to completely
-restrict access.
+restrict access to an endpoint. Note that this won't restrict any nested
+access via relationships (e.g. you may restrict GET access to the ``/tracks``
+endpoint, but the ``tracks`` relationship on your ``/albums`` endpoint is
+still accessible).
 
 More fine grained mutation control is handled at the schema level rather than
 at the resource level. This allows validation to occur on an instance by
@@ -160,3 +163,17 @@ depending on which side of the relationship they're attempting to make changes
 from. Perhaps you'd want all users who have access to modify albums the ability
 to add tracks, but not all users who have access to modify tracks the ability
 to change which album they belong to.
+
+In Drowsy there are multiple different relationship actions that a
+:class:`~drowsy.permissions.OpPermissionsABC` implementation can be set to
+handle.  These options include ``"add"``, ``"remove"``, ``"create"``, and
+``"replace"`` for collections, and ``"set"`` may be used as an alias for
+``"add"`` in single object nested situations. The ``"add"``, ``"remove"``,
+and ``"set"`` options should hopefully be self explanatory, while
+``"create"`` handles whether newly created instances can be added/set on
+a relationship. As an example, if the ``tracks`` relationship has ``"add"``
+permissions but not ``"create"`` permissions, only pre-existing tracks
+would be allowed to be added to the relationship. Meanwhile, the ``"replace"``
+permission handles whether the user has the ability to replace the entire
+contents of a relationship (e.g. clear out all of ``album.tracks`` before
+making any additions).
