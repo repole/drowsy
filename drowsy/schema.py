@@ -415,7 +415,6 @@ class ResourceSchema(Schema, Loggable):
                     action = supplied_action
                 if action == "create" and persistent:
                     self.handle_preexisting_create(obj)
-                self.check_permission(obj, instance, action)
                 if self.instance is None:
                     self.instance = self.opts.instance_cls()
                 kwargs["instance"] = self.instance
@@ -432,9 +431,11 @@ class ResourceSchema(Schema, Loggable):
                     obj = new_obj
                     result = self.instance  # data only pk, no updates
                     if len(obj.keys()) > 0:
+                        self.check_permission(obj, instance, action)
                         result = super(ResourceSchema, self).load(
                             obj, many=False, **kwargs)
                 else:
+                    self.check_permission(obj, instance, action)
                     result = super(ResourceSchema, self).load(
                         obj, many=False, **kwargs)
                 results.append(result)

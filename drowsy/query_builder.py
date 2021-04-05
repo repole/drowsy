@@ -712,8 +712,8 @@ class ModelResourceQueryBuilder(QueryBuilder):
         record_class = resource.model
         schema = resource.make_schema()
         id_keys = schema.id_keys
+        order_bys = []
         if sorts:
-            order_bys = []
             for sort in sorts:
                 try:
                     order_bys = self._get_order_bys(
@@ -722,9 +722,15 @@ class ModelResourceQueryBuilder(QueryBuilder):
                     if strict:
                         raise resource.make_error(
                             "invalid_sort_field", field=sort.attr)
-        else:
-            order_bys = []
-            for attr_name in id_keys:
+        # always sort by id_keys to ensure deterministic order
+        for attr_name in id_keys:
+            already_sorted = False
+            if sorts:
+                for sort in sorts:
+                    if sort.attr == attr_name:
+                        already_sorted = True
+                        break
+            if not already_sorted:
                 order_bys.append(
                     getattr(
                         record_class,
@@ -1031,6 +1037,7 @@ class ModelResourceQueryBuilder(QueryBuilder):
                                 # row_number for limiting/offsetting
                                 # the subresource.
                                 # Order by to be used in row_number
+                                order_by = []
                                 if last_node.sorts:
                                     # Use sorts from user if provided
                                     order_by = self._get_order_bys(
@@ -1038,11 +1045,16 @@ class ModelResourceQueryBuilder(QueryBuilder):
                                         last_node.sorts,
                                         resource.convert_key_name
                                     )
-                                else:
-                                    # Otherwise use pk(s)/schema ids
-                                    order_by = []
-                                    attr_names = schema.id_keys
-                                    for attr_name in attr_names:
+                                # always sort by id_keys for determinism
+                                attr_names = schema.id_keys
+                                for attr_name in attr_names:
+                                    already_sorted = False
+                                    if last_node.sorts:
+                                        for sort in last_node.sorts:
+                                            if sort.attr == attr_name:
+                                                already_sorted = True
+                                                break
+                                    if not already_sorted:
                                         order_by.append(
                                             getattr(
                                                 last_node.alias,
@@ -1307,8 +1319,6 @@ class ModelResourceQueryBuilder(QueryBuilder):
             return node.strategy
         # TODO - strategy = "selectinload"
         strategy = "subqueryload"
-        if node.parent and len(node.parent.id_keys) > 1:
-            strategy = "subqueryload"
         children_limit_offset = False
         children_composite_key = False
         children_self_ref_root = False
