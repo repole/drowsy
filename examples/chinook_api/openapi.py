@@ -5,7 +5,7 @@
     Generate an OpenAPI compliant spec.
 
 """
-# :copyright: (c) 2020 by Nicholas Repole and contributors.
+# :copyright: (c) 2021 by Nicholas Repole and contributors.
 #             See AUTHORS for more details.
 # :license: MIT - See LICENSE for more details.
 import apispec
@@ -313,6 +313,8 @@ def populate_spec():
             responses = {}
             collection_responses = {}
             collection_params = []
+            collection_body = []
+            item_body = {}
             if option in ("get", "head", "delete"):
                 collection_params.append(param_filters)
                 if option != "delete":
@@ -354,6 +356,27 @@ def populate_spec():
                     }
                 }
                 responses["433"] = unprocessable_entity_resp
+                collection_body = {
+                    "required": True,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "array",
+                                "items": name + "Schema"
+                            }
+                        }
+                    }
+                }
+                item_body = {
+                    "required": True,
+                    "content": {
+                        "application/json": {
+                            "schema": name + "Schema"
+                        }
+                    }
+                }
+                if option == "post":
+                    collection_body = item_body
                 if option != "put":
                     collection_responses["204"] = {
                         "description": "No content."
@@ -389,9 +412,13 @@ def populate_spec():
             item_operations[option] = {"responses": responses}
             if item_params:
                 item_operations[option]["parameters"] = item_params
+            if item_body:
+                item_operations[option]["requestBody"] = item_body
             collection_operations[option] = {"responses": collection_responses}
             if collection_params:
                 collection_operations[option]["parameters"] = collection_params
+            if collection_body:
+                collection_operations[option]["requestBody"] = collection_body
         spec.path(path=item_path, operations=item_operations)
         spec.path(path=collection_path, operations=collection_operations)
 
