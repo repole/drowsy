@@ -84,7 +84,9 @@ class TrackSchema(ModelResourceSchema):
             not allowed.
 
         """
-        if data.get("track_id") == 1 and data.get("name") == "Denied":
+        if (data.get("track_id") == 1 or (instance is not None and
+                                          instance.track_id == 1) and
+                data.get("name") == "Denied"):
             raise self.make_error("permission_denied")
 
 

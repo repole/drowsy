@@ -1026,7 +1026,8 @@ class TestDrowsyQueryBuilderSqlite(DrowsyDatabaseTests):
                                 "Track1"."UnitPrice" AS "Track1_UnitPrice", 
                                 row_number() OVER (
                                     PARTITION BY "Track1"."AlbumId" 
-                                    ORDER BY "Track1"."Name" ASC
+                                    ORDER BY "Track1"."Name" ASC, 
+                                             "Track1"."TrackId"ASC
                                 ) AS row_number 
                             FROM 
                                 "Track" AS "Track1" 
@@ -1339,7 +1340,8 @@ class TestDrowsyQueryBuilderSqlite(DrowsyDatabaseTests):
                                 row_number() OVER (
                                     PARTITION BY "Track1"."AlbumId" 
                                     ORDER BY 
-                                        "Track1"."Name" ASC
+                                        "Track1"."Name" ASC,
+                                        "Track1"."TrackId" ASC
                                 ) AS row_number 
                             FROM 
                                 "Track" AS "Track1" 
@@ -1372,7 +1374,8 @@ class TestDrowsyQueryBuilderSqlite(DrowsyDatabaseTests):
                                 row_number() OVER (
                                     PARTITION BY "PlaylistTrack"."TrackId" 
                                     ORDER BY 
-                                        "Playlist1"."Name" ASC
+                                        "Playlist1"."Name" ASC,
+                                        "Playlist1"."PlaylistId" ASC
                                 ) AS row_number 
                             FROM 
                                 "Playlist" AS "Playlist1" 
@@ -1489,7 +1492,8 @@ class TestDrowsyQueryBuilderSqlite(DrowsyDatabaseTests):
                                     PARTITION BY 
                                         "PlaylistTrack"."PlaylistId" 
                                     ORDER BY 
-                                        "Track1"."Name" ASC
+                                        "Track1"."Name" ASC,
+                                        "Track1"."TrackId" ASC
                                 ) AS row_number 
                             FROM 
                                 "Track" AS "Track1" 
@@ -1529,7 +1533,8 @@ class TestDrowsyQueryBuilderSqlite(DrowsyDatabaseTests):
                                     PARTITION BY 
                                         "PlaylistTrack"."TrackId" 
                                     ORDER BY 
-                                        "Playlist1"."Name" ASC
+                                        "Playlist1"."Name" ASC,
+                                        "Playlist1"."PlaylistId" ASC
                                 ) AS row_number 
                             FROM 
                                 "Playlist" AS "Playlist1" 
