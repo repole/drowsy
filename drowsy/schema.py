@@ -431,11 +431,11 @@ class ResourceSchema(Schema, Loggable):
                     obj = new_obj
                     result = self.instance  # data only pk, no updates
                     if len(obj.keys()) > 0:
-                        self.check_permission(obj, instance, action)
+                        self.check_permission(obj, self.instance, action)
                         result = super(ResourceSchema, self).load(
                             obj, many=False, **kwargs)
                 else:
-                    self.check_permission(obj, instance, action)
+                    self.check_permission(obj, self.instance, action)
                     result = super(ResourceSchema, self).load(
                         obj, many=False, **kwargs)
                 results.append(result)
