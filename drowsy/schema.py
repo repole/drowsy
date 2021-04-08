@@ -577,14 +577,15 @@ class ModelResourceSchema(ResourceSchema, SQLAlchemyAutoSchema):
             the wrong type.
 
         """
-        id_data_keys = {self.fields[k].data_key or k for k in self.id_keys}
+        id_keys = list(self.id_keys)
+        id_data_keys = [self.fields[k].data_key or k for k in id_keys]
         if set(id_data_keys).issubset(data.keys()):
             # data includes primary key columns
             # attempt to generate filters
             try:
                 filters = {
                     pair[0]: self.fields[pair[0]].deserialize(data[pair[1]])
-                    for pair in zip(self.id_keys, id_data_keys)
+                    for pair in zip(id_keys, id_data_keys)
                 }
             except ValidationError:
                 raise self.make_error("invalid_identifier", data=data)
