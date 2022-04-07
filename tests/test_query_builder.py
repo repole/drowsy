@@ -5,13 +5,14 @@
     Query builder tests for Drowsy.
 
 """
-# :copyright: (c) 2016-2020 by Nicholas Repole and contributors.
+# :copyright: (c) 2016-2021 by Nicholas Repole and contributors.
 #             See AUTHORS for more details.
 # :license: MIT - See LICENSE for more details.
 from pytest import raises
 from sqlalchemy.inspection import inspect
 from drowsy.exc import BadRequestError
-from drowsy.query_builder import QueryBuilder, ModelResourceQueryBuilder
+from drowsy.query_builder import (
+    manipulate_filters_to_list, QueryBuilder, ModelResourceQueryBuilder)
 from drowsy.parser import SubfilterInfo, SortInfo
 from tests.base import DrowsyDatabaseTests
 from tests.models import (
@@ -608,39 +609,29 @@ class TestDrowsyQueryBuilder(DrowsyDatabaseTests):
                 assert child.node_id == 1
 
     @staticmethod
-    def test_root_composite_id_limit_with_subquery(caplog, db_session):
+    def test_root_composite_id_limit_with_subquery(db_session):
         """Limit to a composite id root resource using subqueries."""
-        import logging
-        logging.basicConfig()
-        logger = logging.getLogger('sqlalchemy')
-        logger.addHandler(logging.StreamHandler())
-        logger.addHandler(logging.FileHandler(filename="test.log"))
-        logger.setLevel(logging.INFO)
-        caplog.set_level(logging.INFO, logger='sqlalchemy')
-        with caplog.at_level(logging.INFO, logger="sqlalchemy"):
-            logger.info("WTF")
-            query_builder = ModelResourceQueryBuilder()
-            query = db_session.query(CompositeNode)
-            subfilters = {
-                "children": SubfilterInfo(
-                    filters={"node_id": 6}
-                )
-            }
-            query = query_builder.apply_subquery_loads(
-                query=query,
-                resource=CompositeNodeResource(session=db_session),
-                subfilters=subfilters,
-                limit=1,
-                offset=0,
-                embeds=[]
+        query_builder = ModelResourceQueryBuilder()
+        query = db_session.query(CompositeNode)
+        subfilters = {
+            "children": SubfilterInfo(
+                filters={"node_id": 6}
             )
-            result = query.all()
-            assert result is not None
-            assert len(result) == 1
-            assert result[0].node_id == 1
-            assert len(result[0].children) == 1
-            assert result[0].children[0].node_id == 6
-        return
+        }
+        query = query_builder.apply_subquery_loads(
+            query=query,
+            resource=CompositeNodeResource(session=db_session),
+            subfilters=subfilters,
+            limit=1,
+            offset=0,
+            embeds=[]
+        )
+        result = query.all()
+        assert result is not None
+        assert len(result) == 1
+        assert result[0].node_id == 1
+        assert len(result[0].children) == 1
+        assert result[0].children[0].node_id == 6
 
     @staticmethod
     def test_root_limit_with_subquery(db_session):
@@ -1253,7 +1244,7 @@ class TestDrowsyQueryBuilderSqlite(DrowsyDatabaseTests):
             """
         ).replace(" ", "").replace("\n", "")
         result = str(query).replace(" ", "").replace("\n", "").replace(
-            "[POSTCOMPILE_NodeId_1]", "?,?")
+            "__[POSTCOMPILE_NodeId_1]", "?,?")
         assert expected_query == result
 
     @staticmethod
@@ -1869,8 +1860,8 @@ class TestDrowsyQueryBuilderSqlite(DrowsyDatabaseTests):
                             FROM 
                                 "Employee" AS "Employee1" 
                             WHERE 
-                                "Employee1"."EmployeeId" NOT IN (
-                                    [POSTCOMPILE_EmployeeId_1])
+                                ("Employee1"."EmployeeId" NOT IN (
+                                    __[POSTCOMPILE_EmployeeId_1]))
                         ) AS q1 
                     WHERE 
                         q1.row_number >= ? 
@@ -1959,6 +1950,212 @@ class TestDrowsyQueryBuilderSqlite(DrowsyDatabaseTests):
                 ) AS "Track1" ON "Album"."AlbumId" = "Track1"."Track1_AlbumId" 
             ORDER BY 
                 "Album"."AlbumId" ASC
+            """
+        ).replace(" ", "").replace("\n", "")
+        result = str(query).replace(" ", "").replace("\n", "")
+        assert expected_query == result
+
+    @staticmethod
+    def test_manipulate_filters_to_list_tuple():
+        """Make sure tuple of filters is converted to list."""
+        param = (1, 2, 3)
+        result = manipulate_filters_to_list(param)
+        assert isinstance(result, list)
+        assert len(result) == 3
+
+    @staticmethod
+    def test_manipulate_filters_to_list_single():
+        """Make single filter is converted to list."""
+        param = "test"
+        result = manipulate_filters_to_list(param)
+        assert isinstance(result, list)
+        assert len(result) == 1
+        assert result[0] == "test"
+
+    @staticmethod
+    def test_subresource_sort_by_pk(db_session):
+        """Sort by PK on subresource loaded properly."""
+        query_builder = ModelResourceQueryBuilder()
+        query = db_session.query(Album)
+        subfilters = {
+            "tracks": SubfilterInfo(
+                filters={"track_id": {"$gte": 5}},
+                limit=5,
+                sorts=[SortInfo(attr="track_id", direction="DESC")]
+            )
+        }
+        query = query_builder.apply_subquery_loads(
+            query=query,
+            resource=AlbumResource(session=db_session),
+            subfilters=subfilters,
+            embeds=[],
+            limit=3,
+            dialect_override=True
+        )
+        expected_query = (
+            """
+            SELECT 
+                anon_1."Album_AlbumId" AS "anon_1_Album_AlbumId", 
+                anon_1."Album_Title" AS "anon_1_Album_Title", 
+                anon_1."Album_ArtistId" AS "anon_1_Album_ArtistId", 
+                "Track1"."Track1_TrackId" AS "Track1_Track1_TrackId", 
+                "Track1"."Track1_Name" AS "Track1_Track1_Name", 
+                "Track1"."Track1_AlbumId" AS "Track1_Track1_AlbumId", 
+                "Track1"."Track1_MediaTypeId" AS "Track1_Track1_MediaTypeId", 
+                "Track1"."Track1_GenreId" AS "Track1_Track1_GenreId", 
+                "Track1"."Track1_Composer" AS "Track1_Track1_Composer", 
+                "Track1"."Track1_Milliseconds" AS "Track1_Track1_Milliseconds",
+                "Track1"."Track1_Bytes" AS "Track1_Track1_Bytes", 
+                "Track1"."Track1_UnitPrice" AS "Track1_Track1_UnitPrice" 
+            FROM 
+                (
+                    SELECT 
+                        "Album"."AlbumId" AS "Album_AlbumId", 
+                        "Album"."Title" AS "Album_Title", 
+                        "Album"."ArtistId" AS "Album_ArtistId", 
+                        row_number() OVER (
+                            ORDER BY "Album"."AlbumId" ASC) AS row_number 
+                    FROM 
+                        "Album"
+                ) AS anon_1 
+                LEFT OUTER JOIN 
+                (
+                    SELECT 
+                        q1."Track1_TrackId" AS "Track1_TrackId", 
+                        q1."Track1_Name" AS "Track1_Name", 
+                        q1."Track1_AlbumId" AS "Track1_AlbumId", 
+                        q1."Track1_MediaTypeId" AS "Track1_MediaTypeId", 
+                        q1."Track1_GenreId" AS "Track1_GenreId", 
+                        q1."Track1_Composer" AS "Track1_Composer", 
+                        q1."Track1_Milliseconds" AS "Track1_Milliseconds", 
+                        q1."Track1_Bytes" AS "Track1_Bytes", 
+                        q1."Track1_UnitPrice" AS "Track1_UnitPrice", 
+                        q1.row_number AS row_number 
+                    FROM 
+                        (
+                            SELECT 
+                                "Track1"."TrackId" AS "Track1_TrackId", 
+                                "Track1"."Name" AS "Track1_Name", 
+                                "Track1"."AlbumId" AS "Track1_AlbumId", 
+                                "Track1"."MediaTypeId" AS "Track1_MediaTypeId", 
+                                "Track1"."GenreId" AS "Track1_GenreId", 
+                                "Track1"."Composer" AS "Track1_Composer", 
+                                "Track1"."Milliseconds" AS 
+                                    "Track1_Milliseconds", 
+                                "Track1"."Bytes" AS "Track1_Bytes", 
+                                "Track1"."UnitPrice" AS "Track1_UnitPrice", 
+                                row_number() OVER (
+                                    PARTITION BY "Track1"."AlbumId" 
+                                    ORDER BY "Track1"."TrackId" DESC
+                                ) AS row_number 
+                            FROM 
+                                "Track" AS "Track1" 
+                            WHERE 
+                                "Track1"."TrackId" >= ?
+                        ) AS q1 
+                    WHERE 
+                        q1.row_number >= ? 
+                        AND 
+                        q1.row_number <= ?
+                ) AS "Track1" ON 
+                    anon_1."Album_AlbumId" = "Track1"."Track1_AlbumId" 
+            WHERE 
+                anon_1.row_number >= ? 
+                AND 
+                anon_1.row_number <= ? 
+            ORDER 
+                BY anon_1.row_number
+            """
+        ).replace(" ", "").replace("\n", "")
+        result = str(query).replace(" ", "").replace("\n", "")
+        assert expected_query == result
+
+    @staticmethod
+    def test_same_entity_grandchild_load(db_session):
+        """Test loading strategy for same entity grand child works."""
+        query_builder = ModelResourceQueryBuilder()
+        query = db_session.query(Playlist)
+        subfilters = {
+            "tracks": SubfilterInfo(
+                filters={"track_id": {"$gte": 5}}
+            ),
+            "tracks.playlists": SubfilterInfo(
+                filters={"playlist_id": {"$lte": 6}}
+            )
+        }
+        query = query_builder.apply_subquery_loads(
+            query=query,
+            resource=PlaylistResource(session=db_session),
+            subfilters=subfilters,
+            embeds=[],
+            limit=3
+        )
+        expected_query = (
+            """
+            SELECT 
+                anon_1."Playlist_PlaylistId" AS "anon_1_Playlist_PlaylistId", 
+                anon_1."Playlist_Name" AS "anon_1_Playlist_Name", 
+                "Track1"."TrackId" AS "Track1_TrackId", 
+                "Track1"."Name" AS "Track1_Name", 
+                "Track1"."AlbumId" AS "Track1_AlbumId", 
+                "Track1"."MediaTypeId" AS "Track1_MediaTypeId", 
+                "Track1"."GenreId" AS "Track1_GenreId", 
+                "Track1"."Composer" AS "Track1_Composer", 
+                "Track1"."Milliseconds" AS "Track1_Milliseconds", 
+                "Track1"."Bytes" AS "Track1_Bytes",
+                "Track1"."UnitPrice" AS "Track1_UnitPrice", 
+                "Playlist1"."PlaylistId" AS "Playlist1_PlaylistId", 
+                "Playlist1"."Name" AS "Playlist1_Name" 
+            FROM 
+                (
+                    SELECT 
+                        "Playlist"."PlaylistId" AS "Playlist_PlaylistId", 
+                        "Playlist"."Name" AS "Playlist_Name", 
+                        row_number() OVER (ORDER BY "Playlist"."PlaylistId" ASC) AS row_number 
+                    FROM 
+                        "Playlist"
+                ) AS anon_1 
+                LEFT OUTER JOIN 
+                "PlaylistTrack" AS "PlaylistTrack_1" ON 
+                    anon_1."Playlist_PlaylistId" = "PlaylistTrack_1"."PlaylistId" 
+                LEFT OUTER JOIN 
+                (
+                    SELECT 
+                        "Track1"."TrackId" AS "TrackId", 
+                        "Track1"."Name" AS "Name", 
+                        "Track1"."AlbumId" AS "AlbumId", 
+                        "Track1"."MediaTypeId" AS "MediaTypeId", 
+                        "Track1"."GenreId" AS "GenreId", 
+                        "Track1"."Composer" AS "Composer", 
+                        "Track1"."Milliseconds" AS "Milliseconds", 
+                        "Track1"."Bytes" AS "Bytes", 
+                        "Track1"."UnitPrice" AS "UnitPrice" 
+                    FROM 
+                        "Track" AS "Track1" 
+                    WHERE 
+                        "Track1"."TrackId" >= ?
+                ) AS "Track1" ON 
+                    "Track1"."TrackId" = "PlaylistTrack_1"."TrackId" 
+                LEFT OUTER JOIN 
+                "PlaylistTrack" AS "PlaylistTrack_2" ON 
+                    "Track1"."TrackId" = "PlaylistTrack_2"."TrackId" 
+                LEFT OUTER JOIN 
+                (
+                    SELECT 
+                        "Playlist1"."PlaylistId" AS "PlaylistId", 
+                        "Playlist1"."Name" AS "Name" 
+                    FROM 
+                        "Playlist" AS "Playlist1" 
+                    WHERE 
+                        "Playlist1"."PlaylistId" <= ?
+                ) AS "Playlist1" ON 
+                    "Playlist1"."PlaylistId" = "PlaylistTrack_2"."PlaylistId" 
+            WHERE 
+                anon_1.row_number >= ? 
+                AND 
+                anon_1.row_number <= ? 
+            ORDER BY 
+                anon_1.row_number
             """
         ).replace(" ", "").replace("\n", "")
         result = str(query).replace(" ", "").replace("\n", "")
@@ -2221,3 +2418,61 @@ class TestDrowsyQueryBuilderRowNumSupport(DrowsyDatabaseTests):
         assert len(results) > 0
         for album in results:
             assert len(album.tracks) <= 1
+
+    @staticmethod
+    def test_subresource_sort_by_pk(db_session):
+        """Sort by PK on subresource loaded properly."""
+        query_builder = ModelResourceQueryBuilder()
+        query = db_session.query(Album)
+        subfilters = {
+            "tracks": SubfilterInfo(
+                filters={"track_id": {"$gte": 5}},
+                limit=5,
+                sorts=[SortInfo(attr="track_id", direction="DESC")]
+            )
+        }
+        query = query_builder.apply_subquery_loads(
+            query=query,
+            resource=AlbumResource(session=db_session),
+            subfilters=subfilters,
+            embeds=[],
+            limit=3
+        )
+        results = query.all()
+        assert len(results) == 3
+        for album in results:
+            assert len(album.tracks) <= 5
+            last_track_id = None
+            for track in album.tracks:
+                assert track.track_id >= 5
+                if last_track_id:
+                    assert track.track_id < last_track_id
+                last_track_id = track.track_id
+
+    @staticmethod
+    def test_same_entity_grandchild_load(db_session):
+        """Test loading strategy for same entity grand child works."""
+        query_builder = ModelResourceQueryBuilder()
+        query = db_session.query(Playlist)
+        subfilters = {
+            "tracks": SubfilterInfo(
+                filters={"track_id": {"$gte": 5}}
+            ),
+            "tracks.playlists": SubfilterInfo(
+                filters={"playlist_id": {"$lte": 6}}
+            )
+        }
+        query = query_builder.apply_subquery_loads(
+            query=query,
+            resource=PlaylistResource(session=db_session),
+            subfilters=subfilters,
+            embeds=[],
+            limit=3
+        )
+        results = query.all()
+        assert len(results) == 3
+        for playlist in results:
+            for track in playlist.tracks:
+                assert track.track_id >= 5
+                for pl in track.playlists:
+                    assert pl.playlist_id <= 6

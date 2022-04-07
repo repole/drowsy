@@ -1328,14 +1328,11 @@ class ModelResourceQueryBuilder(QueryBuilder):
             current_node = node_queue.pop(0)
             for child in current_node.children:
                 unaliased_child = inspect(child.alias).class_
-                if model_count[unaliased_child] > 1:
-                    duplicate_model = True
-                if unaliased_root == unaliased_child:
-                    children_self_ref_root = True
-                if child.limit or child.offset:
-                    children_limit_offset = True
-                if len(child.id_keys) > 1 and child.children:
-                    children_composite_key = True
+                duplicate_model = model_count[unaliased_child] > 1
+                children_self_ref_root = unaliased_root == unaliased_child
+                children_limit_offset = bool(child.limit or child.offset)
+                children_composite_key = bool(len(child.id_keys) > 1 and
+                                              child.children)
                 if children_limit_offset and children_composite_key:
                     node_queue = []
                     break
