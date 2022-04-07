@@ -425,8 +425,13 @@ class ResourceSchema(Schema, Loggable):
                     # unnecessary update on the PK fields.
                     new_obj = obj.copy()
                     for pair in zip(self.id_keys, id_data_keys):
-                        if new_obj.get(pair[1]) == getattr(
-                                self.instance, pair[0]):
+                        new_obj_value = new_obj.get(pair[1])
+                        instance_value = getattr(self.instance, pair[0])
+                        if isinstance(new_obj_value, str) or isinstance(
+                                instance_value, str):
+                            new_obj_value = str(new_obj_value).lower()
+                            instance_value = str(instance_value).lower()
+                        if new_obj_value == instance_value:
                             new_obj.pop(pair[1])
                     obj = new_obj
                     result = self.instance  # data only pk, no updates
