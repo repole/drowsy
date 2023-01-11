@@ -232,7 +232,7 @@ class NestedRelated(NestedPermissibleABC, Related):
             return self.schema.get_instance(data=obj_data)
 
     def _perform_operation(self, operation, parent, instance, errors, index,
-                           strict=True):
+                           in_place, strict=True):
         """Perform an operation on the parent with a supplied instance.
 
         Example:
@@ -258,6 +258,9 @@ class NestedRelated(NestedPermissibleABC, Related):
             an encountered error. Otherwise, the error will simply be
             included in the provided ``errors`` dict and things will
             proceed as normal.
+        :param bool in_place: Provided to indicate whether the nested
+            data is being modified in-place (``True``) or completely
+            overridden (``False``).
         :raise ValidationError: If there's an error when in strict mode.
         :return: The corresponding attr for this field with the provided
             operation performed on it.
@@ -269,11 +272,12 @@ class NestedRelated(NestedPermissibleABC, Related):
         # Now perform the actual operation.
         if operation == "remove":
             if is_instance_in_relation:
-                if self.parent.partial:
-                    # no need to remove if not partial, as the
-                    # list will already be empty.
+                if in_place:
                     relation = getattr(parent, self.name)
                     relation.remove(instance)
+                # else:
+                #     no need to remove if not in-place change, as the
+                #     list will already be empty.
             elif strict:
                 self._handle_op_failure(
                     "invalid_remove",
