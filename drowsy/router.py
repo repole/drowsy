@@ -501,16 +501,22 @@ class ModelResourceRouter(ResourceRouterABC):
                 split_path.pop(0)
             if split_path:
                 resource_class_name = inflection.camelize(
-                    inflection.singularize(split_path[0]))+"Resource"
+                    inflection.singularize(split_path[0])) + "Resource"
                 try:
                     resource_cls = class_registry.get_class(
                         resource_class_name)
-                    self.resource = resource_cls(
-                        **self._get_resource_kwargs(resource_cls))
                 except RegistryError:
-                    self.logger.debug(
-                        "Unable to find resource due to Registry error.")
-                    raise self.make_error("resource_not_found")
+                    resource_class_name = inflection.camelize(
+                        split_path[0]) + "Resource"
+                    try:
+                        resource_cls = class_registry.get_class(
+                            resource_class_name)
+                    except RegistryError:
+                        self.logger.debug(
+                            "Unable to find resource due to Registry error.")
+                        raise self.make_error("resource_not_found")
+                self.resource = resource_cls(
+                    **self._get_resource_kwargs(resource_cls))
         return self.resource
 
     def _get_path_objects(self, path):
