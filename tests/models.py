@@ -5,14 +5,13 @@
     SQLAlchemy models for the Chinook database.
 
 """
-# :copyright: (c) 2016-2020 by Nicholas Repole and contributors.
+# :copyright: (c) 2016-2025 by Nicholas Repole and contributors.
 #             See AUTHORS for more details.
 # :license: MIT - See LICENSE for more details.
 from sqlalchemy import (
     Column, DateTime, ForeignKey, Integer, Table, Unicode, orm, and_, Float
 )
-from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.orm import backref
+from sqlalchemy.orm import backref, declarative_base
 from sqlalchemy.schema import ForeignKeyConstraint
 
 Base = declarative_base()

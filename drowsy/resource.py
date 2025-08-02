@@ -5,7 +5,7 @@
     Base classes for building resources and model resources.
 
 """
-# :copyright: (c) 2016-2021 by Nicholas Repole and contributors.
+# :copyright: (c) 2016-2025 by Nicholas Repole and contributors.
 #             See AUTHORS for more details.
 # :license: MIT - See LICENSE for more details.
 import math
@@ -13,7 +13,7 @@ from marshmallow.exceptions import ValidationError
 from mqlalchemy import (
     InvalidMqlException, MqlFieldError, MqlFieldPermissionError, MqlTooComplex)
 from sqlalchemy.exc import SQLAlchemyError
-from sqlalchemy import inspect
+from sqlalchemy import inspect, select, func
 from drowsy import resource_class_registry
 from drowsy.base import BaseResourceABC
 from contextlib import suppress
@@ -472,10 +472,10 @@ class BaseModelResource(BaseResourceABC):
 
         """
         filters = self._get_ident_filters(ident)
-        query = self.session.query(self.model)
+        query = select(self.model)
         try:
             query = self.query_builder.apply_filters(
-                query,
+                query=query,
                 model_class=self.model,
                 filters=filters,
                 nested_conditions=self.get_required_nested_filters,
@@ -488,7 +488,7 @@ class BaseModelResource(BaseResourceABC):
             # NOTE - BadRequestError only an issue on filters,
             # e.g. a bad ident provided.
             raise self.make_error("resource_not_found", ident=ident)
-        return query.first()
+        return self.session.execute(query).scalars().first()
 
     def get_required_filters(self, alias=None):
         """Build any required filters for this resource.
@@ -575,7 +575,7 @@ class BaseModelResource(BaseResourceABC):
         applied when the resource is used as a child resource as well.
 
         :param query: An already partially constructed sqlalchemy query.
-        :type query: :class:`~sqlalchemy.orm.query.Query`
+        :type query: :class:`~sqlalchemy.sql.selectable.Select`
         :param alias: Can optionally be used if this resource is being
             used as a subresource and an alias has been applied.
         :return: A potentially modified query object.
@@ -588,18 +588,16 @@ class BaseModelResource(BaseResourceABC):
                 if filters:
                     # this looks redundant, but it's checking if
                     # the collection is empty rather than None
-                    return query.filter(*filters)
+                    return query.where(*filters)
             else:
-                return query.filter(filters)
+                return query.where(filters)
         return query
 
-    def _get_query(self, session, filters, subfilters=None, embeds=None,
-                   limit=None, offset=None, sorts=None, strict=True):
+    def _get_query(self, filters, subfilters=None, embeds=None,
+                   limit=None, offset=None, sorts=None, strict=True,
+                   query=None):
         """Used to generate a query for this request.
 
-        :param session: See :meth:`get` for more info.
-        :type session: :class:`~sqlalchemy.orm.session.Session` or
-            :class:`~sqlalchemy.orm.query.Query`
         :param filters: MQLAlchemy filters to be applied on this query.
         :type filters: dict or None
         :param subfilters: MQLAlchemy filters to be applied to child
@@ -612,6 +610,8 @@ class BaseModelResource(BaseResourceABC):
         :param bool strict: If ``True``, will raise an exception when
             bad parameters are passed. If ``False``, will quietly ignore
             any bad input and treat it as if none was provided.
+        :param query: See :meth:`get` for more info.
+        :type query: :class:`~sqlalchemy.sql.selectable.Select`
         :raise BadRequestError: Invalid filters or embeds will
             result in a raised exception if ``strict`` is ``True``.
         :return: A query with load options applied based on the supplied
@@ -621,10 +621,8 @@ class BaseModelResource(BaseResourceABC):
             :class:`~sqlalchemy.orm.query.Query`
 
         """
-        if hasattr(session, "query") and callable(session.query):
-            query = session.query(self.model)
-        else:
-            query = session
+        if query is None:
+            query = select(self.model)
         # apply filters
         # Note that required filters are applied by query builder too
         query = self.query_builder.build(
@@ -671,7 +669,7 @@ class BaseModelResource(BaseResourceABC):
         raise self.make_error("method_not_allowed", method=method.upper())
 
     def get(self, ident, subfilters=None, fields=None, embeds=None,
-            session=None, strict=True, head=False):
+            query=None, strict=True, head=False):
         """Get the identified resource.
 
         :param ident: A value used to identify this resource. If the
@@ -686,12 +684,10 @@ class BaseModelResource(BaseResourceABC):
         :param embeds: A list of relationship and relationship field
             names to be included in the result.
         :type embeds: collection or None
-        :param session: Optional sqlalchemy session override. May also
-            be a partially formed SQLAlchemy query, allowing for
-            sub-resource queries by using
-            :meth:~`sqlalchemy.orm.query.Query.with_parent`.
-        :type session: :class:`~sqlalchemy.orm.session.Session` or
-            :class:`~sqlalchemy.orm.query.Query`
+        :param query: Optional base sqlalchemy query, allowing for
+            sub-resource queries by using 
+            :meth:~`sqlalchemy.orm.with_parent`.
+        :type query: :class:`~sqlalchemy.sql.selectable.Select`
         :param bool strict: If ``True``, will raise an exception when
             bad parameters are passed. If ``False``, will quietly ignore
             any bad input and treat it as if none was provided.
@@ -709,8 +705,6 @@ class BaseModelResource(BaseResourceABC):
         """
         self._check_method_allowed("GET" if not head else "HEAD")
         filters = self._get_ident_filters(ident)
-        if session is None:
-            session = self.session
         # NOTE: No risk of BadRequestError here due to no embeds or
         # fields being passed to make_schema
         schema = self.make_schema(
@@ -720,19 +714,19 @@ class BaseModelResource(BaseResourceABC):
             strict=strict)
         try:
             query = self._get_query(
-                session=session,
                 filters=filters,
                 subfilters=subfilters,
-                embeds=embeds)
+                embeds=embeds,
+                query=query)
         except BadRequestError as exc:
             if exc.code == "filters_field_op_error":
                 if exc.kwargs.get("subresource_key") is None:
                     # This error is due to a bad ID key provided.
                     exc = self.make_error("resource_not_found", ident=ident)
             raise exc
-        except (ValueError, TypeError, InvalidMqlException):  # pragma: no cover
+        except (ValueError, TypeError, InvalidMqlException) as exc:  # pragma: no cover
             raise self.make_error("unexpected_error")
-        instance = query.all()
+        instance = self.session.execute(query).unique().scalars().all()
         if instance:
             return schema.dump(instance[0])
         raise self.make_error("resource_not_found", ident=ident)
@@ -928,7 +922,7 @@ class BaseModelResource(BaseResourceABC):
 
     def get_collection(self, filters=None, subfilters=None, fields=None,
                        embeds=None, sorts=None, offset=None, limit=None,
-                       session=None, strict=True, head=False):
+                       query=None, strict=True, head=False):
         """Get a collection of resources.
 
         :param filters: MQLAlchemy filters to be applied on this query.
@@ -948,10 +942,10 @@ class BaseModelResource(BaseResourceABC):
         :type offset: int or None
         :param limit: Standard SQL limit to be applied to the query.
         :type limit: int or None
-        :param session: Optional sqlalchemy session override. See
-            :meth:`get` for more info.
-        :type session: :class:`~sqlalchemy.orm.session.Session` or
-            :class:`~sqlalchemy.orm.query.Query`
+        :param query: Optional base sqlalchemy query, allowing for
+            sub-resource queries by using 
+            :meth:~`sqlalchemy.orm.with_parent`.
+        :type query: :class:`~sqlalchemy.sql.selectable.Select`
         :param bool strict: If ``True``, will raise an exception when
             bad parameters are passed. If ``False``, will quietly ignore
             any bad input and treat it as if none was provided.
@@ -970,8 +964,6 @@ class BaseModelResource(BaseResourceABC):
         self._check_method_allowed("GET" if not head else "HEAD")
         if filters is None:
             filters = {}
-        if session is None:
-            session = self.session
         # NOTE: No risk of BadRequestError here due to no embeds or
         # fields being passed to make_schema
         schema = self.make_schema(
@@ -979,10 +971,14 @@ class BaseModelResource(BaseResourceABC):
             subfilters=subfilters,
             embeds=embeds,
             strict=strict)
-        count = self._get_query(
-            session=session,
-            filters=filters
-        ).count()
+        count = self.session.execute(
+            select(func.count()).select_from(
+                self._get_query(
+                    query=query,
+                    filters=filters
+                ).subquery()
+            )
+        ).scalars()
         # set up offset/limit
         if (limit is not None and
                 isinstance(self.page_max_size, int) and
@@ -996,7 +992,7 @@ class BaseModelResource(BaseResourceABC):
         if not offset:
             offset = 0
         query = self._get_query(
-            session=session,
+            query=query,
             filters=filters,
             subfilters=subfilters,
             embeds=embeds,
@@ -1004,7 +1000,7 @@ class BaseModelResource(BaseResourceABC):
             offset=offset,
             sorts=sorts,
             strict=strict)
-        records = query.all()
+        records = self.session.execute(query).unique().scalars().all()
         # get result
         dump = schema.dump(records, many=True)
         return ResourceCollection(dump, count)
@@ -1137,14 +1133,13 @@ class BaseModelResource(BaseResourceABC):
             self.session.rollback()
             raise self.make_error("commit_failure")
 
-    def delete_collection(self, filters=None, session=None, strict=True):
+    def delete_collection(self, filters=None, query=None, strict=True):
         """Delete all filter matching members of the collection.
 
         :param filters: MQLAlchemy style filters.
         :type filters: dict or None
-        :param session: See :meth:`get` for more info.
-        :type session: :class:`~sqlalchemy.orm.session.Session` or
-            :class:`~sqlalchemy.orm.query.Query`
+        :param query: See :meth:`get` for more info.
+        :type query: :class:`~sqlalchemy.sql.selectable.Select`
         :param bool strict: If ``True``, will raise an exception when
             bad parameters are passed. If ``False``, will quietly ignore
             any bad input and treat it as if none was provided.
@@ -1157,13 +1152,11 @@ class BaseModelResource(BaseResourceABC):
         """
         self._check_method_allowed("DELETE")
         filters = filters or {}
-        if session is None:
-            session = self.session
         query = self._get_query(
-            session=session,
+            query=query,
             filters=filters,
             strict=strict)
-        instances = query.all()
+        instances = self.session.execute(query).scalars().all()
         with self.session.no_autoflush:
             for instance in instances:
                 # NOTE: No risk of BadRequestError here due to no embeds
@@ -1178,7 +1171,7 @@ class BaseModelResource(BaseResourceABC):
                 self.session.delete(instance)
         try:
             self.session.commit()
-        except SQLAlchemyError:  # pragma: no cover
+        except SQLAlchemyError as exc:  # pragma: no cover
             self.session.rollback()
             raise self.make_error("commit_failure")
 

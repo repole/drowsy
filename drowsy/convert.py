@@ -5,7 +5,7 @@
     Convert SQLAlchemy models into Marshmallow schemas.
 
 """
-# :copyright: (c) 2016-2020 by Nicholas Repole and contributors.
+# :copyright: (c) 2016-2025 by Nicholas Repole and contributors.
 #             See AUTHORS for more details.
 # :license: MIT - See LICENSE for more details.
 from inflection import camelize, underscore, pluralize
@@ -91,7 +91,7 @@ class ModelResourceConverter(ModelConverter):
             "many": prop.uselist
         })
 
-    def property2field(self, prop, instance=True, **kwargs):
+    def property2field(self, prop, instance=True, field_class=None, **kwargs):
         """
 
         :param prop: A column or relationship property used to
@@ -101,6 +101,8 @@ class ModelResourceConverter(ModelConverter):
         :param instance: ``True`` if this method should return an actual
             instance of a field, ``False`` to return the actual field
             class.
+        :param field_class: Class of field to attempt to instantiate.
+        :type field_class: :class:`~marshmallow.fields.Field`
         :param kwargs: Keyword args to be used in the construction of
             the field.
         :return: Depending on the value of ``instance``, either a field
@@ -108,8 +110,7 @@ class ModelResourceConverter(ModelConverter):
         :rtype: :class:`~marshmallow.fields.Field` or type
 
         """
-
-        field_class = self._get_field_class_for_property(prop)
+        field_class = field_class or self._get_field_class_for_property(prop)
         if not instance:
             return field_class
         field_kwargs = self._get_field_kwargs_for_property(prop)
@@ -136,7 +137,9 @@ class ModelResourceConverter(ModelConverter):
         if hasattr(prop, 'direction'):  # Relationship property
             self._add_relationship_kwargs(kwargs, prop)
         if getattr(prop, 'doc', None):  # Useful for documentation generation
-            kwargs['description'] = prop.doc
+            if not kwargs.get("metadata"):
+                kwargs['metadata'] = {}
+            kwargs['metadata']['description'] = prop.doc
         return kwargs
 
     @staticmethod

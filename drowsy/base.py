@@ -7,7 +7,7 @@
     Needed to avoid circular imports between resource and field.
 
 """
-# :copyright: (c) 2016-2021 by Nicholas Repole and contributors.
+# :copyright: (c) 2016-2025 by Nicholas Repole and contributors.
 #             See AUTHORS for more details.
 # :license: MIT - See LICENSE for more details.
 import collections.abc
@@ -142,8 +142,9 @@ class NestedPermissibleABC(Nested, Loggable):
         "invalid_add": "Object already in list; unable to add it again."
     }
 
-    def __init__(self, nested, default=missing_, exclude=tuple(), only=None,
-                 many=False, permissions_cls=None, **kwargs):
+    def __init__(self, nested, load_default=missing_, dump_default=missing_, 
+                 exclude=tuple(), only=None, many=False, permissions_cls=None, 
+                 **kwargs):
         """Initialize a nested field with permissions.
 
         :param nested: The Resource class or class name (string) to
@@ -167,7 +168,8 @@ class NestedPermissibleABC(Nested, Loggable):
         """
         super(NestedPermissibleABC, self).__init__(
             nested=nested,
-            default=default,
+            load_default=load_default,
+            dump_default=dump_default,
             exclude=exclude,
             only=only,
             many=many,

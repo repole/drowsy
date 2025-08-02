@@ -5,7 +5,7 @@
     Tools for building SQLAlchemy queries.
 
 """
-# :copyright: (c) 2016-2021 by Nicholas Repole and contributors.
+# :copyright: (c) 2016-2025 by Nicholas Repole and contributors.
 #             See AUTHORS for more details.
 # :license: MIT - See LICENSE for more details.
 from collections import defaultdict
@@ -14,10 +14,11 @@ from drowsy.fields import NestedRelated
 from drowsy.log import Loggable
 from drowsy.parser import SortInfo, SubfilterInfo
 from drowsy.utils import get_field_by_data_key
-from sqlalchemy import and_, func, or_
+from sqlalchemy import and_, func, or_, select
 from sqlalchemy.inspection import inspect
 from sqlalchemy.orm import aliased, contains_eager, subqueryload
 from sqlalchemy.orm.interfaces import MANYTOMANY, ONETOMANY
+from sqlalchemy.orm.util import AliasedClass
 from sqlalchemy.sql.elements import BinaryExpression, BooleanClauseList
 from sqlalchemy.sql.selectable import Alias, Subquery
 from mqlalchemy import (
@@ -114,8 +115,9 @@ class QueryBuilder(Loggable):
         :rtype: :class:`~sqlalchemy.orm.query.Query`
 
         """
-        if len(query.column_descriptions) == 1:
-            record_class = query.column_descriptions[0]["expr"]
+        entities = [c["entity"] for c in query.column_descriptions]
+        if len(entities) == 1:
+            record_class = entities[0]
             order_bys = self._get_order_bys(
                 record_class, sorts, convert_key_names_func)
             for order_by in order_bys:
@@ -174,21 +176,8 @@ class QueryBuilder(Loggable):
     def _generate_filters(self, model_class, filters, whitelist=None,
                           nested_conditions=None, stack_size_limit=100,
                           convert_key_names_func=str, gettext=None):
-        """
+        """Apply filters to a query using MQLAlchemy.
 
-        :param model_class:
-        :param filters:
-        :param whitelist:
-        :param nested_conditions:
-        :param stack_size_limit:
-        :param convert_key_names_func:
-        :param gettext:
-        :return:
-
-
-        Apply filters to a query using MQLAlchemy.
-
-        :param query: A SQLAlchemy session or query.
         :param model_class: The model having filters applied to it.
         :param filters: The MQLAlchemy style filters to apply.
         :type filters: dict or None
@@ -223,7 +212,7 @@ class QueryBuilder(Loggable):
             gettext=gettext
         )
 
-    def apply_filters(self, query, model_class, filters, whitelist=None,
+    def apply_filters(self, model_class, query, filters, whitelist=None,
                       nested_conditions=None, stack_size_limit=100,
                       convert_key_names_func=str, gettext=None):
         """Apply filters to a query using MQLAlchemy.
@@ -254,8 +243,8 @@ class QueryBuilder(Loggable):
 
         """
         return MqlBuilder().apply_mql_filters(
-            query,
             model_class,
+            query,
             filters=filters,
             nested_conditions=nested_conditions,
             whitelist=whitelist,
@@ -384,8 +373,8 @@ class ModelResourceQueryBuilder(QueryBuilder):
         # apply filters
         try:
             query = self.apply_filters(
-                query,
                 resource.model,
+                query,
                 filters=filters,
                 nested_conditions=resource.get_required_nested_filters,
                 whitelist=resource.whitelist,
@@ -463,14 +452,6 @@ class ModelResourceQueryBuilder(QueryBuilder):
                 parent_col_name = expression.right.name
                 child_expr = expression.left
                 child_col_name = expression.left.name
-            if isinstance(parent, Alias) or isinstance(parent, Subquery):
-                parent_expr = getattr(
-                    parent.c,
-                    parent.name + "_" + parent_col_name)
-            if isinstance(child, Alias) or isinstance(child, Subquery):
-                child_expr = getattr(
-                    child.c,
-                    assoc_queryable.name + "_" + child_col_name)
             join.append(child_expr == parent_expr)
         return join
 
@@ -764,15 +745,17 @@ class ModelResourceQueryBuilder(QueryBuilder):
                 entities = []
                 for col in query.column_descriptions:
                     if col["name"] != "row_number":
-                        entities.append(col["expr"])
+                        if col["entity"] not in entities:
+                            entities.append(col["entity"])
                 # Query from self, allowing us to filter by row_number
                 # Only include non row_number expressions in SELECT
-                query = query.from_self(*entities)
+                sq = query.subquery()
+                query = select(aliased(entities[0], sq))
                 if start:
-                    query = query.filter(row_number >= start)
+                    query = query.where(sq.c.row_number >= start)
                 if end:
-                    query = query.filter(row_number <= end)
-                order_bys = [row_number]
+                    query = query.where(sq.c.row_number <= end)
+                order_bys = [sq.c.row_number]
             else:
                 # Unable to use row_number, so unfortunately we have to
                 # run an actual query with limit/offset/order applied,
@@ -785,7 +768,9 @@ class ModelResourceQueryBuilder(QueryBuilder):
                     temp_query = self.apply_limit(temp_query, limit)
                 if offset:
                     temp_query = self.apply_offset(temp_query, offset)
-                results = temp_query.all()
+                # TODO - maybe deprecate this whole section...
+                session = resource.session
+                results = session.execute(temp_query).scalars().all()
                 if len(id_keys) > 1:
                     filters = []
                     for result in results:
@@ -799,13 +784,13 @@ class ModelResourceQueryBuilder(QueryBuilder):
                             and_(*conditions)
                         )
                     if filters:
-                        query = query.filter(or_(*filters))
+                        query = query.where(or_(*filters))
                 else:
                     # in condition
                     id_key = id_keys[0]
                     values = [getattr(r, id_keys[0]) for r in results]
                     if values:
-                        query = query.filter(
+                        query = query.where(
                             getattr(record_class, id_key).in_(values))
                 # query = query.from_self()
         for order_by in order_bys:
@@ -861,12 +846,18 @@ class ModelResourceQueryBuilder(QueryBuilder):
         embeds = embeds or []
         subfilters = subfilters or {}
         dialect_supported = self.row_number_supported(
-            dialect=resource.session.bind.name,
+            dialect=resource.session.bind.dialect.name,
             dialect_override=dialect_override)
         query = self._initiate_subquery(
-            query, resource, offset, limit, sorts, dialect_supported, strict)
+            query=query,
+            resource=resource,
+            offset=offset,
+            limit=limit,
+            sorts=sorts,
+            supported=dialect_supported,
+            strict=strict)
         root = self.SubqueryNode(
-            alias=resource.model,
+            alias=query.column_descriptions[0]["entity"],
             name="$root"
         )
         model_count = defaultdict(int)
@@ -952,7 +943,7 @@ class ModelResourceQueryBuilder(QueryBuilder):
                         )
                         # This takes care of embedding when is_embed
                         new_node.subquery = resource.apply_required_filters(
-                            query=resource.session.query(new_node.alias),
+                            query=select(new_node.alias),
                             alias=new_node.alias
                         ).subquery(inspect(new_node.alias).name)
                         if default_limit is not None and (
@@ -976,7 +967,7 @@ class ModelResourceQueryBuilder(QueryBuilder):
                         # This will get used in situations where
                         # no limit or offset is provided, since
                         # row_number won't be needed for pagination.
-                        subquery = resource.session.query(last_node.alias)
+                        subquery = select(last_node.alias)
                         subquery = resource.apply_required_filters(
                             subquery,
                             alias=last_node.alias)
@@ -1060,27 +1051,24 @@ class ModelResourceQueryBuilder(QueryBuilder):
                                                 last_node.alias,
                                                 attr_name).asc()
                                         )
-                                q1 = resource.session.query(
-                                    last_node.alias,
-                                    func.row_number().over(
-                                        partition_by=partition_by,
-                                        order_by=order_by
-                                    ).label("row_number")
-                                )
-                                if queryable is not None:
-                                    q1 = q1.join(
-                                        queryable,
-                                        join_condition
+
+                                row_number_expr = func.row_number().over(
+                                    partition_by=partition_by,
+                                    order_by=order_by
+                                ).label("row_number")
+
+                                # Build the complete query in one go
+                                if queryable is None:
+                                    q1 = select(
+                                        last_node.alias,
+                                        row_number_expr
                                     )
-                                    row_num_ent = None
-                                    for col in q1.column_descriptions:
-                                        if col["name"] == "row_number":
-                                            row_num_ent = col["expr"]
-                                            break
-                                    q1 = q1.with_entities(
+                                else:
+                                    q1 = select(
                                         last_node.alias,
                                         queryable,
-                                        row_num_ent)
+                                        row_number_expr
+                                    ).join(queryable, join_condition)
                                 nested_conditions = (
                                     resource.get_required_nested_filters)
                                 q1 = resource.apply_required_filters(
@@ -1103,7 +1091,7 @@ class ModelResourceQueryBuilder(QueryBuilder):
                                             resource=resource,
                                             exc=exc,
                                             subfilter_key=subfilter_key)
-                                q1 = q1.subquery("q1", with_labels=True)
+                                q1 = q1.subquery("q1")
                                 # limit and offset handling
                                 start = 1
                                 if last_node.offset is not None:
@@ -1111,10 +1099,10 @@ class ModelResourceQueryBuilder(QueryBuilder):
                                 end = None
                                 if last_node.limit is not None:
                                     end = start + last_node.limit - 1
-                                subquery = resource.session.query(q1).filter(
+                                subquery = select(q1).where(
                                      q1.c.row_number >= start)
                                 if end is not None:
-                                    subquery = subquery.filter(
+                                    subquery = subquery.where(
                                         q1.c.row_number <= end
                                     )
                                 last_node.subquery = subquery.subquery(
@@ -1172,7 +1160,7 @@ class ModelResourceQueryBuilder(QueryBuilder):
                                         manipulate_filters_to_list(
                                             clean_new_filters))
                                 if last_node.filters:
-                                    subquery = subquery.filter(
+                                    subquery = subquery.where(
                                         *last_node.filters)
                                 last_node.subquery = subquery.subquery(
                                     inspect(last_node.alias).name)
@@ -1248,11 +1236,11 @@ class ModelResourceQueryBuilder(QueryBuilder):
                     query = query.outerjoin(node.subquery, primaryjoin)
                 if node.parent and node.parent.option:
                     node.option = node.parent.option.contains_eager(
-                        node.name,
+                        getattr(node.parent.alias, node.name),
                         alias=node.subquery)
                 else:
                     node.option = contains_eager(
-                        node.name,
+                        getattr(node.parent.alias, node.name),
                         alias=node.subquery)
             elif strategy == "subqueryload":
                 # Subquery loads are never applied when there's a

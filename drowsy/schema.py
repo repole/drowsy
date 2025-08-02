@@ -5,17 +5,17 @@
     Classes for building REST API friendly, model based schemas.
 
 """
-# :copyright: (c) 2016-2021 by Nicholas Repole and contributors.
+# :copyright: (c) 2016-2025 by Nicholas Repole and contributors.
 #             See AUTHORS for more details.
 # :license: MIT - See LICENSE for more details.
+from marshmallow import EXCLUDE
 from marshmallow.decorators import post_load
 from marshmallow.exceptions import ValidationError
 from marshmallow.schema import Schema, SchemaOpts
-from marshmallow.utils import EXCLUDE
 from marshmallow_sqlalchemy.fields import get_primary_keys
 from marshmallow_sqlalchemy.schema import (
     SQLAlchemyAutoSchema, SQLAlchemyAutoSchemaOpts)
-from sqlalchemy import inspect
+from sqlalchemy import inspect, select, and_
 from drowsy.convert import ModelResourceConverter
 from drowsy.exc import MISSING_ERROR_MESSAGE, PermissionValidationError
 from drowsy.fields import EmbeddableMixinABC
@@ -50,17 +50,15 @@ class ResourceSchemaOpts(SchemaOpts):
                     }
 
     """
-    def __init__(self, meta, ordered=False):
+    def __init__(self, meta, *args, **kwargs):
         """Handle the meta class attached to a `ResourceSchema`.
 
         :param meta: The meta class attached to a
             :class:`~drowsy.resource.ResourceSchema`.
-        :param bool ordered: If `True`, order serialization output
-            according to the order in which fields were declared.
-            Output of `Schema.dump` will be a `collections.OrderedDict`.
 
         """
-        super(ResourceSchemaOpts, self).__init__(meta, ordered)
+        super(ResourceSchemaOpts, self).__init__(meta, *args, **kwargs)
+        self.unknown = EXCLUDE
         self.id_keys = getattr(meta, 'id_keys', None)
         self.instance_cls = getattr(meta, 'instance_cls', None)
         self.error_messages = getattr(meta, "error_messages", None)
@@ -94,17 +92,14 @@ class ModelResourceSchemaOpts(SQLAlchemyAutoSchemaOpts, ResourceSchemaOpts):
 
     """
 
-    def __init__(self, meta, ordered=False):
+    def __init__(self, meta, *args, **kwargs):
         """Handle the meta class attached to a `ModelResourceSchema`.
 
         :param meta: The meta class attached to a
             :class:`~drowsy.resource.ModelResourceSchema`.
-        :param bool ordered: If `True`, order serialization output
-            according to the order in which fields were declared.
-            Output of `Schema.dump` will be a `collections.OrderedDict`.
 
         """
-        super(ModelResourceSchemaOpts, self).__init__(meta, ordered)
+        super(ModelResourceSchemaOpts, self).__init__(meta, *args, **kwargs)
         # overwrite default converter from SQLAlchemyAutoSchemaOpts
         self.model_converter = getattr(
             meta, 'model_converter', ModelResourceConverter)
@@ -131,9 +126,9 @@ class ResourceSchema(Schema, Loggable):
 
     opts = None  # type: ResourceSchemaOpts
 
-    def __init__(self,  only=None, exclude=(), many=False, context=None,
-                 load_only=(), dump_only=(), partial=False, instance=None,
-                 parent_resource=None, error_messages=None):
+    def __init__(self,  only=None, exclude=(), many=None, load_only=(), 
+                 dump_only=(), partial=None, unknown=None, context=None, 
+                 instance=None, parent_resource=None, error_messages=None):
         """Sets additional member vars on top of `ResourceSchema`.
 
         Also runs :meth:`process_context` upon completion.
@@ -144,17 +139,20 @@ class ResourceSchema(Schema, Loggable):
             result.
         :type exclude: tuple or list
         :param bool many: ``True`` if loading a collection of items.
-        :param context: Dictionary of values relevant to the current
-            execution context. Should have a `gettext` key and
-            `callable` value for that key if you're intending to
-            translate error messages.
-        :type context: dict or None
         :param load_only: Fields to be skipped during serialization.
         :type load_only: tuple or list
         :param tuple|list dump_only: Fields to be skipped during
             deserialization.
         :param bool partial: Ignores missing fields when deserializing
             if ``True``.
+        :param unknown: How to handle unknown fields in provided data.
+            Can be `EXCLUDE`, `INCLUDE`, or `RAISE`.
+        :type unknown: :class:`~marshmallow.types.UnknownOption`
+        :param context: Dictionary of values relevant to the current
+            execution context. Should have a `gettext` key and
+            `callable` value for that key if you're intending to
+            translate error messages.
+        :type context: dict or None
         :param instance: Object instance data should be loaded into.
             If ``None`` is provided, an instance will either be
             determined using the provided data via :meth:`get_instance`,
@@ -169,10 +167,11 @@ class ResourceSchema(Schema, Loggable):
             only=only,
             exclude=exclude,
             many=many,
-            context=context,
             load_only=load_only,
             dump_only=dump_only,
-            partial=partial)
+            partial=partial,
+            unknown=unknown)
+        self.context = context or {}
         self.loaded_data = None
         self.parent_resource = parent_resource
         self.instance = instance
@@ -337,13 +336,19 @@ class ResourceSchema(Schema, Loggable):
             return instance
         return self.opts.instance_cls(**data)
 
-    def load(self, data, *, many=None, instance=None, action=None, **kwargs):
+    def load(self, data, *, many=None, partial=None, unknown=None,
+             instance=None, action=None, **kwargs):
         """Deserialize the provided data into an object.
 
         :param dict|list<dict> data: Data to be loaded into an instance.
         :param bool|None many: `True` if loading a collection. `None`
             defers to the schema default, other values will act as an
             override.
+        :param bool partial: Ignores missing fields when deserializing
+            if ``True``.
+        :param unknown: How to handle unknown fields in provided data.
+            Can be `EXCLUDE`, `INCLUDE`, or `RAISE`.
+        :type unknown: :class:`~marshmallow.types.UnknownOption`
         :param instance: Object instance that data should be loaded
             into. If ``None`` is provided at this point or when the
             class was initialized, an instance will either be determined
@@ -418,7 +423,6 @@ class ResourceSchema(Schema, Loggable):
                 if self.instance is None:
                     self.instance = self.opts.instance_cls()
                 kwargs["instance"] = self.instance
-                kwargs["unknown"] = EXCLUDE
                 if action == "update":
                     # Avoid providing identifier values as part of the
                     # load. Helps ensure SQLAlchemy doesn't run an
@@ -438,11 +442,13 @@ class ResourceSchema(Schema, Loggable):
                     if len(obj.keys()) > 0:
                         self.check_permission(obj, self.instance, action)
                         result = super(ResourceSchema, self).load(
-                            obj, many=False, **kwargs)
+                            obj, many=False, partial=partial, unknown=unknown, 
+                            **kwargs)
                 else:
                     self.check_permission(obj, self.instance, action)
                     result = super(ResourceSchema, self).load(
-                        obj, many=False, **kwargs)
+                        obj, many=False, partial=partial, unknown=unknown, 
+                        **kwargs)
                 results.append(result)
             except PermissionValidationError as exc:
                 if many:
@@ -520,8 +526,8 @@ class ModelResourceSchema(ResourceSchema, SQLAlchemyAutoSchema):
     opts = None  # type: ModelResourceSchemaOpts
 
     def __init__(self,  only=None, exclude=(), many=False, context=None,
-                 load_only=(), dump_only=(), partial=False, instance=None,
-                 parent_resource=None, session=None):
+                 load_only=(), dump_only=(), partial=False, unknown=None,
+                 instance=None, parent_resource=None, session=None):
         """Sets additional member vars on top of `SQLAlchemyAutoSchema`.
 
         Also runs :meth:`process_context` upon completion.
@@ -562,6 +568,7 @@ class ModelResourceSchema(ResourceSchema, SQLAlchemyAutoSchema):
             load_only=load_only,
             dump_only=dump_only,
             partial=partial,
+            unknown=unknown,
             instance=instance,
             parent_resource=parent_resource
         )
@@ -588,20 +595,19 @@ class ModelResourceSchema(ResourceSchema, SQLAlchemyAutoSchema):
             # data includes primary key columns
             # attempt to generate filters
             try:
-                filters = {
-                    pair[0]: self.fields[pair[0]].deserialize(data[pair[1]])
+                filters = [
+                    getattr(self.opts.model, pair[0]) == (
+                        self.fields[pair[0]].deserialize(data[pair[1]]))
                     for pair in zip(id_keys, id_data_keys)
-                }
+                ]
             except ValidationError:
                 raise self.make_error("invalid_identifier", data=data)
-            query = self.session.query(
-                self.opts.model
-            )
+            query = select(self.opts.model)
             if self.parent_resource:
                 query = self.parent_resource.apply_required_filters(query)
-            return query.filter_by(
-                **filters
-            ).first()
+            query = query.where(and_(*filters))
+            instance = self.session.execute(query).scalars().first()
+            return instance
         return None
 
     @property
@@ -618,14 +624,19 @@ class ModelResourceSchema(ResourceSchema, SQLAlchemyAutoSchema):
             return [col.key for col in get_primary_keys(self.opts.model)]
         return result
 
-    def load(self, data, *, many=None, instance=None, action=None,
-             session=None, **kwargs):
+    def load(self, data, *, many=None, partial=None, unknown=None, 
+             instance=None, action=None, session=None, **kwargs):
         """Deserialize the provided data into a SQLAlchemy object.
 
         :param dict|list<dict> data: Data to be loaded into an instance.
         :param bool|None many: `True` if loading a collection. `None`
             defers to the schema default, other values will act as an
             override.
+        :param bool partial: Ignores missing fields when deserializing
+            if ``True``.
+        :param unknown: How to handle unknown fields in provided data.
+            Can be `EXCLUDE`, `INCLUDE`, or `RAISE`.
+        :type unknown: :class:`~marshmallow.types.UnknownOption`
         :param instance: SQLAlchemy model instance data should be loaded
             into. If ``None`` is provided at this point or when the
             class was initialized, an instance will either be determined
@@ -651,8 +662,8 @@ class ModelResourceSchema(ResourceSchema, SQLAlchemyAutoSchema):
         # Adding things to kwargs to play nice with super...
         kwargs["session"] = session or self.session
         kwargs["instance"] = instance
-        kwargs["unknown"] = EXCLUDE
         with kwargs["session"].no_autoflush:
             # prevent bad child data from causing a premature flush
             return super(ModelResourceSchema, self).load(
-                data, many=many, action=action, **kwargs)
+                data, many=many, partial=partial, unknown=unknown, 
+                action=action, **kwargs)

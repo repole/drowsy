@@ -5,7 +5,7 @@
     Tools for automatically routing API url paths to resources.
 
 """
-# :copyright: (c) 2016-2021 by Nicholas Repole and contributors.
+# :copyright: (c) 2016-2025 by Nicholas Repole and contributors.
 #             See AUTHORS for more details.
 # :license: MIT - See LICENSE for more details.
 import inflection
@@ -13,6 +13,8 @@ from marshmallow.fields import Field, Nested
 from marshmallow_sqlalchemy.schema import (
     SQLAlchemyAutoSchema, SQLAlchemySchema)
 from mqlalchemy import convert_to_alchemy_type
+from sqlalchemy import select
+from sqlalchemy.orm import with_parent
 from drowsy.base import NestedPermissibleABC
 from drowsy.exc import (
     BadRequestError,  FilterParseError, MethodNotAllowedError,
@@ -539,7 +541,7 @@ class ModelResourceRouter(ResourceRouterABC):
             * resource
             * instance
             * path_part
-            * query_session
+            * query
             * ident
             * field
 
@@ -554,7 +556,7 @@ class ModelResourceRouter(ResourceRouterABC):
         instance = None
         path_part = None
         field = None
-        query_session = None
+        query = None
         ident = None
         while path_parts:
             path_part = path_parts.pop(0)
@@ -563,9 +565,12 @@ class ModelResourceRouter(ResourceRouterABC):
                     # subresource
                     parent_resource = resource
                     resource = path_part.resource
-                    query_session = resource.session.query(
-                        resource.model).with_parent(
-                            instance, path_part.name)
+                    query = select(resource.model).where(
+                        with_parent(
+                            instance, # parent instance
+                            getattr(parent_resource.model, path_part.name)
+                        )
+                    )
                     if not path_part.many:
                         instance = getattr(instance, path_part.name)
                         if instance is None:
@@ -579,7 +584,7 @@ class ModelResourceRouter(ResourceRouterABC):
                     field = path_part
             elif isinstance(path_part, BaseModelResource):
                 resource = path_part
-                query_session = resource.session.query(resource.model)
+                query = select(resource.model)
             elif isinstance(path_part, tuple):
                 # resource instance
                 ident = path_part
@@ -594,9 +599,9 @@ class ModelResourceRouter(ResourceRouterABC):
                         model_attr = getattr(resource.model, id_key)
                         target_type = type(model_attr.property.columns[0].type)
                         value = self._convert_type_func(ident[i], target_type)
-                        query_session = query_session.filter(
-                            model_attr == value)
-                    instance = query_session.first()
+                        query = query.where(model_attr == value)
+                    instance = resource.session.execute(
+                        query).scalars().first()
                     if instance is None:
                         raise self.make_error("resource_not_found", path=path)
                 # if this is the end of the path, don't need instance
@@ -611,7 +616,7 @@ class ModelResourceRouter(ResourceRouterABC):
             "resource": resource,
             "instance": instance,
             "path_part": path_part,
-            "query_session": query_session,
+            "query": query,
             "ident": ident,
             "field": field
         }
@@ -760,7 +765,7 @@ class ModelResourceRouter(ResourceRouterABC):
         resource = path_objs.get("resource", None)
         path_part = path_objs.get("path_part", None)
         ident = path_objs.get("ident", None)
-        query_session = path_objs.get("query_session", None)
+        query = path_objs.get("query", None)
         if isinstance(path_part, BaseModelResource):
             # put collection
             return resource.put_collection(data=data)
@@ -813,7 +818,7 @@ class ModelResourceRouter(ResourceRouterABC):
         resource = path_objs.get("resource", None)
         path_part = path_objs.get("path_part", None)
         ident = path_objs.get("ident", None)
-        query_session = path_objs.get("query_session", None)
+        query = path_objs.get("query", None)
         if isinstance(path_part, BaseModelResource):
             # patch collection
             return resource.patch_collection(data=data)
@@ -926,7 +931,7 @@ class ModelResourceRouter(ResourceRouterABC):
         path_objs = self._get_path_objects(path)
         resource = path_objs.get("resource", None)
         path_part = path_objs.get("path_part", None)
-        query_session = path_objs.get("query_session", None)
+        query = path_objs.get("query", None)
         ident = path_objs.get("ident", None)
         parser = ModelQueryParamParser(query_params, context=self.context)
         fields = parser.parse_fields()
@@ -948,7 +953,7 @@ class ModelResourceRouter(ResourceRouterABC):
                 ident=ident,
                 fields=[field_name],
                 strict=strict,
-                session=query_session,
+                query=query,
                 head=head)
             if result is not None and field_name in result:
                 return result[field_name]
@@ -987,7 +992,7 @@ class ModelResourceRouter(ResourceRouterABC):
                     sorts=sorts,
                     offset=offset,
                     limit=limit,
-                    session=query_session,
+                    query=query,
                     strict=strict,
                     head=head)
                 if query_params.get("page")is not None or not offset:
@@ -999,7 +1004,7 @@ class ModelResourceRouter(ResourceRouterABC):
                     fields=fields,
                     embeds=embeds,
                     subfilters=subfilters,
-                    session=query_session,
+                    query=query,
                     strict=strict,
                     head=head)
                 if len(result) != 1:  # pragma: no cover
@@ -1015,7 +1020,7 @@ class ModelResourceRouter(ResourceRouterABC):
                 embeds=embeds,
                 subfilters=subfilters,
                 strict=strict,
-                session=query_session,
+                query=query,
                 head=head)
         raise self.make_error(
             "resource_not_found", path=path)  # pragma: no cover
@@ -1045,7 +1050,7 @@ class ModelResourceRouter(ResourceRouterABC):
         resource = path_objs.get("resource", None)
         parent_resource = path_objs.get("parent_resource", None)
         path_part = path_objs.get("path_part", None)
-        query_session = path_objs.get("query_session", None)
+        query = path_objs.get("query", None)
         ident = path_objs.get("ident", None)
         parser = ModelQueryParamParser(query_params, context=self.context)
         # last path_part determines what type of request this is
@@ -1094,7 +1099,7 @@ class ModelResourceRouter(ResourceRouterABC):
                 convert_key_names_func=resource.convert_key_name)
             return resource.delete_collection(
                 filters=filters,
-                session=query_session)
+                query=query)
         elif isinstance(path_part, tuple):
             # path part is a resource identifier
             # individual instance

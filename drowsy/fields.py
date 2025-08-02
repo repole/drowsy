@@ -5,13 +5,16 @@
     Marshmallow fields used in resource schemas.
 
 """
-# :copyright: (c) 2016-2020 by Nicholas Repole and contributors.
+# :copyright: (c) 2016-2025 by Nicholas Repole and contributors.
 #             See AUTHORS for more details.
 # :license: MIT - See LICENSE for more details.
+from marshmallow import EXCLUDE
 from marshmallow.fields import Field, missing_
-from marshmallow.utils import EXCLUDE, get_value
+from marshmallow.utils import get_value
 from marshmallow_sqlalchemy.fields import Related, ensure_list
+from sqlalchemy import select
 from sqlalchemy.inspection import inspect
+from sqlalchemy.orm import with_parent
 from drowsy.base import EmbeddableMixinABC, NestedPermissibleABC
 from drowsy.log import Loggable
 
@@ -86,8 +89,9 @@ class NestedRelated(NestedPermissibleABC, Related):
 
     """A nested relationship field for use in `ModelResourceSchema`."""
 
-    def __init__(self, nested, default=missing_, exclude=tuple(), only=None,
-                 many=False, column=None, permissions_cls=None, **kwargs):
+    def __init__(self, nested, load_default=missing_, dump_default=missing_, 
+                 exclude=tuple(), only=None, many=False, columns=None, 
+                 permissions_cls=None, **kwargs):
         """Initialize a nested related field.
 
         :param nested: The Schema class or class name (string) to nest,
@@ -116,13 +120,14 @@ class NestedRelated(NestedPermissibleABC, Related):
         """
         super(NestedRelated, self).__init__(
             nested=nested,
-            default=default,
+            load_default=load_default,
+            dump_default=dump_default,
             exclude=exclude,
             only=only,
             many=many,
             permissions_cls=permissions_cls,
             **kwargs)
-        self.columns = ensure_list(column or [])
+        self.columns = ensure_list(columns or [])
 
     @property
     def model(self):
@@ -189,13 +194,20 @@ class NestedRelated(NestedPermissibleABC, Related):
                     elif getattr(self.parent.instance, relationship_name):
                         with_parentable = True
         if with_parentable:
-            in_relation_instance = self.session.query(
-                self.related_model).with_parent(
-                    self.parent.instance,
-                    property=relationship_name).filter_by(**{
-                        column.key: getattr(instance, column.key)
-                        for column in self.related_keys
-                    }).first()
+            filters = []
+            for column in self.related_keys:
+                filters.append(
+                    getattr(self.related_model, column.key) == 
+                    getattr(instance, column.key)
+                )
+            query = select(self.related_model).where(
+                with_parent(
+                    self.parent.instance, 
+                    getattr(self.parent.opts.model, relationship_name)
+                )
+            ).where(*filters)
+            in_relation_instance = self.session.execute(
+                query).scalars().first()
             if in_relation_instance == instance:
                 return True
             return False
@@ -339,6 +351,11 @@ class NestedRelated(NestedPermissibleABC, Related):
             partial=False,
             many=False,
             unknown=EXCLUDE)
+    
+    @property
+    def context(self):
+        """The context dictionary for the parent :class:`Schema`."""
+        return self.parent.context
 
 
 class Relationship(EmbeddableRelationshipMixin, NestedRelated):
