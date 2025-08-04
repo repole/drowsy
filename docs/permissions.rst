@@ -40,10 +40,10 @@ your notification class might look something like:
             model = alias or self.model
             # How user info is stored in the context dict is up to you.
             if self.context.get("user"):
-                return query.filter(model.user_id == user.user_id)
+                return query.where(model.user_id == user.user_id)
             else:
                 # hacky way to ensure the query always returns nothing
-                return query.filter(model.user_id == -1)
+                return query.where(model.user_id == -1)
 
 Now when ``NotificationResource`` is accessed you can be assured that the above
 filters will always be applied. Note that this also applies to nested

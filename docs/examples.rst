@@ -1,8 +1,8 @@
 .. _chinook_api:
 
-*****************************
-Example Chinook API Reference
-*****************************
+*********************
+Example App Reference
+*********************
 
 .. module:: examples.chinook_api
 
