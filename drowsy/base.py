@@ -1114,7 +1114,7 @@ class BaseResourceABC(SchemaResourceABC, NestableResourceABC):
                     schema = field.schema
             else:
                 return False
-        return True  # pragma no cover
+        return True  # pragma: no cover
 
     def convert_key_name(self, key):
         """Given a dumped key name, convert to the name of the field.

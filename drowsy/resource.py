@@ -1108,13 +1108,6 @@ class BaseModelResource(BaseResourceABC):
                 if action == "delete":
                     if inspect(instance).persistent:
                         self.session.delete(instance)
-                    else:
-                        # NOTE - Not sure how to handle.
-                        # Should probably have schema.load raise a
-                        # validation error when deleting a non
-                        # persistent object.
-                        # Biggest hold up is proper i18n support there.
-                        pass
             except PermissionValidationError as exc:
                 errors[i] = exc.messages
                 permission_failure = True
