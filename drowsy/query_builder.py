@@ -433,8 +433,8 @@ class ModelResourceQueryBuilder(QueryBuilder):
                         "invalid_limit_value", limit=limit)
         return query
 
-    def _get_many_to_many_join(self, child, parent, relationship,
-                               assoc_queryable):
+    def _get_many_to_many_join(self, child, child_model, parent, parent_model, 
+                               relationship, assoc_queryable):
         parent_expressions = []
         join = []
         if isinstance(relationship.prop.primaryjoin, BinaryExpression):
@@ -452,6 +452,28 @@ class ModelResourceQueryBuilder(QueryBuilder):
                 parent_col_name = expression.right.name
                 child_expr = expression.left
                 child_col_name = expression.left.name
+            if isinstance(parent, AliasedClass) or isinstance(parent, Subquery):
+                if not hasattr(parent, 'c'):
+                    parent_selectable = inspect(parent).selectable
+                else:
+                    parent_selectable = parent
+                parent_expr = getattr(
+                    parent_selectable.c,
+                    parent_col_name)
+            if isinstance(child, AliasedClass) or isinstance(child, Subquery):
+                # TODO - maybe loop through columns and identify one(s)
+                # not originally part of the child (e.g. come from assoc)
+                child_selectable = child if hasattr(child, "c") else inspect(
+                    child).selectable
+                # check if child obj and assoc table both have the
+                # same column name.
+                child_model_cols = select(child_model).selected_columns
+                if hasattr(child_model_cols, child_col_name) and hasattr(
+                        assoc_queryable.c, child_col_name):
+                    child_col_name = child_col_name + "_1"
+                child_expr = getattr(
+                    child.c,
+                    child_col_name)
             join.append(child_expr == parent_expr)
         return join
 
@@ -1119,7 +1141,9 @@ class ModelResourceQueryBuilder(QueryBuilder):
                                     last_node.join = (
                                         self._get_many_to_many_join(
                                             child=child,
+                                            child_model=last_node.alias,
                                             parent=parent,
+                                            parent_model=last_node.parent.alias,
                                             relationship=relationship,
                                             assoc_queryable=queryable
                                         ))
@@ -1234,13 +1258,16 @@ class ModelResourceQueryBuilder(QueryBuilder):
                         query = query.outerjoin(node.subquery, secondaryjoin)
                 else:
                     query = query.outerjoin(node.subquery, primaryjoin)
+                entity_relation = getattr(node.parent.alias, node.name)
+                if node.alias is not None:
+                    entity_relation = entity_relation.of_type(node.alias)
                 if node.parent and node.parent.option:
                     node.option = node.parent.option.contains_eager(
-                        getattr(node.parent.alias, node.name),
+                        entity_relation,
                         alias=node.subquery)
                 else:
                     node.option = contains_eager(
-                        getattr(node.parent.alias, node.name),
+                        entity_relation,
                         alias=node.subquery)
             elif strategy == "subqueryload":
                 # Subquery loads are never applied when there's a
@@ -1313,6 +1340,7 @@ class ModelResourceQueryBuilder(QueryBuilder):
         duplicate_model = False
         node_queue = [node]
         while node_queue:
+            # loop through nodes
             current_node = node_queue.pop(0)
             for child in current_node.children:
                 unaliased_child = inspect(child.alias).class_
@@ -1322,8 +1350,12 @@ class ModelResourceQueryBuilder(QueryBuilder):
                 children_composite_key = bool(len(child.id_keys) > 1 and
                                               child.children)
                 if children_limit_offset and children_composite_key:
-                    node_queue = []
-                    break
+                    # NOTE - Not sure why we do this, but seems to be ok
+                    # for now. Need to further investigate long term.
+                    # Result of hitting this code is falling back to a 
+                    # safe join, so skipping code coverage here.
+                    node_queue = []  # pragma: no cover
+                    break  # pragma: no cover
                 else:
                     node_queue.append(child)
         if children_limit_offset or children_self_ref_root or duplicate_model:
@@ -1331,11 +1363,13 @@ class ModelResourceQueryBuilder(QueryBuilder):
             # needs refinement later, but this will get the job done
             node.strategy = "join"
             return node.strategy
-        elif children_composite_key:
+        elif children_composite_key:  # pragma: no cover
             # we're going to have to use subqueryload at some point
+            # since you can't selectinload a composite key
             # SQLAlchemy doesn't allow a subqueryload after a
-            # selectinload....
-            # NOTE - has no effect now, will be useful when we build in
+            # selectinload, so all non join parents have to be
+            # subqueryload
+            # NOTE - has no effect now, may be useful if we build in
             # selectinload support as the default.
             node.strategy = "subqueryload"
             return node.strategy
