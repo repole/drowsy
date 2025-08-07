@@ -42,7 +42,7 @@ autodoc_default_options = {
     'undoc-members': True,
     'exclude-members': '__weakref__'
 }
-
+html_title = 'Drowsy'
 # autosummary options
 autosummary_generate = True
 
@@ -52,9 +52,7 @@ autosummary_generate = True
 html_theme = 'alabaster'
 
 html_theme_options = {
-    "logo": "drowsy-logo.png",
     "description_font_style": "italic",
-    "description": "GraphQL type features in a REST API",
     "code_font_size": "0.8em",
     "warn_bg": "#FFC",
     "warn_border": "#EEE",
