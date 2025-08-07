@@ -1,3 +1,0 @@
-flask
-swagger-ui-py
-apispec
