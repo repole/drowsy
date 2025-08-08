@@ -2,6 +2,42 @@
 Changes
 =======
 
+Release 1.0.0
+=============
+
+Features Added
+--------------
+* ``QueryBuilder`` is now smarter about when to populate relationships
+  with joins and with subqueries
+* Relationship filtering and embedding is more resilent to edge cases
+* Automatic router will make multiple attempts at finding the right
+  resource to route to based on name matching
+
+Backward Incompatible
+---------------------
+* ``NestedPermissibleABC`` and all fields that inherit from it have
+  constructor signitures changed to align with Marshmallow-SQLAlchemy
+  newer versions of ``Nested``
+* ``ResourceSchema`` and all resourced that inherit from it have 
+  constructor signature and ``load`` signature changed to align with 
+  newer versions of Marshmallow's ``Schema``
+* Add ``"replace``" as an optional permission to check for on nested
+  relationships
+* ``QueryBuilder.apply_filters`` method signature changed to prioritze
+  receiving a ``model_class`` rather than a ``query``
+* ``query`` parameter types in ``QueryBuilder`` can no longer be
+  database sessions of old style SQLAlchemy queries (e.g. 
+  ``session.query(Album)`` would now be ``select(Album)``)
+* Database ``session`` parameters have largely been replaced by
+  ``query`` parameters across entire library
+* ``nested_opts`` removed from resource mutation based methods.
+  Data payload can now contain an ``$options`` field specifying
+  any nested options
+* SQLAlchemy minimum version now 2.0
+* Marshmallow minimum version now 4.0
+* Marshmallow-SQLAlchemy minimum version now 1.4
+* Python 3.7 no longer supported
+
 
 Release 0.1.6
 =============
