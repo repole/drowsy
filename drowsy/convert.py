@@ -10,8 +10,11 @@
 # :license: MIT - See LICENSE for more details.
 from inflection import camelize, underscore, pluralize
 from marshmallow_sqlalchemy.convert import ModelConverter
+from sqlalchemy.orm import configure_mappers
 from sqlalchemy.orm.descriptor_props import SynonymProperty
 from sqlalchemy.orm.interfaces import ONETOMANY, MANYTOMANY
+from sqlalchemy.orm.relationships import (
+    Relationship as SqlRelationship, RelationshipProperty)
 from drowsy.fields import APIUrl, Relationship
 
 
@@ -28,7 +31,7 @@ class ModelResourceConverter(ModelConverter):
         :rtype: type
 
         """
-        if hasattr(prop, 'direction'):
+        if isinstance(prop, (SqlRelationship, RelationshipProperty)):
             if prop.uselist:
                 field_cls = Relationship
             else:
@@ -68,9 +71,11 @@ class ModelResourceConverter(ModelConverter):
             :class:`~sqlalchemy.orm.properties.RelationshipProperty`
 
         """
+        configure_mappers()
         nullable = True
         required = False
-        if prop.direction in (ONETOMANY, MANYTOMANY):
+        if hasattr(prop, 'direction') and prop.direction in (
+                ONETOMANY, MANYTOMANY):
             # lists shouldn't be set to None
             nullable = False
         else:
@@ -134,9 +139,10 @@ class ModelResourceConverter(ModelConverter):
         kwargs = self.get_base_kwargs()
         if hasattr(prop, 'columns'):
             self._add_column_kwargs(kwargs, prop)
-        if hasattr(prop, 'direction'):  # Relationship property
+        if isinstance(prop, (SqlRelationship, RelationshipProperty)):
             self._add_relationship_kwargs(kwargs, prop)
-        if getattr(prop, 'doc', None):  # Useful for documentation generation
+        if getattr(prop, 'doc', None):
+            # Useful for documentation generation
             if not kwargs.get("metadata"):
                 kwargs['metadata'] = {}
             kwargs['metadata']['description'] = prop.doc
