@@ -16,6 +16,7 @@ import pytest
 import os
 import sqlalchemy as sa
 from packaging import version
+from sqlalchemy import text
 from sqlalchemy.orm import sessionmaker, scoped_session
 from unittest.mock import MagicMock
 from sqlalchemy.engine.base import RootTransaction
@@ -80,9 +81,10 @@ def _db(request):
     server_types = ["mssql", "postgres"]
     if request.param in server_types:
         if request.param == 'mssql':
-            connect_string = ("mssql+pyodbc://@localhost/Drowsy?"
-                              "trusted_connection=yes&"
-                              "driver=ODBC+Driver+17+for+SQL+Server")
+            connect_string = ("mssql+pyodbc://sa:Drowsy123@localhost/Drowsy"
+                              "?driver=ODBC+Driver+18+for+SQL+Server"
+                              "&TrustServerCertificate=yes"
+                              "&MARS_Connection=yes")
             sqlstr_path = os.path.join(
                 os.path.dirname(os.path.abspath(__file__)),
                 "chinook_sqlserver.sql")
@@ -94,23 +96,23 @@ def _db(request):
                 "chinook_postgres.sql")
         else:
             raise ValueError("Database type tests not implemented.")
-        engine = sa.create_engine(connect_string)
-        tables = engine.execute(
-            "SELECT Table_Name FROM INFORMATION_SCHEMA.TABLES "
-            "WHERE TABLE_TYPE='BASE TABLE'")
         tables_exist = False
-        for table in tables:
-            if table[0].lower() == "artist":
-                tables_exist = True
-                break
-        if not tables_exist:
-            with open(sqlstr_path, 'r', encoding='utf-8-sig') as sqlstr_file:
-                sqlstr = sqlstr_file.read()
-            with engine.begin() as conn:
+        engine = sa.create_engine(connect_string)
+        with engine.begin() as conn:
+            tables = list(conn.execute(text(
+                "SELECT Table_Name FROM INFORMATION_SCHEMA.TABLES "
+                "WHERE TABLE_TYPE='BASE TABLE'")))
+            for table in tables:
+                if table[0].lower() == "artist":
+                    tables_exist = True
+                    break
+            if not tables_exist:
+                with open(sqlstr_path, 'r', encoding='utf-8-sig') as sql_file:
+                    sqlstr = sql_file.read()
                 statements = sqlstr.split(";\n")
                 for statement in statements:
                     if statement.strip():
-                        conn.execute(statement)
+                        conn.execute(text(statement))
     else:
         # default to sqlite
         db_path = os.path.join(
@@ -149,3 +151,4 @@ def db_session(_db):
         if transaction.is_active:
             transaction.rollback()
         connection.close()
+        _db.dispose()
