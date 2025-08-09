@@ -112,7 +112,7 @@ def api_router(path):
             request.method,
             path,
             query_params=query_params,
-            data=request.json)
+            data=request.get_json(silent=True))
         if result is None:
             status = 204
         if request.method.upper() == "OPTIONS":
