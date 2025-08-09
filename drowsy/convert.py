@@ -183,6 +183,7 @@ class ModelResourceConverter(ModelConverter):
         :rtype: dict or the provided dict_cls
 
         """
+        configure_mappers()
         result = dict_cls()
         base_fields = base_fields or {}
         for prop in model.__mapper__.iterate_properties:

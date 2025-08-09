@@ -978,7 +978,7 @@ class BaseModelResource(BaseResourceABC):
                     filters=filters
                 ).subquery()
             )
-        ).scalars()
+        ).scalars().first()
         # set up offset/limit
         if (limit is not None and
                 isinstance(self.page_max_size, int) and
