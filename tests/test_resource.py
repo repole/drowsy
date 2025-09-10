@@ -5,7 +5,7 @@
     Resource tests for Drowsy.
 
 """
-# :copyright: (c) 2016-2020 by Nicholas Repole and contributors.
+# :copyright: (c) 2016-2025 by Nicholas Repole and contributors.
 #             See AUTHORS for more details.
 # :license: MIT - See LICENSE for more details.
 from marshmallow.exceptions import RegistryError
@@ -16,7 +16,6 @@ from drowsy.exc import (
     ResourceNotFoundError, UnprocessableEntityError)
 from drowsy.parser import SubfilterInfo, SortInfo
 from drowsy.resource import ResourceCollection, PaginationInfo
-from drowsy.schema import NestedOpts
 from tests.base import DrowsyDatabaseTests
 from tests.models import Album, Artist, Playlist, Track
 from tests.resources import (
@@ -25,6 +24,7 @@ from tests.resources import (
     InvoiceCamelResource, PlaylistResource, TrackResource)
 from pytest import raises
 from unittest.mock import MagicMock
+from sqlalchemy import select
 from sqlalchemy.orm.session import Session
 
 
@@ -567,8 +567,9 @@ class TestDrowsyResource(DrowsyDatabaseTests):
     @staticmethod
     def test_patch_simple(db_session):
         """Make sure that a simple obj update works."""
-        album = db_session.query(Album).filter(
-            Album.album_id == 1).all()[0]
+        album = db_session.execute(
+            select(Album).where(Album.album_id == 1)
+        ).scalars().first()
         album_resource = AlbumResource(session=db_session)
         result = album_resource.patch((album.album_id,), {"title": "TEST"})
         assert result["title"] == "TEST"
@@ -577,8 +578,9 @@ class TestDrowsyResource(DrowsyDatabaseTests):
     @staticmethod
     def test_patch_no_tuple_ident(db_session):
         """Test passing a single value identity works."""
-        album = db_session.query(Album).filter(
-            Album.album_id == 1).all()[0]
+        album = db_session.execute(
+            select(Album).where(Album.album_id == 1)
+        ).scalars().first()
         album_resource = AlbumResource(session=db_session)
         result = album_resource.patch(album.album_id, {"title": "TEST"})
         assert result["title"] == "TEST"
@@ -599,8 +601,9 @@ class TestDrowsyResource(DrowsyDatabaseTests):
     @staticmethod
     def test_patch_empty(db_session):
         """Make sure that a obj update works with no update params."""
-        album = db_session.query(Album).filter(
-            Album.album_id == 1).all()[0]
+        album = db_session.execute(
+            select(Album).where(Album.album_id == 1)
+        ).scalars().first()
         album_resource = AlbumResource(session=db_session)
         result = album_resource.patch((album.album_id,), {})
         assert result["title"] == album.title
@@ -608,8 +611,9 @@ class TestDrowsyResource(DrowsyDatabaseTests):
     @staticmethod
     def test_patch_add_existing_subresource(db_session):
         """Make sure that we can add an item to a list relation."""
-        playlist = db_session.query(Playlist).filter(
-            Playlist.playlist_id == 18).first()
+        playlist = db_session.execute(
+            select(Playlist).where(Playlist.playlist_id == 18)
+        ).scalars().first()
         assert len(playlist.tracks) == 1
         playlist_resource = PlaylistResource(session=db_session)
         update_data = {
@@ -625,8 +629,9 @@ class TestDrowsyResource(DrowsyDatabaseTests):
     @staticmethod
     def test_patch_subresource_list_add_new(db_session):
         """Ensure we can add a new obj to a list using relationship."""
-        playlist = db_session.query(Playlist).filter(
-            Playlist.playlist_id == 18).all()[0]
+        playlist = db_session.execute(
+            select(Playlist).where(Playlist.playlist_id == 18)
+        ).scalars().first()
         update_data = {
             "tracks": [{
                 "$op": "add",
@@ -657,8 +662,9 @@ class TestDrowsyResource(DrowsyDatabaseTests):
     @staticmethod
     def test_patch_subresource_list_update_existing(db_session):
         """Ensure we can update a list relationship item."""
-        playlist = db_session.query(Playlist).filter(
-            Playlist.playlist_id == 18).first()
+        playlist = db_session.execute(
+            select(Playlist).where(Playlist.playlist_id == 18)
+        ).scalars().first()
         playlist_resource = PlaylistResource(session=db_session)
         update_data = {
             "tracks": [{
@@ -673,8 +679,9 @@ class TestDrowsyResource(DrowsyDatabaseTests):
     @staticmethod
     def test_patch_subresource_single_update_existing(db_session):
         """Make sure that a non-list relation can have a field set."""
-        album = db_session.query(Album).filter(
-            Album.album_id == 1).all()[0]
+        album = db_session.execute(
+            select(Album).where(Album.album_id == 1)
+        ).scalars().first()
         update_data = {
             "artist": {"name": "TEST"}
         }
@@ -694,8 +701,9 @@ class TestDrowsyResource(DrowsyDatabaseTests):
     @staticmethod
     def test_single_relation_item_set_fail(db_session):
         """Ensure we can't set a relation to a non object value."""
-        album = db_session.query(Album).filter(
-            Album.album_id == 1).all()[0]
+        album = db_session.execute(
+            select(Album).where(Album.album_id == 1)
+        ).scalars().first()
         album_resource = AlbumResource(session=db_session)
         with raises(UnprocessableEntityError):
             album_resource.patch(
@@ -706,8 +714,9 @@ class TestDrowsyResource(DrowsyDatabaseTests):
     @staticmethod
     def test_list_relation_set_fail(db_session):
         """Ensure we can't set a list relation to a non object value."""
-        album = db_session.query(Album).filter(
-            Album.album_id == 1).all()[0]
+        album = db_session.execute(
+            select(Album).where(Album.album_id == 1)
+        ).scalars().first()
         album_resource = AlbumResource(session=db_session)
         with raises(UnprocessableEntityError):
             album_resource.patch(
@@ -717,8 +726,9 @@ class TestDrowsyResource(DrowsyDatabaseTests):
     @staticmethod
     def test_list_relation_non_item_fail(db_session):
         """Ensure we can't set list relation items to a non object."""
-        album = db_session.query(Album).filter(
-            Album.album_id == 1).all()[0]
+        album = db_session.execute(
+            select(Album).where(Album.album_id == 1)
+        ).scalars().first()
         album_resource = AlbumResource(session=db_session)
         with raises(UnprocessableEntityError):
             album_resource.patch(
@@ -728,8 +738,9 @@ class TestDrowsyResource(DrowsyDatabaseTests):
     @staticmethod
     def test_list_relation_bad_item_value_fail(db_session):
         """Ensure list relation item validation works."""
-        album = db_session.query(Album).filter(
-            Album.album_id == 1).all()[0]
+        album = db_session.execute(
+            select(Album).where(Album.album_id == 1)
+        ).scalars().first()
         album_resource = AlbumResource(session=db_session)
         with raises(UnprocessableEntityError):
             album_resource.patch(
@@ -739,8 +750,9 @@ class TestDrowsyResource(DrowsyDatabaseTests):
     @staticmethod
     def test_set_single_relation_item(db_session):
         """Make sure that a non-list relation can be set."""
-        album = db_session.query(Album).filter(
-            Album.album_id == 1).all()[0]
+        album = db_session.execute(
+            select(Album).where(Album.album_id == 1)
+        ).scalars().first()
         album_resource = AlbumResource(session=db_session)
         update_params = {
             "artist": {"artist_id": 3}
@@ -752,8 +764,9 @@ class TestDrowsyResource(DrowsyDatabaseTests):
     @staticmethod
     def test_set_single_relation_item_to_none(db_session):
         """Make sure that a non-list relation can be set to ``None``."""
-        track = db_session.query(Track).filter(
-            Track.track_id == 1).all()[0]
+        track = db_session.execute(
+            select(Track).where(Track.track_id == 1)
+        ).scalars().first()
         track_resource = TrackResource(session=db_session)
         update_params = {
             "genre": None
@@ -765,8 +778,9 @@ class TestDrowsyResource(DrowsyDatabaseTests):
     @staticmethod
     def test_set_empty_single_relation_item(db_session):
         """Make sure that an empty non-list relation can be set."""
-        track = db_session.query(Track).filter(
-            Track.track_id == 1).all()[0]
+        track = db_session.execute(
+            select(Track).where(Track.track_id == 1)
+        ).scalars().first()
         track.genre = None
         db_session.commit()
         track_resource = TrackResource(session=db_session)
@@ -780,8 +794,9 @@ class TestDrowsyResource(DrowsyDatabaseTests):
     @staticmethod
     def test_list_relation_remove_item(db_session):
         """Make sure that we can remove an item from a list relation."""
-        playlist = db_session.query(Playlist).filter(
-            Playlist.playlist_id == 18).first()
+        playlist = db_session.execute(
+            select(Playlist).where(Playlist.playlist_id == 18)
+        ).scalars().first()
         playlist_resource = PlaylistResource(session=db_session)
         update_params = {
             "tracks": [{
@@ -797,8 +812,9 @@ class TestDrowsyResource(DrowsyDatabaseTests):
     @staticmethod
     def test_new_single_relation_item(db_session):
         """Make sure that a non-list relation can be created."""
-        album = db_session.query(Album).filter(
-            Album.album_id == 1).first()
+        album = db_session.execute(
+            select(Album).where(Album.album_id == 1)
+        ).scalars().first()
         album_resource = AlbumResource(session=db_session)
         update_params = {
             "artist": {
@@ -826,11 +842,10 @@ class TestDrowsyResource(DrowsyDatabaseTests):
     @staticmethod
     def test_get_with_query(db_session):
         """Test get with a pre-existing query."""
-        query = db_session.query(Album).filter(
-            Album.title == "test")
+        query = select(Album).where(Album.title == "test")
         resource = AlbumResource(session=db_session)
         with raises(ResourceNotFoundError) as excinf:
-            resource.get(1, session=query)
+            resource.get(1, query=query)
         assert excinf.value.code == "resource_not_found"
 
     @staticmethod
@@ -1048,8 +1063,9 @@ class TestDrowsyResource(DrowsyDatabaseTests):
         data = {"album_id": 9999, "title": "test2", "artist": {"artist_id": 1}}
         resource = AlbumResource(session=db_session)
         resource.post(data)
-        result = db_session.query(Album).filter(
-            Album.album_id == 9999).first()
+        result = db_session.execute(
+            select(Album).where(Album.album_id == 9999)
+        ).scalars().first()
         assert result is not None
 
     @staticmethod
@@ -1161,12 +1177,13 @@ class TestDrowsyResource(DrowsyDatabaseTests):
         ]
         resource = AlbumResource(session=db_session)
         resource.post_collection(data)
-        result1 = db_session.query(Album).filter(
-            Album.album_id == 9999).first()
+        result1 = db_session.execute(
+            select(Album).where(Album.album_id == 9999)
+        ).scalars().first()
         assert result1 is not None
-        result2 = db_session.query(Album).filter(
-            Album.title == "test2"
-        )
+        result2 = db_session.execute(
+            select(Album).where(Album.title == "test2")
+        ).scalars().first()
         assert result2 is not None
 
     @staticmethod
@@ -1232,8 +1249,9 @@ class TestDrowsyResource(DrowsyDatabaseTests):
         ]
         playlist_resource = PlaylistResource(session=db_session)
         result = playlist_resource.patch_collection(update_data)
-        playlists = db_session.query(Playlist).filter(
-            Playlist.playlist_id == 9999).all()
+        playlists = db_session.execute(
+            select(Playlist).where(Playlist.playlist_id == 9999)
+        ).scalars().all()
         assert len(playlists) == 1
         assert len(playlists[0].tracks) == 1
         assert result is None
@@ -1267,8 +1285,9 @@ class TestDrowsyResource(DrowsyDatabaseTests):
         ]
         track_resource = TrackResource(session=db_session)
         result = track_resource.patch_collection(update_data)
-        tracks = db_session.query(Track).filter(
-            Track.track_id == 9999).all()
+        tracks = db_session.execute(
+            select(Track).where(Track.track_id == 9999)
+        ).scalars().all()
         assert len(tracks) == 1
         assert result is None
 
@@ -1283,8 +1302,9 @@ class TestDrowsyResource(DrowsyDatabaseTests):
         ]
         playlist_resource = PlaylistResource(session=db_session)
         result = playlist_resource.patch_collection(update_data)
-        playlists = db_session.query(Playlist).filter(
-            Playlist.playlist_id == 18).all()
+        playlists = db_session.execute(
+            select(Playlist).where(Playlist.playlist_id == 18)
+        ).scalars().all()
         assert len(playlists) == 0
         assert result is None
 
@@ -1299,8 +1319,9 @@ class TestDrowsyResource(DrowsyDatabaseTests):
         ]
         playlist_resource = PlaylistResource(session=db_session)
         result = playlist_resource.patch_collection(update_data)
-        playlists = db_session.query(Playlist).filter(
-            Playlist.playlist_id == 18).all()
+        playlists = db_session.execute(
+            select(Playlist).where(Playlist.playlist_id == 18)
+        ).scalars().all()
         assert len(playlists) == 1
         assert playlists[0].name == "New name"
         assert result is None
@@ -1366,29 +1387,16 @@ class TestDrowsyResource(DrowsyDatabaseTests):
         """Test nested opts work as expected."""
         data = [{
             "album_id": 1,
-            "tracks": [{"track_id": 1}]
+            "tracks": [{"track_id": 1}],
+            "$options": {"tracks": {"partial": False}}
         }]
         resource = AlbumResource(session=db_session)
-        resource.patch_collection(
-            data,
-            nested_opts={"tracks": NestedOpts(partial=False)})
-        db_result = db_session.query(Album).filter(
-            Album.album_id == 1).first()
+        resource.patch_collection(data)
+        db_result = db_session.execute(
+            select(Album).where(Album.album_id == 1)
+        ).scalars().first()
         assert db_result is not None
         assert len(db_result.tracks) == 1
-
-    @staticmethod
-    def test_patch_collection_nested_opts_fail(db_session):
-        """Test invalid nested opts fail."""
-        data = [{
-            "album_id": 1,
-            "tracks": [{"track_id": 1}]
-        }]
-        resource = AlbumResource(session=db_session)
-        with raises(TypeError):
-            resource.patch_collection(
-                data,
-                nested_opts="test")
 
     # PUT TESTS
 
@@ -1441,9 +1449,9 @@ class TestDrowsyResource(DrowsyDatabaseTests):
         """Test a simple delete action."""
         resource = AlbumResource(session=db_session)
         resource.delete(1)
-        result = db_session.query(Album).filter(
-            Album.album_id == 1
-        ).first()
+        result = db_session.execute(
+            select(Album).where(Album.album_id == 1)
+        ).scalars().first()
         assert result is None
 
     @staticmethod
@@ -1471,8 +1479,9 @@ class TestDrowsyResource(DrowsyDatabaseTests):
         }
         playlist_resource = PlaylistResource(session=db_session)
         result = playlist_resource.delete_collection(filters=filters)
-        playlists = db_session.query(Playlist).filter(
-            Playlist.playlist_id == 18).all()
+        playlists = db_session.execute(
+            select(Playlist).where(Playlist.playlist_id == 18)
+        ).scalars().all()
         assert len(playlists) == 0
         assert result is None
 

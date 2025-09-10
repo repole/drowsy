@@ -5,11 +5,13 @@
     Router tests for Drowsy.
 
 """
-# :copyright: (c) 2016-2020 by Nicholas Repole and contributors.
+# :copyright: (c) 2016-2025s by Nicholas Repole and contributors.
 #             See AUTHORS for more details.
 # :license: MIT - See LICENSE for more details.
 import json
 from pytest import raises
+from sqlalchemy import select
+from sqlalchemy.orm import with_parent
 from drowsy.exc import (
     UnprocessableEntityError, MethodNotAllowedError, BadRequestError,
     ResourceNotFoundError)
@@ -1029,11 +1031,13 @@ class TestDrowsyRouter(DrowsyDatabaseTests):
         router = ModelResourceRouter(session=db_session, context={})
         result = router.delete("/tracks/5", query_params=query_params)
         assert result is None
-        track = db_session.query(Track).filter(
-            Track.track_id == 5).first()
+        track = db_session.execute(
+            select(Track).where(Track.track_id == 5)
+        ).scalars().first()
         assert track is None
-        track = db_session.query(Track).filter(
-            Track.track_id == 1).first()
+        track = db_session.execute(
+            select(Track).where(Track.track_id == 1)
+        ).scalars().first()
         assert track is not None
 
     @staticmethod
@@ -1071,9 +1075,9 @@ class TestDrowsyRouter(DrowsyDatabaseTests):
         router = ModelResourceRouter(session=db_session, context={})
         result = router.delete("albums/1/tracks", query_params=query_params)
         assert result is None
-        album = db_session.query(Album).filter(
-            Album.album_id == 1
-        ).first()
+        album = db_session.execute(
+            select(Album).where(Album.album_id == 1)
+        ).scalars().first()
         assert len(album.tracks) == 0
 
     @staticmethod
@@ -1085,8 +1089,9 @@ class TestDrowsyRouter(DrowsyDatabaseTests):
             "/tracks/1/genre",
             query_params=query_params)
         assert result is None
-        track = db_session.query(Track).filter(
-            Track.track_id == 1).first()
+        track = db_session.execute(
+            select(Track).where(Track.track_id == 1)
+        ).scalars().first()
         assert track.genre is None
 
     @staticmethod
@@ -1104,9 +1109,11 @@ class TestDrowsyRouter(DrowsyDatabaseTests):
         router = ModelResourceRouter(session=db_session, context={})
         result = router.delete("/tracks", query_params=query_params)
         assert result is None
-        track = db_session.query(Track).filter(
-            Track.track_id == 5).first()
+        track = db_session.execute(
+            select(Track).where(Track.track_id == 5)
+        ).scalars().first()
         assert track is None
-        track = db_session.query(Track).filter(
-            Track.track_id == 1).first()
+        track = db_session.execute(
+            select(Track).where(Track.track_id == 1)
+        ).scalars().first()
         assert track is not None

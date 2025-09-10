@@ -24,10 +24,11 @@ class OpPermissionsABC(Loggable):
         """Check if the given action is allowed.
 
         :param str operation: Action type. Options include ``"add"``,
-            ``"remove"``, ``"create"`` for collections, and ``"set"``
-            may be used as an alias for ``"add"`` in single object
-            nested situations. Any actions that are part of custom
-            defined field types will also need to be handled.
+            ``"remove"``, ``"create"``, and ``"replace``" for
+            collections, and ``"set"`` may be used as an alias for
+            ``"add"`` in single object nested situations. Any actions
+            that are part of custom defined field types will also need
+            to be handled.
         :param obj_data: The user supplied data. Likely a dictionary
             for a child object.
         :param instance: An unmodified instance of the object with
@@ -56,10 +57,11 @@ class AllowAllOpPermissions(OpPermissionsABC):
         Always returns ``True``.
 
         :param str operation: Action type. Options include ``"add"``,
-            ``"remove"``, ``"create"`` for collections, and ``"set"``
-            may be used as an alias for ``"add"`` in single object
-            nested situations. Any actions that are part of custom
-            defined field types will also need to be handled.
+            ``"remove"``, ``"create"``, and ``"replace``" for
+            collections, and ``"set"`` may be used as an alias for
+            ``"add"`` in single object nested situations. Any actions
+            that are part of custom defined field types will also need
+            to be handled.
         :param obj_data: The user supplied data. Likely a dictionary
             for a child object.
         :param instance: An unmodified instance of the object with
@@ -88,10 +90,11 @@ class DisallowAllOpPermissions(OpPermissionsABC):
         Always returns ``False``.
 
         :param str operation: Action type. Options include ``"add"``,
-            ``"remove"``, ``"create"`` for collections, and ``"set"``
-            may be used as an alias for ``"add"`` in single object
-            nested situations. Any actions that are part of custom
-            defined field types will also need to be handled.
+            ``"remove"``, ``"create"``, and ``"replace``" for
+            collections, and ``"set"`` may be used as an alias for
+            ``"add"`` in single object nested situations. Any actions
+            that are part of custom defined field types will also need
+            to be handled.
         :param obj_data: The user supplied data. Likely a dictionary
             for a child object.
         :param instance: An unmodified instance of the object with

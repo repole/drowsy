@@ -5,13 +5,16 @@
     Convert SQLAlchemy models into Marshmallow schemas.
 
 """
-# :copyright: (c) 2016-2020 by Nicholas Repole and contributors.
+# :copyright: (c) 2016-2025 by Nicholas Repole and contributors.
 #             See AUTHORS for more details.
 # :license: MIT - See LICENSE for more details.
 from inflection import camelize, underscore, pluralize
 from marshmallow_sqlalchemy.convert import ModelConverter
+from sqlalchemy.orm import configure_mappers
 from sqlalchemy.orm.descriptor_props import SynonymProperty
 from sqlalchemy.orm.interfaces import ONETOMANY, MANYTOMANY
+from sqlalchemy.orm.relationships import (
+    Relationship as SqlRelationship, RelationshipProperty)
 from drowsy.fields import APIUrl, Relationship
 
 
@@ -28,7 +31,7 @@ class ModelResourceConverter(ModelConverter):
         :rtype: type
 
         """
-        if hasattr(prop, 'direction'):
+        if isinstance(prop, (SqlRelationship, RelationshipProperty)):
             if prop.uselist:
                 field_cls = Relationship
             else:
@@ -68,9 +71,11 @@ class ModelResourceConverter(ModelConverter):
             :class:`~sqlalchemy.orm.properties.RelationshipProperty`
 
         """
+        configure_mappers()
         nullable = True
         required = False
-        if prop.direction in (ONETOMANY, MANYTOMANY):
+        if hasattr(prop, 'direction') and prop.direction in (
+                ONETOMANY, MANYTOMANY):
             # lists shouldn't be set to None
             nullable = False
         else:
@@ -91,7 +96,7 @@ class ModelResourceConverter(ModelConverter):
             "many": prop.uselist
         })
 
-    def property2field(self, prop, instance=True, **kwargs):
+    def property2field(self, prop, instance=True, field_class=None, **kwargs):
         """
 
         :param prop: A column or relationship property used to
@@ -101,6 +106,8 @@ class ModelResourceConverter(ModelConverter):
         :param instance: ``True`` if this method should return an actual
             instance of a field, ``False`` to return the actual field
             class.
+        :param field_class: Class of field to attempt to instantiate.
+        :type field_class: :class:`~marshmallow.fields.Field`
         :param kwargs: Keyword args to be used in the construction of
             the field.
         :return: Depending on the value of ``instance``, either a field
@@ -108,8 +115,7 @@ class ModelResourceConverter(ModelConverter):
         :rtype: :class:`~marshmallow.fields.Field` or type
 
         """
-
-        field_class = self._get_field_class_for_property(prop)
+        field_class = field_class or self._get_field_class_for_property(prop)
         if not instance:
             return field_class
         field_kwargs = self._get_field_kwargs_for_property(prop)
@@ -133,10 +139,13 @@ class ModelResourceConverter(ModelConverter):
         kwargs = self.get_base_kwargs()
         if hasattr(prop, 'columns'):
             self._add_column_kwargs(kwargs, prop)
-        if hasattr(prop, 'direction'):  # Relationship property
+        if isinstance(prop, (SqlRelationship, RelationshipProperty)):
             self._add_relationship_kwargs(kwargs, prop)
-        if getattr(prop, 'doc', None):  # Useful for documentation generation
-            kwargs['description'] = prop.doc
+        if getattr(prop, 'doc', None):
+            # Useful for documentation generation
+            if not kwargs.get("metadata"):
+                kwargs['metadata'] = {}
+            kwargs['metadata']['description'] = prop.doc
         return kwargs
 
     @staticmethod
@@ -174,6 +183,7 @@ class ModelResourceConverter(ModelConverter):
         :rtype: dict or the provided dict_cls
 
         """
+        configure_mappers()
         result = dict_cls()
         base_fields = base_fields or {}
         for prop in model.__mapper__.iterate_properties:

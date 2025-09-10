@@ -5,14 +5,15 @@
     Parser tests for Drowsy.
 
 """
-# :copyright: (c) 2016-2020 by Nicholas Repole and contributors.
+# :copyright: (c) 2016-2025 by Nicholas Repole and contributors.
 #             See AUTHORS for more details.
 # :license: MIT - See LICENSE for more details.
 from marshmallow import fields
 from marshmallow.exceptions import ValidationError
+from sqlalchemy import select
 from drowsy.convert import ModelResourceConverter
 from drowsy.exc import PermissionValidationError
-from drowsy.schema import NestedOpts, ResourceSchema
+from drowsy.schema import ResourceSchema
 from tests.base import DrowsyDatabaseTests
 from tests.schemas import (
     AlbumSchema, AlbumCamelSchema, ArtistSchema,
@@ -229,8 +230,9 @@ class TestDrowsySchema(DrowsyDatabaseTests):
     @staticmethod
     def test_base_instance_relationship_set_child(db_session):
         """Test setting a child when loading with a base instance."""
-        album = db_session.query(Album).filter(
-            Album.album_id == 1).first()
+        album = db_session.execute(
+            select(Album).where(Album.album_id == 1)
+        ).scalars().first()
         instance = Track(track_id=9999, album=album)
         data = {
             "track_id": 9999,
@@ -251,8 +253,9 @@ class TestDrowsySchema(DrowsyDatabaseTests):
     @staticmethod
     def test_base_instance_relationship_add_child(db_session):
         """Test adding a child when loading with a base instance."""
-        track = db_session.query(Track).filter(
-            Track.track_id == 1).first()
+        track = db_session.execute(
+            select(Track).where(Track.track_id == 1)
+        ).scalars().first()
         instance = Album(album_id=9999)
         instance.tracks.append(track)
         data = {
@@ -302,11 +305,10 @@ class TestDrowsySchema(DrowsyDatabaseTests):
             "album_id": 2,
             "tracks": [
                 {"track_id": 1}
-            ]
+            ],
+            "$options": {"tracks": {"partial": False}}
         }
-        nested_opts = {"tracks": NestedOpts(partial=False)}
-        schema = AlbumSchema(session=db_session, nested_opts=nested_opts,
-                             partial=True)
+        schema = AlbumSchema(session=db_session, partial=True)
         result = schema.load(data)
         assert result.tracks[0].track_id == 1
         assert len(result.tracks) == 1
@@ -321,13 +323,13 @@ class TestDrowsySchema(DrowsyDatabaseTests):
                  "playlists": [
                      {"playlist_id": 1}
                  ]}
-            ]
+            ],
+            "$options": {
+                "tracks": {"partial": False},
+                "tracks.playlists": {"partial": False}
+            }
         }
-        nested_opts = {
-            "tracks": NestedOpts(partial=False),
-            "tracks.playlists": NestedOpts(partial=False)}
-        schema = AlbumSchema(session=db_session, nested_opts=nested_opts,
-                             partial=True)
+        schema = AlbumSchema(session=db_session, partial=True)
         result = schema.load(data)
         assert len(result.tracks[0].playlists) == 1
 

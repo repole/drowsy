@@ -1,5 +1,9 @@
-Drowsy
-======
+.. title:: Drowsy
+  
+.. image:: https://raw.githubusercontent.com/repole/drowsy/refs/heads/master/docs/_static/drowsy-logo.png
+   :width: 50 %
+   :align: center
+   :alt: Drowsy
 
 |Build Status| |Coverage Status| |Docs|
 
@@ -48,13 +52,6 @@ Drowsy is however web framework agnostic, and is capable of working with Flask,
 CherryPy, Bottle.py, Falcon, or any other Python web framework.
 
 
-Current Status
---------------
-
-Beta. There's a good deal of testing and code coverage here, but the developer
-API continues to evolve, so be prepared for things to break in future updates.
-
-
 Contributing
 ------------
 
@@ -67,8 +64,8 @@ License
 
 MIT
 
-.. |Build Status| image:: https://travis-ci.org/repole/drowsy.svg?branch=master
-   :target: https://travis-ci.org/repole/drowsy
+.. |Build Status| image:: https://github.com/repole/drowsy/actions/workflows/ci-cd.yml/badge.svg
+   :target: https://github.com/repole/drowsy/actions/workflows/ci-cd.yml
 .. |Coverage Status| image:: https://coveralls.io/repos/repole/drowsy/badge.svg?branch=master
    :target: https://coveralls.io/r/repole/drowsy?branch=master
 .. |Docs| image:: https://readthedocs.org/projects/drowsy/badge/?version=latest

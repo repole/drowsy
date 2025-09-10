@@ -10,7 +10,6 @@ Getting Started
    installation
    quickstart
 
-
 Using the REST API
 ==================
 
@@ -26,10 +25,11 @@ API Reference
 =============
 
 .. toctree::
-    :maxdepth: 2
+   :maxdepth: 2
 
-    api_reference
-
+   api_reference
+   tests
+   examples
 
 Project Info
 ============

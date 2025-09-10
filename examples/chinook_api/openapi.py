@@ -5,7 +5,7 @@
     Generate an OpenAPI compliant spec.
 
 """
-# :copyright: (c) 2020 by Nicholas Repole and contributors.
+# :copyright: (c) 2021 by Nicholas Repole and contributors.
 #             See AUTHORS for more details.
 # :license: MIT - See LICENSE for more details.
 import apispec
@@ -72,7 +72,7 @@ def nestedrelated2properties(self, field, **kwargs):
 
 
 ma_plugin.converter.add_attribute_function(nestedrelated2properties)
-ma_plugin.map_to_openapi_type(String)(APIUrl)
+ma_plugin.map_to_openapi_type(APIUrl, String)
 
 
 def populate_spec():
@@ -106,12 +106,12 @@ def populate_spec():
         "type": "object",
         "description": "A field by field breakdown of errors."
     }
-    spec.components.schema(name="FieldErrors", component=field_errors)
+    spec.components.schema(component_id="FieldErrors", component=field_errors)
     field_errors_array = {
         "type": "array",
         "items": {"$ref": "#/components/schemas/FieldErrors"}
     }
-    spec.components.schema(name="FieldErrorsArray", component=field_errors_array)
+    spec.components.schema(component_id="FieldErrorsArray", component=field_errors_array)
     unprocessable_entity_error = {
         "type": "object",
         "properties": {
@@ -120,7 +120,7 @@ def populate_spec():
             "errors": {"$ref": "#/components/schemas/FieldErrors"}
         }
     }
-    spec.components.schema(name="UnprocessableEntityError", component=unprocessable_entity_error)
+    spec.components.schema(component_id="UnprocessableEntityError", component=unprocessable_entity_error)
     unprocessable_array_error = {
         "type": "object",
         "properties": {
@@ -132,7 +132,7 @@ def populate_spec():
             }
         }
     }
-    spec.components.schema(name="UnprocessableArrayError", component=unprocessable_array_error)
+    spec.components.schema(component_id="UnprocessableArrayError", component=unprocessable_array_error)
     method_not_allowed = {
         "type": "object",
         "properties": {
@@ -140,7 +140,7 @@ def populate_spec():
             "message": {"type": "string"}
         }
     }
-    spec.components.schema(name="MethodNotAllowed", component=method_not_allowed)
+    spec.components.schema(component_id="MethodNotAllowed", component=method_not_allowed)
     resource_not_found = {
         "type": "object",
         "properties": {
@@ -148,7 +148,7 @@ def populate_spec():
             "message": {"type": "string"}
         }
     }
-    spec.components.schema(name="ResourceNotFound", component=resource_not_found)
+    spec.components.schema(component_id="ResourceNotFound", component=resource_not_found)
     bad_request_error = {
         "type": "object",
         "properties": {
@@ -156,14 +156,14 @@ def populate_spec():
             "message": {"type": "string"}
         }
     }
-    spec.components.schema(name="BadRequestError", component=bad_request_error)
+    spec.components.schema(component_id="BadRequestError", component=bad_request_error)
     # build schema components
     for schema in schemas:
         name = schema.__name__
         if name.endswith("Schema"):
             name = name[0:-len("Schema")]
         with suppress(DuplicateComponentNameError):
-            spec.components.schema(name=name, schema=schema)
+            spec.components.schema(component_id=name, schema=schema)
     # Build paths and responses
     # common error responses will be repeatedly used...
     bad_request_resp = {
@@ -298,8 +298,8 @@ def populate_spec():
         for key in id_keys:
             data_key = resource.schema.fields[key].data_key or key
             identifiers.append(data_key)
-            param = ma_plugin.converter.field2parameter(
-                resource.schema.fields[key], name=data_key, default_in="path")
+            param = ma_plugin.converter._field2parameter(
+                resource.schema.fields[key], name=data_key, location="path")
             param["required"] = True
             item_params.append(param)
         item_path = "/".join(
@@ -313,6 +313,8 @@ def populate_spec():
             responses = {}
             collection_responses = {}
             collection_params = []
+            collection_body = []
+            item_body = {}
             if option in ("get", "head", "delete"):
                 collection_params.append(param_filters)
                 if option != "delete":
@@ -354,6 +356,27 @@ def populate_spec():
                     }
                 }
                 responses["433"] = unprocessable_entity_resp
+                collection_body = {
+                    "required": True,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "array",
+                                "items": name + "Schema"
+                            }
+                        }
+                    }
+                }
+                item_body = {
+                    "required": True,
+                    "content": {
+                        "application/json": {
+                            "schema": name + "Schema"
+                        }
+                    }
+                }
+                if option == "post":
+                    collection_body = item_body
                 if option != "put":
                     collection_responses["204"] = {
                         "description": "No content."
@@ -389,9 +412,13 @@ def populate_spec():
             item_operations[option] = {"responses": responses}
             if item_params:
                 item_operations[option]["parameters"] = item_params
+            if item_body:
+                item_operations[option]["requestBody"] = item_body
             collection_operations[option] = {"responses": collection_responses}
             if collection_params:
                 collection_operations[option]["parameters"] = collection_params
+            if collection_body:
+                collection_operations[option]["requestBody"] = collection_body
         spec.path(path=item_path, operations=item_operations)
         spec.path(path=collection_path, operations=collection_operations)
 
