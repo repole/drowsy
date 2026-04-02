@@ -33,9 +33,9 @@ class EmbeddableRelationshipMixin(EmbeddableMixinABC):
         """
         url = ""
         if self.parent and "self" in self.parent.fields:
-            url += self.parent.fields["self"].serialize("self", obj)
+            url = "".join([url, self.parent.fields["self"].serialize("self", obj)])
         relationship_name = self.data_key or self.name
-        url += "/" + relationship_name
+        url = "/".join([url, relationship_name])
         return url
 
     def _deserialize_unembedded(self, value, *args, **kwargs):
@@ -409,9 +409,9 @@ class APIUrl(Field, Loggable):
         result = self.base_url or ""
         if result and result[-1] == "/":
             result = result[:-1]
-        result += "/" + self.endpoint_name
+        result = "/".join([result, self.endpoint_name])
         for column in id_keys:
             if hasattr(obj, column):
                 val = accessor_func(obj, column, missing_)
-                result += "/" + str(val)
+                result = "/".join([result, str(val)])
         return result
